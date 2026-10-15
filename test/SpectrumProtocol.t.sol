@@ -786,7 +786,7 @@ contract AutonomousTreasuryTest is Test {
     function setUp() public {
         usdc = new MockUSDC();
         vault = new MockVault(usdc);
-        treasury = new AutonomousTreasury(IERC4626(address(vault)));
+        treasury = new AutonomousTreasury(IERC4626(address(vault)), 0);
         treasury.setStabilizer(address(this));
         usdc.mint(address(treasury), 1_000e6);
         treasury.depositReserve();
@@ -794,7 +794,7 @@ contract AutonomousTreasuryTest is Test {
 
     function test_wiring() public {
         assertEq(address(treasury.asset()), address(usdc));
-        AutonomousTreasury t = new AutonomousTreasury(IERC4626(address(vault)));
+        AutonomousTreasury t = new AutonomousTreasury(IERC4626(address(vault)), 0);
         vm.prank(bob);
         vm.expectRevert(AutonomousTreasury.NotDeployer.selector);
         t.setStabilizer(bob);
@@ -802,7 +802,7 @@ contract AutonomousTreasuryTest is Test {
         vm.expectRevert(AutonomousTreasury.StabilizerAlreadySet.selector);
         t.setStabilizer(bob);
         vm.expectRevert(AutonomousTreasury.ZeroAddress.selector);
-        new AutonomousTreasury(IERC4626(address(0)));
+        new AutonomousTreasury(IERC4626(address(0)), 0);
     }
 
     function test_onlyStabilizerMovesFunds() public {
@@ -820,12 +820,18 @@ contract AutonomousTreasuryTest is Test {
         assertEq(usdc.balanceOf(address(treasury)), 0);
     }
 
-    function test_sweepIsPermissionless() public {
+    function test_sweepDepositsDonationsAndIsStabilizerOnly() public {
         usdc.mint(address(treasury), 5e6); // donation
+        assertEq(treasury.reserveAssets(), 1_005e6, "idle donations count at once");
         vm.prank(bob);
+        vm.expectRevert(AutonomousTreasury.NotStabilizer.selector);
         treasury.sweep();
+        treasury.sweep(); // this test contract is the stabilizer
         assertEq(usdc.balanceOf(address(treasury)), 0);
         assertEq(treasury.reserveAssets(), 1_005e6);
+        vm.prank(bob);
+        vm.expectRevert(AutonomousTreasury.NotStabilizer.selector);
+        treasury.rebalance();
     }
 
     function test_withdrawUsesIdleFirst() public {
@@ -923,7 +929,9 @@ contract SpectralStabilizerTest is SpectrumFixture {
         assertTrue(stabilizer.hasRole(stabilizer.DEFAULT_ADMIN_ROLE(), admin));
         assertTrue(stabilizer.hasRole(stabilizer.GUARDIAN_ROLE(), admin));
         vm.expectRevert(SpectralStabilizer.ZeroAddress.selector);
-        new SpectralStabilizer(token, treasury, ISpectralEntropyOracle(address(oracle)), address(0), 1);
+        new SpectralStabilizer(
+            token, treasury, ISpectralEntropyOracle(address(oracle)), address(0), address(0), 1, type(uint256).max
+        );
     }
 
     // ------------------------------------------------------------------ policy
@@ -1190,6 +1198,16 @@ contract SpectralStabilizerTest is SpectrumFixture {
         _assertSolvent();
     }
 
+    function test_loss_redeemAllSentinelHandlesPendingLoss() public {
+        _mintFor(alice, 1_000e6);
+        vault.simulateLoss(100e6); // not yet synced: alice's displayed balance is stale
+        vm.prank(alice);
+        uint256 out = stabilizer.redeem(type(uint256).max, alice, 0);
+        assertApproxEqRel(out, 899.91e6, 1e15);
+        assertEq(token.balanceOf(alice), 0);
+        _assertSolvent();
+    }
+
     function test_loss_newMinterIsNotDiluted() public {
         _mintFor(alice, 1_000e6);
         vault.simulateLoss(100e6); // not yet synced
@@ -1259,7 +1277,9 @@ contract ChurnBudgetTest is SpectrumFixture {
     StabilizerHarness internal h;
 
     function _newStabilizer() internal override returns (SpectralStabilizer) {
-        return new StabilizerHarness(token, treasury, ISpectralEntropyOracle(address(oracle)), admin, bootstrapCap);
+        return new StabilizerHarness(
+            token, treasury, ISpectralEntropyOracle(address(oracle)), admin, address(0), bootstrapCap, type(uint256).max
+        );
     }
 
     function setUp() public {
@@ -1347,10 +1367,11 @@ contract SpectralHookTest is Deployers {
         // Monetary system with the real oracle.
         usdc = new MockUSDC();
         vault = new MockVault(usdc);
-        treasury = new AutonomousTreasury(IERC4626(address(vault)));
+        treasury = new AutonomousTreasury(IERC4626(address(vault)), 0);
         token = new SpectralToken();
         oracle = new SpectralEntropyOracle(address(this), 1e18, 0.25e18, 1 hours);
-        stabilizer = new SpectralStabilizer(token, treasury, oracle, address(this), 10_000_000e18);
+        stabilizer =
+            new SpectralStabilizer(token, treasury, oracle, address(this), address(0), 10_000_000e18, type(uint256).max);
         token.setStabilizer(address(stabilizer));
         treasury.setStabilizer(address(stabilizer));
         wsusd = new WrappedSUSD(token);
@@ -1516,12 +1537,14 @@ contract SpectrumInvariantTest is SpectrumFixture {
     StabilizerHandler internal handler;
 
     function setUp() public {
+        liquidityBufferBps = 1_500;
         _deploySystem();
-        handler = new StabilizerHandler(token, stabilizer, treasury, usdc, vault, oracle);
+        MockVault vaultB = new MockVault(usdc);
+        handler = new StabilizerHandler(token, stabilizer, treasury, usdc, vault, vaultB, oracle, admin);
         handler.mint(0, 50_000e6);
         handler.mint(1, 20_000e6);
 
-        bytes4[] memory selectors = new bytes4[](10);
+        bytes4[] memory selectors = new bytes4[](15);
         selectors[0] = StabilizerHandler.mint.selector;
         selectors[1] = StabilizerHandler.redeem.selector;
         selectors[2] = StabilizerHandler.transfer.selector;
@@ -1532,6 +1555,11 @@ contract SpectrumInvariantTest is SpectrumFixture {
         selectors[7] = StabilizerHandler.setEntropy.selector;
         selectors[8] = StabilizerHandler.warp.selector;
         selectors[9] = StabilizerHandler.rebase.selector; // weight keepers x2
+        selectors[10] = StabilizerHandler.setBuffer.selector;
+        selectors[11] = StabilizerHandler.rebalance.selector;
+        selectors[12] = StabilizerHandler.emergencyExit.selector;
+        selectors[13] = StabilizerHandler.migrate.selector;
+        selectors[14] = StabilizerHandler.recoverLegacy.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
         targetContract(address(handler));
     }
@@ -1573,6 +1601,17 @@ contract SpectrumInvariantTest is SpectrumFixture {
         assertEq(handler.ghostUnexpectedSyncFailures(), 0);
     }
 
+    function invariant_treasuryGovernanceNeverFails() public view {
+        assertEq(handler.ghostUnexpectedGovernanceFailures(), 0);
+    }
+
+    function invariant_legacySharesNeverCounted() public view {
+        // reserveAssets() = current vault position + idle; quarantined shares are excluded.
+        uint256 shares = treasury.vault().balanceOf(address(treasury));
+        uint256 invested = shares == 0 ? 0 : treasury.vault().previewRedeem(shares);
+        assertEq(treasury.reserveAssets(), invested + usdc.balanceOf(address(treasury)));
+    }
+
     function invariant_churnBudgetHoldsAfterEveryDistribution() public view {
         assertEq(handler.ghostChurnViolations(), 0);
     }
@@ -1594,9 +1633,9 @@ contract SpectrumInvariantTest is SpectrumFixture {
         for (uint256 i; i < handler.actorCount(); ++i) {
             address a = handler.actors(i);
             uint256 bal = token.balanceOf(a);
-            if (bal >= stabilizer.MIN_AMOUNT()) {
+            if (bal >= stabilizer.MIN_AMOUNT() + 1) {
                 vm.prank(a);
-                stabilizer.redeem(bal, a, 0);
+                stabilizer.redeem(i == 0 ? type(uint256).max : bal, a, 0); // also exercise "redeem all"
             }
         }
         assertGe(stabilizer.reserveValue(), token.totalSupply(), "floor after a bank run");
@@ -1606,5 +1645,296 @@ contract SpectrumInvariantTest is SpectrumFixture {
         emit log_named_uint("rebases", handler.ghostRebases());
         emit log_named_uint("deferred", handler.ghostDeferred());
         emit log_named_uint("losses", handler.ghostLosses());
+        emit log_named_uint("migrations", handler.ghostMigrations());
+        emit log_named_uint("quarantines", handler.ghostQuarantines());
+        emit log_named_uint("exits", handler.ghostExits());
+    }
+}
+
+// =====================================================================================
+// 10. Treasury liquidity buffer and vault failure modes
+// =====================================================================================
+
+contract TreasuryLiquidityTest is SpectrumFixture {
+    function setUp() public {
+        liquidityBufferBps = 1_500;
+        _deploySystem();
+    }
+
+    function test_bufferKeepsShareOfReserveIdle() public {
+        assertEq(_mintFor(alice, 10_000e6), 9_999e18);
+        assertEq(treasury.idleAssets(), 1_500e6);
+        assertEq(vault.totalAssets(), 8_500e6);
+        assertEq(stabilizer.reserveValue(), 10_000e18);
+        assertEq(treasury.targetIdle(), 1_500e6);
+        _assertSolvent();
+    }
+
+    function test_redemptionsServedFromIdleWhileVaultIsIlliquid() public {
+        _mintFor(alice, 10_000e6);
+        vault.setLiquidityCap(0); // every dollar lent out
+        assertEq(_redeemFor(alice, 1_000e18), 999.9e6);
+        _assertSolvent();
+    }
+
+    function test_redeemBeyondLiquidityRevertsWithAvailableAmount() public {
+        _mintFor(alice, 10_000e6);
+        vault.setLiquidityCap(100e6);
+        assertEq(treasury.liquidAssets(), 1_600e6);
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(AutonomousTreasury.InsufficientLiquidity.selector, 1_600e6));
+        stabilizer.redeem(5_000e18, alice, 0);
+        assertEq(_redeemFor(alice, 1_500e18), 1_499.85e6, "a smaller redemption goes through");
+        _assertSolvent();
+    }
+
+    function test_pausedVaultKeepsMintAndRedeemWorking() public {
+        _mintFor(alice, 1_000e6);
+        vault.setPaused(true);
+        assertEq(_mintFor(bob, 1_000e6), 999.9e18, "deposit skipped, mint still credited");
+        assertEq(treasury.idleAssets(), 1_150e6);
+        assertEq(_redeemFor(bob, 500e18), 499.95e6);
+        _assertSolvent();
+    }
+
+    function test_revertingDepositIsSkippedNotFatal() public {
+        _mintFor(alice, 1_000e6);
+        vault.setFailDeposits(true);
+        usdc.mint(bob, 1_000e6);
+        vm.startPrank(bob);
+        usdc.approve(address(stabilizer), 1_000e6);
+        vm.expectEmit(address(treasury));
+        emit AutonomousTreasury.DepositSkipped(address(vault), 850e6);
+        stabilizer.mint(1_000e6, bob, 0);
+        vm.stopPrank();
+        assertEq(treasury.idleAssets(), 1_150e6);
+        _assertSolvent();
+    }
+
+    function test_depositCapIsRespected() public {
+        vault.setDepositCap(3_000e6);
+        _mintFor(alice, 10_000e6);
+        assertEq(vault.totalAssets(), 3_000e6);
+        assertEq(treasury.idleAssets(), 7_000e6);
+        _assertSolvent();
+    }
+
+    function test_rebalanceMovesFundsTowardTarget() public {
+        _mintFor(alice, 10_000e6);
+        vm.prank(admin);
+        stabilizer.setLiquidityBuffer(4_000);
+        vm.prank(bob); // permissionless keeper
+        stabilizer.rebalanceReserve();
+        assertEq(treasury.idleAssets(), 4_000e6);
+        vm.prank(admin);
+        stabilizer.setLiquidityBuffer(500);
+        stabilizer.rebalanceReserve();
+        assertEq(treasury.idleAssets(), 500e6);
+        uint256 idle = treasury.idleAssets();
+        usdc.mint(address(treasury), 50e6); // 0.5% drift: inside the 1% tolerance
+        stabilizer.rebalanceReserve();
+        assertEq(treasury.idleAssets(), idle + 50e6, "no churn inside tolerance");
+        _assertSolvent();
+    }
+
+    function test_bufferSettingIsAdminOnlyAndBounded() public {
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, bob, bytes32(0)));
+        stabilizer.setLiquidityBuffer(0);
+        vm.prank(admin);
+        vm.expectRevert(AutonomousTreasury.InvalidBuffer.selector);
+        stabilizer.setLiquidityBuffer(10_001);
+        vm.expectRevert(AutonomousTreasury.NotStabilizer.selector);
+        treasury.setLiquidityBuffer(0);
+        vm.expectRevert(AutonomousTreasury.InvalidBuffer.selector);
+        new AutonomousTreasury(IERC4626(address(vault)), 10_001);
+    }
+}
+
+// =====================================================================================
+// 11. Vault emergencies and timelocked migration
+// =====================================================================================
+
+contract VaultGovernanceTest is SpectrumFixture {
+    MockVault internal vault2;
+
+    function setUp() public {
+        liquidityBufferBps = 1_000;
+        _deploySystem();
+        vault2 = new MockVault(usdc);
+        _mintFor(alice, 10_000e6); // idle 1,000 + vault 9,000
+    }
+
+    function _proposeAndWait(IERC4626 v) internal {
+        vm.prank(admin);
+        stabilizer.proposeVault(v);
+        vm.warp(vm.getBlockTimestamp() + 7 days);
+    }
+
+    function test_emergencyExitPullsEverythingIdle() public {
+        vm.prank(guardian);
+        assertEq(stabilizer.emergencyExitVault(), 9_000e6);
+        assertEq(treasury.liquidityBufferBps(), 10_000);
+        assertEq(vault.balanceOf(address(treasury)), 0);
+        assertEq(treasury.idleAssets(), 10_000e6);
+        _mintFor(bob, 1_000e6);
+        assertEq(vault.balanceOf(address(treasury)), 0, "new mints stay idle after an exit");
+        _assertSolvent();
+    }
+
+    function test_emergencyExitIsPartialWhenIlliquidAndRepeatable() public {
+        vault.setLiquidityCap(2_000e6);
+        vm.prank(guardian);
+        assertEq(stabilizer.emergencyExitVault(), 2_000e6);
+        assertEq(vault.balanceOf(address(treasury)), 7_000e6);
+        vault.setLiquidityCap(type(uint256).max);
+        vm.prank(guardian);
+        assertEq(stabilizer.emergencyExitVault(), 7_000e6);
+        assertEq(vault.balanceOf(address(treasury)), 0);
+        _assertSolvent();
+    }
+
+    function test_migrationNeedsAdminMatchingAssetAndTimelock() public {
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, bob, bytes32(0)));
+        stabilizer.proposeVault(vault2);
+
+        MockVault wrong = new MockVault(new MockUSDC());
+        vm.prank(admin);
+        vm.expectRevert(SpectralStabilizer.AssetMismatch.selector);
+        stabilizer.proposeVault(wrong);
+
+        vm.prank(admin);
+        stabilizer.proposeVault(vault2);
+        uint256 eta = stabilizer.pendingVaultEta();
+        assertEq(eta, vm.getBlockTimestamp() + 7 days);
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(SpectralStabilizer.VaultTimelockActive.selector, eta));
+        stabilizer.executeVaultMigration();
+
+        vm.prank(guardian);
+        stabilizer.cancelVaultMigration();
+        vm.warp(eta);
+        vm.prank(admin);
+        vm.expectRevert(SpectralStabilizer.NoPendingVault.selector);
+        stabilizer.executeVaultMigration();
+    }
+
+    function test_migrationMovesReserveToNewVault() public {
+        _proposeAndWait(vault2);
+        uint256 reserveBefore = stabilizer.reserveValue();
+        vm.prank(admin);
+        stabilizer.executeVaultMigration();
+        assertEq(address(treasury.vault()), address(vault2));
+        assertEq(vault.balanceOf(address(treasury)), 0);
+        assertEq(vault2.totalAssets(), 9_000e6);
+        assertEq(stabilizer.reserveValue(), reserveBefore);
+        assertEq(address(treasury.legacyVault()), address(0));
+        assertEq(_redeemFor(alice, 5_000e18), 4_999.5e6, "redemptions work on the new vault");
+        _assertSolvent();
+    }
+
+    function test_illiquidOldVaultIsQuarantinedThenRecovered() public {
+        vault.setLiquidityCap(3_000e6);
+        _proposeAndWait(vault2);
+        uint256 supplyBefore = token.totalSupply();
+        vm.prank(admin);
+        stabilizer.executeVaultMigration();
+
+        assertEq(address(treasury.legacyVault()), address(vault));
+        assertEq(vault.balanceOf(address(treasury)), 6_000e6, "stuck shares quarantined");
+        assertEq(stabilizer.reserveValue(), 4_000e18, "and excluded from the reserve");
+        assertLe(token.totalSupply(), 4_000e18, "loss absorbed pro rata");
+        assertGt(token.totalSupply(), (supplyBefore * 39) / 100);
+        _assertSolvent();
+
+        // Migrating back into the quarantined vault is refused.
+        _proposeAndWait(vault);
+        vm.prank(admin);
+        vm.expectRevert(AutonomousTreasury.NewVaultIsLegacy.selector);
+        stabilizer.executeVaultMigration();
+
+        // Liquidity returns: anyone recovers the shares; value flows back as surplus.
+        vault.setLiquidityCap(type(uint256).max);
+        assertEq(treasury.recoverLegacy(), 6_000e6);
+        assertEq(address(treasury.legacyVault()), address(0));
+        assertGt(stabilizer.surplus(), 5_999e18);
+        assertTrue(stabilizer.rebase());
+        _assertSolvent();
+    }
+
+    function test_treasuryGovernanceOnlyThroughStabilizer() public {
+        vm.expectRevert(AutonomousTreasury.NotStabilizer.selector);
+        treasury.exitVault();
+        vm.expectRevert(AutonomousTreasury.NotStabilizer.selector);
+        treasury.migrateVault(vault2);
+    }
+
+    function test_guardianCannotUseAdminPowers() public {
+        vm.startPrank(guardian);
+        stabilizer.pause();
+        stabilizer.unpause();
+        bytes memory denied =
+            abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, guardian, bytes32(0));
+        vm.expectRevert(denied);
+        stabilizer.setSupplyCap(1);
+        vm.expectRevert(denied);
+        stabilizer.proposeVault(vault2);
+        vm.expectRevert(denied);
+        stabilizer.setLiquidityBuffer(0);
+        vm.expectRevert(denied);
+        stabilizer.executeVaultMigration();
+        vm.stopPrank();
+    }
+}
+
+// =====================================================================================
+// 12. Guarded launch: supply cap
+// =====================================================================================
+
+contract SupplyCapTest is SpectrumFixture {
+    function setUp() public {
+        supplyCap = 5_000e18;
+        _deploySystem();
+    }
+
+    function test_capBlocksMintingBeyondIt() public {
+        _mintFor(alice, 4_000e6); // 3,999.6 sUSD
+        assertEq(stabilizer.supplyCapRemaining(), 1_000.4e18);
+        usdc.mint(bob, 3_000e6);
+        vm.startPrank(bob);
+        usdc.approve(address(stabilizer), 3_000e6);
+        vm.expectRevert(abi.encodeWithSelector(SpectralStabilizer.SupplyCapExceeded.selector, 1_000.4e18));
+        stabilizer.mint(2_000e6, bob, 0);
+        assertEq(stabilizer.mint(1_000e6, bob, 0), 999.9e18);
+        vm.stopPrank();
+    }
+
+    function test_onlyAdminSetsCap() public {
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(IAccessControl.AccessControlUnauthorizedAccount.selector, bob, bytes32(0)));
+        stabilizer.setSupplyCap(1e30);
+        vm.expectEmit(address(stabilizer));
+        emit SpectralStabilizer.SupplyCapSet(1e30);
+        vm.prank(admin);
+        stabilizer.setSupplyCap(1e30);
+        assertEq(stabilizer.supplyCap(), 1e30);
+    }
+
+    function test_rebasesMayExceedTheCapButMintsMayNot() public {
+        _mintFor(alice, 5_000e6); // 4,999.5 sUSD
+        uint256 supplyNow = token.totalSupply();
+        vm.prank(admin);
+        stabilizer.setSupplyCap(supplyNow);
+        vault.simulateYield(200e6);
+        assertTrue(stabilizer.rebase());
+        assertGt(token.totalSupply(), stabilizer.supplyCap());
+        assertEq(stabilizer.supplyCapRemaining(), 0);
+        usdc.mint(bob, 10e6);
+        vm.startPrank(bob);
+        usdc.approve(address(stabilizer), 10e6);
+        vm.expectRevert(abi.encodeWithSelector(SpectralStabilizer.SupplyCapExceeded.selector, 0));
+        stabilizer.mint(10e6, bob, 0);
+        vm.stopPrank();
     }
 }

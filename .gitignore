@@ -1,5 +1,8 @@
-out/
-cache/
-broadcast/*/31337/
 .env
+broadcast/*/31337/
+cache/
+deployments/31337*.json
 deployments/31337.json
+out/
+rehearsal/*.tmp
+safe-tx/

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
@@ -46,6 +47,16 @@ import {ISpectralEntropyOracle} from "./interfaces/ISpectralEntropyOracle.sol";
 ///         self-approaching plane curves (proven: 3.0472 <= C_diam <= 3.1356). Here it is a
 ///         design constant chosen by analogy. No stability property follows from the
 ///         geometry.
+///
+///         Guarded launch. `supplyCap` bounds total minting (rebases may exceed it); the admin
+///         raises it as confidence grows. The daily expansion cap still applies under it.
+///
+///         Roles. DEFAULT_ADMIN_ROLE (a Safe): supply cap, liquidity buffer, vault migration
+///         behind a 7-day timelock (holders can redeem before it executes). GUARDIAN_ROLE (a
+///         faster Safe or monitored key, plus the admin): pause/unpause minting and rebasing,
+///         emergency exit from the vault into idle funds, cancelling a pending migration.
+///         Nobody can pause redemption or loss absorption, or move reserve funds to an
+///         address of their choosing.
 contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -88,6 +99,9 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
     /// @notice Length of the churn-budget window.
     uint256 public constant CHURN_WINDOW = 7 days;
 
+    /// @notice Delay between proposing and executing a vault migration.
+    uint256 public constant VAULT_TIMELOCK = 7 days;
+
     /// @notice Smallest mint (credited value) or redemption, in sUSD wei. Keeps rounding of
     ///         the reserve asset (for USDC, 1 wei = 1e12 sUSD wei) below the fee floor.
     uint256 public constant MIN_AMOUNT = 1e18;
@@ -116,6 +130,13 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
     uint256 public churnMax;
     uint256 public churnMin;
 
+    /// @notice Maximum total supply reachable by minting (guarded launch).
+    uint256 public supplyCap;
+
+    /// @notice Vault proposed for migration and the earliest execution time.
+    IERC4626 public pendingVault;
+    uint64 public pendingVaultEta;
+
     // ---------------------------------------------------------------------- events / errors
 
     /// @param amountOut sUSD minted to `receiver`.
@@ -129,6 +150,11 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
     event Distributed(uint256 oldIndex, uint256 newIndex, uint256 supplyAdded, uint256 h);
     event RebaseDeferred(uint256 oldIndex, uint256 proposedIndex, uint256 churnLength, uint256 churnRange);
     event LossAbsorbed(uint256 oldIndex, uint256 newIndex, uint256 reserveValue, uint256 supplyBefore);
+    event SupplyCapSet(uint256 supplyCap);
+    event VaultProposed(address indexed vault, uint256 eta);
+    event VaultProposalCanceled(address indexed vault);
+    event VaultMigrationExecuted(address indexed oldVault, address indexed newVault);
+    event EmergencyVaultExit(address indexed vault, uint256 assetsRecovered);
 
     error ZeroAddress();
     error AmountTooSmall();
@@ -138,15 +164,25 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
     error NothingToDistribute();
     error ReserveFloorBreached(uint256 reserveValue, uint256 supply);
     error UnsupportedAsset();
+    error SupplyCapExceeded(uint256 remaining);
+    error AssetMismatch();
+    error NoPendingVault();
+    error VaultTimelockActive(uint256 eta);
 
     // ---------------------------------------------------------------------- constructor
 
+    /// @param admin        DEFAULT_ADMIN_ROLE and GUARDIAN_ROLE holder (use a Safe).
+    /// @param guardian     Extra GUARDIAN_ROLE holder (address(0) for none).
+    /// @param bootstrapCap_ Expansion allowed per epoch regardless of supply.
+    /// @param supplyCap_   Maximum total supply reachable by minting.
     constructor(
         SpectralToken token_,
         AutonomousTreasury treasury_,
         ISpectralEntropyOracle oracle_,
         address admin,
-        uint256 bootstrapCap_
+        address guardian,
+        uint256 bootstrapCap_,
+        uint256 supplyCap_
     ) {
         if (
             address(token_) == address(0) || address(treasury_) == address(0) || address(oracle_) == address(0)
@@ -160,6 +196,8 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
         if (dec > 18) revert UnsupportedAsset();
         scale = 10 ** (18 - dec);
         bootstrapCap = bootstrapCap_;
+        supplyCap = supplyCap_;
+        emit SupplyCapSet(supplyCap_);
 
         epochStart = uint64(block.timestamp);
         churnWindowStart = uint64(block.timestamp);
@@ -168,6 +206,7 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(GUARDIAN_ROLE, admin);
+        if (guardian != address(0)) _grantRole(GUARDIAN_ROLE, guardian);
     }
 
     // ---------------------------------------------------------------------- user actions
@@ -198,6 +237,8 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
         out = credited - fee;
         if (out < minOut) revert Slippage();
         _consumeExpansion(out, h);
+        uint256 supply = token.totalSupply();
+        if (supply + out > supplyCap) revert SupplyCapExceeded(supplyCap > supply ? supplyCap - supply : 0);
 
         token.mint(receiver, out);
         _assertSolvent();
@@ -205,7 +246,12 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
     }
 
     /// @notice Burn `amount` sUSD from the caller and send collateral to `receiver`.
-    /// @dev    Never pausable. Fails only if the vault cannot pay out (liquidity).
+    /// @dev    Never pausable. Paid from the idle buffer first. If idle funds plus the
+    ///         vault's `maxWithdraw` cannot cover it, reverts with
+    ///         `AutonomousTreasury.InsufficientLiquidity(available)`; check
+    ///         `treasury.liquidAssets()` and redeem a smaller amount.
+    /// @param  amount       sUSD to burn; type(uint256).max redeems the caller's whole balance
+    ///                      after any pending loss has been absorbed.
     /// @param  minAssetsOut Minimum collateral to receive.
     function redeem(uint256 amount, address receiver, uint256 minAssetsOut)
         external
@@ -213,8 +259,9 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
         returns (uint256 assetsOut)
     {
         if (receiver == address(0)) revert ZeroAddress();
-        if (amount < MIN_AMOUNT) revert AmountTooSmall();
         _syncLoss();
+        if (amount == type(uint256).max) amount = token.balanceOf(msg.sender);
+        if (amount < MIN_AMOUNT) revert AmountTooSmall();
         uint256 h = oracle.smoothedEntropy();
 
         uint256 fee = Math.mulDiv(amount, redeemFeeRate(h), WAD, Math.Rounding.Ceil);
@@ -269,6 +316,13 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
         absorbed = _syncLoss();
     }
 
+    /// @notice Move reserve funds toward the treasury's idle-buffer target (deposit the excess
+    ///         or refill the buffer from the vault), then re-sync. Permissionless keeper call.
+    function rebalanceReserve() external nonReentrant {
+        treasury.rebalance();
+        _syncLoss();
+    }
+
     // ---------------------------------------------------------------------- guardian
 
     function pause() external onlyRole(GUARDIAN_ROLE) {
@@ -277,6 +331,62 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
 
     function unpause() external onlyRole(GUARDIAN_ROLE) {
         _unpause();
+    }
+
+    /// @notice Emergency: stop depositing and pull everything the vault pays now into idle
+    ///         funds held by the treasury. Repeat as the vault's liquidity returns.
+    function emergencyExitVault() external onlyRole(GUARDIAN_ROLE) nonReentrant returns (uint256 recovered) {
+        recovered = treasury.exitVault();
+        _syncLoss();
+        emit EmergencyVaultExit(address(treasury.vault()), recovered);
+    }
+
+    /// @notice Cancel a pending vault migration.
+    function cancelVaultMigration() external onlyRole(GUARDIAN_ROLE) {
+        IERC4626 v = pendingVault;
+        if (address(v) == address(0)) revert NoPendingVault();
+        delete pendingVault;
+        delete pendingVaultEta;
+        emit VaultProposalCanceled(address(v));
+    }
+
+    // ---------------------------------------------------------------------- admin
+
+    /// @notice Set the guarded-launch supply cap (sUSD wei). Lowering it only blocks mints.
+    function setSupplyCap(uint256 cap) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        supplyCap = cap;
+        emit SupplyCapSet(cap);
+    }
+
+    /// @notice Set the treasury's idle liquidity buffer (bps of reserve, 10_000 = all idle).
+    function setLiquidityBuffer(uint256 bps) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        treasury.setLiquidityBuffer(bps);
+    }
+
+    /// @notice Propose moving the reserve to `newVault`; executable after VAULT_TIMELOCK.
+    function proposeVault(IERC4626 newVault) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (address(newVault) == address(0)) revert ZeroAddress();
+        if (newVault.asset() != address(asset)) revert AssetMismatch();
+        pendingVault = newVault;
+        uint256 eta = block.timestamp + VAULT_TIMELOCK;
+        // forge-lint: disable-next-line(unsafe-typecast)
+        pendingVaultEta = uint64(eta);
+        emit VaultProposed(address(newVault), eta);
+    }
+
+    /// @notice Execute the pending migration. Unredeemable old shares are quarantined and the
+    ///         resulting loss is absorbed pro rata.
+    function executeVaultMigration() external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
+        IERC4626 v = pendingVault;
+        if (address(v) == address(0)) revert NoPendingVault();
+        if (block.timestamp < pendingVaultEta) revert VaultTimelockActive(pendingVaultEta);
+        delete pendingVault;
+        delete pendingVaultEta;
+        address old = address(treasury.vault());
+        _syncLoss();
+        treasury.migrateVault(v);
+        _syncLoss();
+        emit VaultMigrationExecuted(old, address(v));
     }
 
     // ---------------------------------------------------------------------- policy (pure)
@@ -336,6 +446,12 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
     function expansionRemaining() external view returns (uint256) {
         (uint256 cap, uint256 used) = _epochState(oracle.smoothedEntropy());
         return cap > used ? cap - used : 0;
+    }
+
+    /// @notice Minting room left under the supply cap, in sUSD wei.
+    function supplyCapRemaining() external view returns (uint256) {
+        uint256 supply = token.totalSupply();
+        return supplyCap > supply ? supplyCap - supply : 0;
     }
 
     /// @notice Approximate sUSD out for `assets` in (ignores vault rounding and entry fees).

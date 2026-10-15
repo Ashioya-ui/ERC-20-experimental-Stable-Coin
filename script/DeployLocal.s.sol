@@ -72,10 +72,11 @@ contract DeployLocal is Script {
         d.liquidityRouter = new PoolModifyLiquidityTest(d.manager);
         d.swapRouter = new PoolSwapTest(d.manager);
 
-        d.treasury = new AutonomousTreasury(IERC4626(address(d.vault)));
+        d.treasury = new AutonomousTreasury(IERC4626(address(d.vault)), 1_500);
         d.token = new SpectralToken();
         d.oracle = new SpectralEntropyOracle(me, 1e18, 0.25e18, 1 hours);
-        d.stabilizer = new SpectralStabilizer(d.token, d.treasury, d.oracle, me, 1_000_000e18);
+        d.stabilizer =
+            new SpectralStabilizer(d.token, d.treasury, d.oracle, me, address(0), 1_000_000e18, type(uint256).max);
         d.token.setStabilizer(address(d.stabilizer));
         d.treasury.setStabilizer(address(d.stabilizer));
         d.wsusd = new WrappedSUSD(d.token);

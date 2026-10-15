@@ -12,14 +12,18 @@ import {MockOracle} from "../mocks/MockOracle.sol";
 
 /// @notice Drives the monetary system through random but realistic sequences: mints,
 ///         redemptions, transfers, rebases, vault yield, vault losses (followed by a keeper
-///         `sync`), donations, entropy changes and time jumps.
+///         `sync`), donations, entropy changes, time jumps, liquidity-buffer changes,
+///         rebalancing, emergency exits and timelocked vault migrations (sometimes with an
+///         illiquid old vault, which quarantines shares), plus legacy recovery.
 contract StabilizerHandler is Test {
     SpectralToken public immutable token;
     SpectralStabilizer public immutable stabilizer;
     AutonomousTreasury public immutable treasury;
     MockUSDC public immutable usdc;
-    MockVault public immutable vault;
+    MockVault public immutable vaultA;
+    MockVault public immutable vaultB;
     MockOracle public immutable oracle;
+    address public immutable admin;
 
     address[] public actors;
 
@@ -34,21 +38,29 @@ contract StabilizerHandler is Test {
     uint256 public ghostChurnViolations; // accepted positive rebase with L > C_DIAM * D
     uint256 public ghostUsdcIn; // collateral deposited by actors
     uint256 public ghostUsdcOut; // collateral paid to actors
+    uint256 public ghostMigrations;
+    uint256 public ghostQuarantines;
+    uint256 public ghostExits;
+    uint256 public ghostUnexpectedGovernanceFailures;
 
     constructor(
         SpectralToken token_,
         SpectralStabilizer stabilizer_,
         AutonomousTreasury treasury_,
         MockUSDC usdc_,
-        MockVault vault_,
-        MockOracle oracle_
+        MockVault vaultA_,
+        MockVault vaultB_,
+        MockOracle oracle_,
+        address admin_
     ) {
         token = token_;
         stabilizer = stabilizer_;
         treasury = treasury_;
         usdc = usdc_;
-        vault = vault_;
+        vaultA = vaultA_;
+        vaultB = vaultB_;
         oracle = oracle_;
+        admin = admin_;
         for (uint256 i; i < 4; ++i) {
             actors.push(makeAddr(string.concat("actor", vm.toString(i))));
         }
@@ -60,6 +72,10 @@ contract StabilizerHandler is Test {
 
     function _actor(uint256 seed) internal view returns (address) {
         return actors[seed % actors.length];
+    }
+
+    function _vault() internal view returns (MockVault) {
+        return MockVault(address(treasury.vault()));
     }
 
     // ------------------------------------------------------------------ user actions
@@ -126,6 +142,7 @@ contract StabilizerHandler is Test {
     }
 
     function accrueYield(uint256 bps) external {
+        MockVault vault = _vault();
         uint256 assets = vault.totalAssets();
         if (assets == 0) return;
         bps = bound(bps, 1, 300); // up to 3% per call
@@ -133,6 +150,7 @@ contract StabilizerHandler is Test {
     }
 
     function realiseLoss(uint256 bps) external {
+        MockVault vault = _vault();
         uint256 assets = vault.totalAssets();
         if (assets == 0) return;
         bps = bound(bps, 1, 100); // up to 1% per call
@@ -156,5 +174,65 @@ contract StabilizerHandler is Test {
 
     function warp(uint256 secs) external {
         vm.warp(vm.getBlockTimestamp() + bound(secs, 1, 3 days));
+    }
+
+    // ------------------------------------------------------------------ treasury governance
+
+    function setBuffer(uint256 bps) external {
+        vm.prank(admin);
+        stabilizer.setLiquidityBuffer(bound(bps, 0, 10_000));
+    }
+
+    function rebalance() external {
+        try stabilizer.rebalanceReserve() {}
+        catch {
+            ghostUnexpectedGovernanceFailures++;
+        }
+    }
+
+    function emergencyExit() external {
+        vm.prank(admin); // the admin also holds GUARDIAN_ROLE
+        try stabilizer.emergencyExitVault() {
+            ghostExits++;
+        } catch {
+            ghostUnexpectedGovernanceFailures++;
+        }
+    }
+
+    function recoverLegacy() external {
+        try treasury.recoverLegacy() {}
+        catch {
+            ghostUnexpectedGovernanceFailures++;
+        }
+    }
+
+    /// Propose, wait out the timelock, execute. One time in three the old vault can only pay
+    /// out half of the position, so the rest is quarantined as legacy shares.
+    function migrate(uint256 seed) external {
+        MockVault cur = _vault();
+        MockVault next = cur == vaultA ? vaultB : vaultA;
+        if (address(next) == address(treasury.legacyVault())) {
+            treasury.recoverLegacy();
+            if (address(treasury.legacyVault()) != address(0)) return;
+        }
+        bool illiquid = seed % 3 == 0 && address(treasury.legacyVault()) == address(0);
+        if (illiquid) cur.setLiquidityCap(cur.maxWithdraw(address(treasury)) / 2);
+
+        vm.prank(admin);
+        stabilizer.proposeVault(next);
+        vm.warp(vm.getBlockTimestamp() + stabilizer.VAULT_TIMELOCK());
+        vm.prank(admin);
+        try stabilizer.executeVaultMigration() {
+            ghostMigrations++;
+            if (address(treasury.legacyVault()) != address(0)) ghostQuarantines++;
+        } catch {
+            ghostUnexpectedGovernanceFailures++;
+        }
+        if (illiquid) cur.setLiquidityCap(type(uint256).max); // liquidity returns later
+        // The buffer may have been set to 100% by an exit; keep some deposits flowing.
+        if (seed % 2 == 0) {
+            vm.prank(admin);
+            stabilizer.setLiquidityBuffer(1_500);
+        }
     }
 }

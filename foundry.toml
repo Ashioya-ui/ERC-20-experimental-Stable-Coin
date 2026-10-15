@@ -36,3 +36,13 @@ number_underscore = "thousands"
 # Style-only notes that conflict with the codebase's naming of immutables and modifiers.
 exclude_lints = ["screaming-snake-case-immutable", "unwrapped-modifier-logic"]
 ignore = ["test/**/*.sol", "script/**/*.sol"]
+
+[rpc_endpoints]
+base = "${BASE_RPC_URL}"
+base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
+local = "http://127.0.0.1:8545"
+
+[etherscan]
+# Etherscan API V2: one key for all supported chains (Basescan included).
+base = { key = "${ETHERSCAN_API_KEY}", chain = 8453 }
+base_sepolia = { key = "${ETHERSCAN_API_KEY}", chain = 84532 }

@@ -22,8 +22,12 @@ abstract contract SpectrumFixture is Test {
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
 
-    /// @dev Bootstrap cap used by the next `_deploySystem()` call.
+    address internal guardian = makeAddr("guardian");
+
+    /// @dev Parameters used by the next `_deploySystem()` call.
     uint256 internal bootstrapCap = BOOTSTRAP_CAP;
+    uint256 internal supplyCap = type(uint256).max;
+    uint256 internal liquidityBufferBps = 0;
 
     MockUSDC internal usdc;
     MockVault internal vault;
@@ -36,7 +40,7 @@ abstract contract SpectrumFixture is Test {
         vm.warp(1_700_000_000);
         usdc = new MockUSDC();
         vault = new MockVault(usdc);
-        treasury = new AutonomousTreasury(IERC4626(address(vault)));
+        treasury = new AutonomousTreasury(IERC4626(address(vault)), liquidityBufferBps);
         token = new SpectralToken();
         oracle = new MockOracle();
         oracle.setEntropy(0);
@@ -47,7 +51,9 @@ abstract contract SpectrumFixture is Test {
 
     /// @dev Overridden by tests that need a harness.
     function _newStabilizer() internal virtual returns (SpectralStabilizer) {
-        return new SpectralStabilizer(token, treasury, ISpectralEntropyOracle(address(oracle)), admin, bootstrapCap);
+        return new SpectralStabilizer(
+            token, treasury, ISpectralEntropyOracle(address(oracle)), admin, guardian, bootstrapCap, supplyCap
+        );
     }
 
     function _mintFor(address who, uint256 assets) internal returns (uint256 out) {

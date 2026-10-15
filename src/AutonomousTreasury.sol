@@ -5,54 +5,93 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title  AutonomousTreasury
-/// @notice Holds the sUSD reserve inside an external ERC-4626 vault (for example sDAI, or a
-///         USDC lending vault) and reports its value.
+/// @notice Holds the sUSD reserve: an idle liquidity buffer of the reserve asset (USDC) in
+///         front of one external ERC-4626 vault (e.g. Aave v3 waBasUSDC), and reports its value.
 ///
-/// @dev    This contract is an *adapter* around an ERC-4626 vault. It does not issue shares
-///         of its own: sUSD holders are paid by redemption through the stabilizer.
+/// @dev    Adapter, not a vault. The treasury issues no shares; sUSD holders are paid by
+///         redemption through the stabilizer.
 ///
-///         Valuation is conservative: `reserveAssets()` is what the treasury would receive
-///         if it redeemed every vault share now (`previewRedeem`, which includes withdrawal
-///         fees), plus idle assets held directly. Pick vaults whose share price cannot be
-///         moved by donations (virtual shares or offset) and that have deep withdrawal
-///         liquidity. An external loss in the vault lowers `reserveAssets()`; the stabilizer
-///         then absorbs it with a negative rebase.
+///         Liquidity buffer. `liquidityBufferBps` of the reserve stays idle (0 yield), so
+///         redemptions are paid instantly even when the vault's withdrawable liquidity is
+///         exhausted (lending vaults cap `maxWithdraw` by unborrowed cash). Only the excess
+///         above the target is deposited, and never more than `maxDeposit` allows; a vault
+///         that refuses a deposit (paused, capped) leaves the funds idle instead of reverting.
+///         Withdrawals use idle funds first and check `maxWithdraw`, failing with
+///         `InsufficientLiquidity(available)` rather than an opaque vault error.
 ///
-///         Only the stabilizer can move funds out. Anyone can call `sweep()` to deposit idle
-///         assets (donations, rounding dust) into the vault, where they count as surplus.
+///         Valuation is conservative: `previewRedeem` of the vault shares plus idle funds.
+///         Prefer vaults whose share price cannot be inflated by donations and whose price
+///         realises losses (Aave static aTokens, MetaMorpho v1.0). Avoid vaults whose `max*`
+///         functions return 0 (Morpho Vault v2) and vaults that hide bad debt (MetaMorpho
+///         v1.1 `lostAssets`).
+///
+///         Emergencies and migration (driven by the stabilizer's roles):
+///         - `exitVault` sets the buffer to 100% and redeems everything the vault will pay now;
+///           it can be repeated as liquidity returns;
+///         - `migrateVault` moves to a new vault (behind the stabilizer's 7-day timelock). Shares
+///           the old vault cannot pay out are quarantined as `legacyVault`: they no longer
+///           count as reserve (the loss is absorbed pro rata), and anyone can call
+///           `recoverLegacy` later; recovered funds return as surplus. Nobody can take custody
+///           of them.
 contract AutonomousTreasury is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    /// @notice External ERC-4626 vault holding the reserve.
-    IERC4626 public immutable vault;
-    /// @notice Underlying collateral asset of the vault (e.g. USDC or DAI).
+    uint256 public constant MAX_BPS = 10_000;
+    /// @notice `rebalance` acts only when idle funds are this far (bps of reserve) off target.
+    uint256 public constant REBALANCE_TOLERANCE_BPS = 100;
+
+    /// @notice Reserve asset (USDC). Every vault must use it.
     IERC20 public immutable asset;
     /// @notice Account allowed to call `setStabilizer` exactly once.
     address public immutable deployer;
-    /// @notice The only account allowed to deposit or withdraw reserve.
+    /// @notice The only account allowed to move funds out or change settings.
     address public stabilizer;
 
+    /// @notice Current yield venue.
+    IERC4626 public vault;
+    /// @notice Target share of the reserve kept idle, in bps (10_000 = everything idle).
+    uint256 public liquidityBufferBps;
+    /// @notice Previous vault still holding shares that could not be redeemed at migration.
+    IERC4626 public legacyVault;
+
     event StabilizerSet(address indexed stabilizer);
-    event ReserveDeposited(uint256 assets, uint256 shares);
+    event ReserveDeposited(address indexed vault, uint256 assets, uint256 shares);
+    event DepositSkipped(address indexed vault, uint256 assets);
     event ReserveWithdrawn(address indexed to, uint256 assets);
+    event Rebalanced(uint256 idleBefore, uint256 idleAfter);
+    event LiquidityBufferSet(uint256 bps);
+    event VaultExited(address indexed vault, uint256 assetsRecovered, uint256 sharesLeft);
+    event VaultMigrated(address indexed oldVault, address indexed newVault, uint256 sharesQuarantined);
+    event LegacyRecovered(address indexed legacyVault, uint256 assetsRecovered, uint256 sharesLeft);
 
     error NotStabilizer();
     error NotDeployer();
     error StabilizerAlreadySet();
     error ZeroAddress();
+    error InvalidBuffer();
+    error AssetMismatch();
+    error SameVault();
+    error LegacyNotEmpty();
+    error NewVaultIsLegacy();
+    error InsufficientLiquidity(uint256 available);
 
     modifier onlyStabilizer() {
         if (msg.sender != stabilizer) revert NotStabilizer();
         _;
     }
 
-    constructor(IERC4626 vault_) {
+    /// @param vault_              ERC-4626 vault over the reserve asset.
+    /// @param liquidityBufferBps_ Share of the reserve kept idle (e.g. 1_500 = 15%).
+    constructor(IERC4626 vault_, uint256 liquidityBufferBps_) {
         if (address(vault_) == address(0)) revert ZeroAddress();
+        if (liquidityBufferBps_ > MAX_BPS) revert InvalidBuffer();
         vault = vault_;
         asset = IERC20(vault_.asset());
         deployer = msg.sender;
+        liquidityBufferBps = liquidityBufferBps_;
     }
 
     /// @notice Wire the stabilizer. Callable once by the deployer.
@@ -64,46 +103,145 @@ contract AutonomousTreasury is ReentrancyGuard {
         emit StabilizerSet(stabilizer_);
     }
 
-    /// @notice Deposit every idle asset into the vault. Permissionless.
-    /// @return shares Vault shares received.
-    function sweep() public nonReentrant returns (uint256 shares) {
-        shares = _depositIdle();
+    // ---------------------------------------------------------------------- permissionless
+
+    /// @notice Redeem quarantined shares of the previous vault as its liquidity returns.
+    ///         Only ever adds idle funds, so anyone may call it.
+    function recoverLegacy() external nonReentrant returns (uint256 recovered) {
+        IERC4626 legacy = legacyVault;
+        if (address(legacy) == address(0)) return 0;
+        uint256 shares = Math.min(legacy.balanceOf(address(this)), legacy.maxRedeem(address(this)));
+        if (shares > 0) recovered = legacy.redeem(shares, address(this), address(this));
+        uint256 left = legacy.balanceOf(address(this));
+        if (left == 0) legacyVault = IERC4626(address(0));
+        emit LegacyRecovered(address(legacy), recovered, left);
     }
 
-    /// @notice Deposit every idle asset into the vault (called by the stabilizer after it
-    ///         transfers a minter's collateral here).
+    // ---------------------------------------------------------------------- stabilizer only
+    //
+    // Every call that moves funds into or out of the vault can lose a wei or two to vault
+    // rounding, so they all go through the stabilizer, which re-syncs the index afterwards.
+
+    /// @notice Deposit idle funds above the buffer target (donations, fees) into the vault.
+    function sweep() external onlyStabilizer nonReentrant returns (uint256 shares) {
+        shares = _depositExcess();
+    }
+
+    /// @notice Move funds between idle and the vault toward the buffer target.
+    function rebalance() external onlyStabilizer nonReentrant {
+        uint256 reserve = reserveAssets();
+        uint256 idle = asset.balanceOf(address(this));
+        uint256 target = Math.mulDiv(reserve, liquidityBufferBps, MAX_BPS);
+        uint256 tol = Math.mulDiv(reserve, REBALANCE_TOLERANCE_BPS, MAX_BPS);
+        if (idle > target + tol) {
+            _depositExcess();
+        } else if (idle + tol < target) {
+            uint256 amount = Math.min(target - idle, vault.maxWithdraw(address(this)));
+            if (amount > 0) vault.withdraw(amount, address(this), address(this));
+        }
+        emit Rebalanced(idle, asset.balanceOf(address(this)));
+    }
+
+    /// @notice Deposit idle funds above the buffer target (called after a mint).
     function depositReserve() external onlyStabilizer nonReentrant returns (uint256 shares) {
-        shares = _depositIdle();
+        shares = _depositExcess();
     }
 
-    /// @notice Send `assets` of collateral to `to`, using idle balance first, then the vault.
+    /// @notice Send `assets` to `to`: idle funds first, then the vault within `maxWithdraw`.
     function withdrawReserve(uint256 assets, address to) external onlyStabilizer nonReentrant {
         if (to == address(0)) revert ZeroAddress();
         uint256 idle = asset.balanceOf(address(this));
         if (idle >= assets) {
             asset.safeTransfer(to, assets);
         } else {
+            uint256 need = assets - idle;
+            uint256 available = vault.maxWithdraw(address(this));
+            if (available < need) revert InsufficientLiquidity(idle + available);
             if (idle > 0) asset.safeTransfer(to, idle);
-            vault.withdraw(assets - idle, to, address(this));
+            vault.withdraw(need, to, address(this));
         }
         emit ReserveWithdrawn(to, assets);
     }
 
-    /// @notice Conservative value of the reserve in asset units.
+    /// @notice Set the idle buffer target (bps of reserve).
+    function setLiquidityBuffer(uint256 bps) external onlyStabilizer {
+        if (bps > MAX_BPS) revert InvalidBuffer();
+        liquidityBufferBps = bps;
+        emit LiquidityBufferSet(bps);
+    }
+
+    /// @notice Emergency: keep everything idle from now on and pull out what the vault pays.
+    function exitVault() external onlyStabilizer nonReentrant returns (uint256 recovered) {
+        liquidityBufferBps = MAX_BPS;
+        emit LiquidityBufferSet(MAX_BPS);
+        uint256 shares = Math.min(vault.balanceOf(address(this)), vault.maxRedeem(address(this)));
+        if (shares > 0) recovered = vault.redeem(shares, address(this), address(this));
+        emit VaultExited(address(vault), recovered, vault.balanceOf(address(this)));
+    }
+
+    /// @notice Switch to `newVault`. Shares the old vault cannot redeem now are quarantined.
+    function migrateVault(IERC4626 newVault) external onlyStabilizer nonReentrant {
+        if (address(newVault) == address(0)) revert ZeroAddress();
+        if (newVault.asset() != address(asset)) revert AssetMismatch();
+        IERC4626 old = vault;
+        if (address(newVault) == address(old)) revert SameVault();
+        if (address(newVault) == address(legacyVault)) revert NewVaultIsLegacy();
+
+        uint256 shares = old.balanceOf(address(this));
+        uint256 redeemable = Math.min(shares, old.maxRedeem(address(this)));
+        if (redeemable > 0) old.redeem(redeemable, address(this), address(this));
+        uint256 left = old.balanceOf(address(this));
+        if (left > 0) {
+            if (address(legacyVault) != address(0)) revert LegacyNotEmpty();
+            legacyVault = old;
+        }
+        asset.forceApprove(address(old), 0);
+        vault = newVault;
+        emit VaultMigrated(address(old), address(newVault), left);
+        _depositExcess();
+    }
+
+    // ---------------------------------------------------------------------- views
+
+    /// @notice Conservative reserve value in asset units: vault position + idle funds.
+    ///         Quarantined legacy shares are excluded.
     function reserveAssets() public view returns (uint256) {
-        return vault.previewRedeem(vault.balanceOf(address(this))) + asset.balanceOf(address(this));
+        uint256 shares = vault.balanceOf(address(this));
+        uint256 invested = shares == 0 ? 0 : vault.previewRedeem(shares);
+        return invested + asset.balanceOf(address(this));
     }
 
-    /// @notice Assets that can be paid out right now (vault withdrawal limit plus idle).
+    /// @notice Assets payable right now: idle funds + what the vault lets us withdraw.
     function liquidAssets() external view returns (uint256) {
-        return vault.maxWithdraw(address(this)) + asset.balanceOf(address(this));
+        return asset.balanceOf(address(this)) + vault.maxWithdraw(address(this));
     }
 
-    function _depositIdle() private returns (uint256 shares) {
+    /// @notice Idle funds held directly.
+    function idleAssets() external view returns (uint256) {
+        return asset.balanceOf(address(this));
+    }
+
+    /// @notice Idle target implied by the buffer setting.
+    function targetIdle() external view returns (uint256) {
+        return Math.mulDiv(reserveAssets(), liquidityBufferBps, MAX_BPS);
+    }
+
+    // ---------------------------------------------------------------------- internals
+
+    function _depositExcess() private returns (uint256 shares) {
         uint256 idle = asset.balanceOf(address(this));
-        if (idle == 0) return 0;
-        asset.forceApprove(address(vault), idle);
-        shares = vault.deposit(idle, address(this));
-        emit ReserveDeposited(idle, shares);
+        uint256 target = Math.mulDiv(reserveAssets(), liquidityBufferBps, MAX_BPS);
+        if (idle <= target) return 0;
+        IERC4626 v = vault;
+        uint256 amount = Math.min(idle - target, v.maxDeposit(address(this)));
+        if (amount == 0) return 0;
+        asset.forceApprove(address(v), amount);
+        try v.deposit(amount, address(this)) returns (uint256 s) {
+            shares = s;
+            emit ReserveDeposited(address(v), amount, s);
+        } catch {
+            asset.forceApprove(address(v), 0);
+            emit DepositSkipped(address(v), amount);
+        }
     }
 }

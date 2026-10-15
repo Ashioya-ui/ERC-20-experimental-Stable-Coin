@@ -10,7 +10,7 @@ env:
 
 jobs:
   forge:
-    name: Foundry build and tests
+    name: Foundry build, tests and mainnet rehearsal
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,5 +24,18 @@ jobs:
       - name: Build (sizes)
         run: forge build --sizes
 
-      - name: Test (10k fuzz runs, invariants 1,024 x 256)
+      - name: Test (10k fuzz runs, invariants 1,024 x 256; Base fork scenarios if the secret is set)
+        env:
+          BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}
         run: forge test -vv
+
+      - name: Mainnet rehearsal on anvil
+        env:
+          FOUNDRY_PROFILE: default
+        run: script/rehearsal/run.sh
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rehearsal-log
+          path: rehearsal/latest.log

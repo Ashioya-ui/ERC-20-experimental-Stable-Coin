@@ -36,8 +36,10 @@ contract StabilizerHarness is SpectralStabilizer {
         AutonomousTreasury treasury_,
         ISpectralEntropyOracle oracle_,
         address admin,
-        uint256 bootstrapCap_
-    ) SpectralStabilizer(token_, treasury_, oracle_, admin, bootstrapCap_) {}
+        address guardian,
+        uint256 bootstrapCap_,
+        uint256 supplyCap_
+    ) SpectralStabilizer(token_, treasury_, oracle_, admin, guardian, bootstrapCap_, supplyCap_) {}
 
     function exposedChurnAfter(uint256 oldIndex, uint256 newIndex)
         external

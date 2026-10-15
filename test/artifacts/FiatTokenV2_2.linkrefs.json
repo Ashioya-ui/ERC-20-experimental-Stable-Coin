@@ -1,0 +1,8 @@
+{
+  "library": "contracts/util/SignatureChecker.sol:SignatureChecker",
+  "placeholder": "__$715109b5d747ea58b675c6ea3f0dba8c60$__",
+  "byteOffsets": [
+    18494,
+    20209
+  ]
+}

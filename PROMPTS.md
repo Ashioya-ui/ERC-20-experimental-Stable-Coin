@@ -8,6 +8,18 @@ capable coding agent. **Phase 1 is already implemented in this repository.** Its
 is the spec of record and matches the code, so an auditor, or an agent regenerating the code,
 works from the same text.
 
+**Status, 2026-10-16.**
+- **Done:** Phase 1, and the deployment half of Phase 3, for Base mainnet as a guarded launch
+  (`RUNBOOK_MAINNET.md`, `make deploy-base-mainnet`). It follows the October 2026 research
+  report:
+  - reserve in Aave waBasUSDC behind a 15% idle USDC buffer, with Gauntlet USDC Prime as the
+    fallback;
+  - a static 1 bp pool fee;
+  - x402 payments taken in USDC through the CDP facilitator;
+  - a 25,000 sUSD supply cap;
+  - a Safe as admin.
+- **Still open:** Phase 2 (self-hosted sUSD facilitator) and the Phase 3 SDK.
+
 Facts that change over time are marked *(verified 2026-10-15)*: addresses, SDK versions, header
 names. Re-verify them before any deployment. Sources are listed at the end.
 
@@ -337,7 +349,8 @@ packaging, LangChain / LlamaIndex / AutoGen tool interfaces).
 GOAL
 Deploy the Phase 1 contracts to Base Sepolia (chain 84532), verify them, wire the Phase 2
 facilitator and server to the deployment, and ship a Python SDK that lets agents pay x402
-endpoints in sUSD. Mainnet is OUT OF SCOPE until an external audit is complete.
+endpoints in sUSD. Mainnet only as a guarded launch: a supply cap, a Safe as admin, and a
+timelocked vault migration. Get an external audit before raising caps far.
 
 1. script/DeploySpectrum.s.sol (reads config/<chainId>.json; refuses unknown chain ids)
    Config: poolManager, usdc, vault (or deployMockVault: true on testnets only), admin (Safe),

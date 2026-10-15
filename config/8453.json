@@ -1,0 +1,32 @@
+{
+  "chainId": 8453,
+  "network": "base",
+  "notes": "Addresses verified 2026-10-15 (see RUNBOOK_MAINNET.md, Sources). Set roles.admin to your Safe before deploying; the script refuses a zero or EOA admin.",
+  "external": {
+    "poolManager": "0x498581fF718922c3f8e6A244956aF099B2652b2b",
+    "positionManager": "0x7C5f5A4bBd8fD63184577525326123B519429bDc",
+    "stateView": "0xA3c0c9b65baD0b08107Aa264b0f3dB444b867A71",
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "vault": "0xC768c589647798a6EE01A91FdE98EF2ed046DBD6",
+    "vaultName": "Aave v3 Base USDC static aToken (waBasUSDC, StataTokenV2)",
+    "fallbackVault": "0xeE8F4eC5672F09119b96Ab6fB59C27E1b7e44b61",
+    "fallbackVaultName": "Gauntlet USDC Prime (MetaMorpho v1.0)"
+  },
+  "roles": {
+    "admin": "0x0000000000000000000000000000000000000000",
+    "guardian": "0x0000000000000000000000000000000000000000",
+    "allowEoaAdmin": false
+  },
+  "params": {
+    "poolFeePips": 100,
+    "tickSpacing": 1,
+    "minObservationWsUSD": 10,
+    "emaAlphaBps": 2500,
+    "staleAfterSeconds": 3600,
+    "bootstrapCapSUSD": 10000,
+    "supplyCapSUSD": 25000,
+    "liquidityBufferBps": 1500,
+    "seedUSDC": 2
+  }
+}
