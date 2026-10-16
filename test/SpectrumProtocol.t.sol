@@ -43,6 +43,7 @@ import {MockUSDC} from "./mocks/MockUSDC.sol";
 import {MockVault} from "./mocks/MockVault.sol";
 import {MockOracle} from "./mocks/MockOracle.sol";
 import {MockERC1271Wallet} from "./mocks/MockERC1271Wallet.sol";
+import {RoundTripper} from "./mocks/RoundTripper.sol";
 import {MathHarness, StabilizerHarness} from "./mocks/Harnesses.sol";
 import {StabilizerHandler} from "./handlers/StabilizerHandler.sol";
 import {SpectrumFixture} from "./utils/SpectrumFixture.sol";
@@ -1020,6 +1021,50 @@ contract SpectralStabilizerTest is SpectrumFixture {
         vm.stopPrank();
     }
 
+    /// A1: a mint-and-redeem round trip in one transaction (flash-loan funded) must not use up
+    /// the epoch's mint capacity. The cap limits net growth, not gross flow.
+    function test_mint_roundTripLeavesCapacityUnchanged() public {
+        bootstrapCap = 10_000e18;
+        _deploySystem();
+        oracle.setEntropy(0); // minimum fees: the cheapest griefing case
+        _mintFor(alice, 100e6);
+        uint256 capacityBefore = stabilizer.expansionRemaining();
+
+        RoundTripper rt = new RoundTripper();
+        uint256 assets = (capacityBefore * 10_000) / 9_999 / SCALE; // fills the cap after the 1 bp fee
+        usdc.mint(address(rt), assets);
+        rt.run(usdc, stabilizer, token, assets);
+
+        assertEq(token.balanceOf(address(rt)), 0, "round trip completed");
+        assertEq(stabilizer.expansionRemaining(), capacityBefore, "capacity restored");
+        assertEq(_mintFor(bob, 100e6), 99.99e18, "other minters are not blocked");
+    }
+
+    /// A1: net growth from minting within one epoch never exceeds the cap, whatever the
+    /// order of mints and redemptions.
+    function testFuzz_netGrowthPerEpochStaysCapped(uint64[8] memory amounts, bool[8] memory isMint) public {
+        bootstrapCap = 10_000e18;
+        _deploySystem();
+        _mintFor(alice, 5_000e6);
+        vm.warp(vm.getBlockTimestamp() + 1 days); // fresh epoch, starting supply ~5,000
+        _mintFor(alice, 1e6); // rolls the epoch
+        uint256 start = token.totalSupply();
+        for (uint256 i; i < 8; ++i) {
+            if (isMint[i]) {
+                uint256 room = stabilizer.expansionRemaining() / SCALE;
+                if (room < 2e6) continue;
+                _mintFor(bob, bound(amounts[i], 1e6, room));
+            } else {
+                uint256 bal = token.balanceOf(bob);
+                if (bal < stabilizer.MIN_AMOUNT()) continue;
+                _redeemFor(bob, bound(amounts[i], stabilizer.MIN_AMOUNT(), bal));
+            }
+            uint256 supply = token.totalSupply();
+            if (supply > start) assertLe(supply - start, 10_000e18, "net growth within the cap");
+            assertLe(stabilizer.mintedInEpoch(), 10_000e18);
+        }
+    }
+
     function test_mint_capScalesWithSupplyAndEntropy() public {
         bootstrapCap = 1_000e18;
         _deploySystem();
@@ -1616,6 +1661,8 @@ contract SpectrumInvariantTest is SpectrumFixture {
         assertEq(handler.ghostChurnViolations(), 0);
     }
 
+    /// Net minting in the epoch (mints minus redemptions, floored at 0) never exceeds the cap
+    /// (A1: redemptions free capacity, so round trips cannot exhaust it).
     function invariant_expansionWithinCap() public view {
         if (block.timestamp >= uint256(stabilizer.epochStart()) + stabilizer.EPOCH()) return;
         uint256 cap = stabilizer.epochSupply() * 20 / 100;

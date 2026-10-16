@@ -80,8 +80,10 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
     uint256 public constant REDEEM_FEE_MIN = 0.0001e18;
     uint256 public constant REDEEM_FEE_MAX = 0.0010e18;
 
-    /// @notice Gross minting allowed per epoch, as a fraction of supply at the start of the
-    ///         epoch: 20% at h = 0 down to 2% at h = 1 (redemptions do not free capacity).
+    /// @notice Net minting allowed per epoch (sUSD minted minus sUSD redeemed in the epoch,
+    ///         floored at zero), as a fraction of supply at the start of the epoch: 20% at
+    ///         h = 0 down to 2% at h = 1. Counting net flow means a mint-and-redeem round trip
+    ///         in one transaction cannot use up other users' capacity (Phase 4, A1).
     uint256 public constant EPOCH = 1 days;
     uint256 public constant EXPANSION_CAP_LOW_H = 0.20e18;
     uint256 public constant EXPANSION_CAP_HIGH_H = 0.02e18;
@@ -269,6 +271,7 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
         if (assetsOut < minAssetsOut) revert Slippage();
 
         token.burn(msg.sender, amount);
+        _releaseExpansion(amount);
         treasury.withdrawReserve(assetsOut, receiver);
         _assertSolvent();
         emit Redeemed(msg.sender, receiver, amount, assetsOut, fee, h);
@@ -492,6 +495,14 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
         (uint256 cap, uint256 used) = _epochState(h);
         if (used + out > cap) revert ExpansionCapExceeded(cap > used ? cap - used : 0);
         mintedInEpoch = used + out;
+    }
+
+    /// @dev Redemptions in the current epoch free the capacity they return (floored at 0).
+    ///      After the epoch has ended there is nothing to free: the next mint starts a new one.
+    function _releaseExpansion(uint256 amount) internal {
+        if (block.timestamp >= uint256(epochStart) + EPOCH) return;
+        uint256 used = mintedInEpoch;
+        mintedInEpoch = used > amount ? used - amount : 0;
     }
 
     function _epochState(uint256 h) internal view returns (uint256 cap, uint256 used) {
