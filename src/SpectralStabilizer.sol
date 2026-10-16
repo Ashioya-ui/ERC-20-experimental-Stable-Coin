@@ -125,9 +125,16 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
     /// @notice Largest allowlist the constructor accepts.
     uint256 public constant MAX_ALLOWED_VAULTS = 4;
 
-    /// @notice Smallest mint (credited value) or redemption, in sUSD wei. Keeps rounding of
-    ///         the reserve asset (for USDC, 1 wei = 1e12 sUSD wei) below the fee floor.
-    uint256 public constant MIN_AMOUNT = 1e18;
+    /// @notice Smallest mint (credited value) or partial redemption, in sUSD wei.
+    /// @dev    Derived, not round (Phase 4, A7). The worst case the minimum has to cover is one
+    ///         wei of the reserve asset lost to vault rounding, which is `scale` sUSD wei
+    ///         (1e12 for USDC). The minimum fee rate is REDEEM_FEE_MIN = 1 bp, so a redemption
+    ///         of `a` pays at least `a / 10_000`; requiring that to reach `scale` gives
+    ///         `a >= 10_000 * scale`, i.e. 0.01 sUSD for USDC. `minAmount()` computes it from
+    ///         `scale`; MIN_AMOUNT is the USDC value and stays as the documented constant.
+    ///         A holder whose whole balance is below the minimum can still exit in full
+    ///         (`redeem` with their exact balance or the max sentinel), so no dust is trapped.
+    uint256 public constant MIN_AMOUNT = 0.01e18;
 
     // ---------------------------------------------------------------------- immutables
 
@@ -285,7 +292,7 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         treasury.depositReserve();
         uint256 afterValue = treasury.reserveAssets();
         uint256 credited = afterValue > before ? (afterValue - before) * scale : 0;
-        if (credited < MIN_AMOUNT) revert AmountTooSmall();
+        if (credited < minAmount()) revert AmountTooSmall();
 
         uint256 fee = Math.mulDiv(credited, mintFeeRate(h), WAD, Math.Rounding.Ceil);
         out = credited - fee;
@@ -305,7 +312,8 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
     ///         `AutonomousTreasury.InsufficientLiquidity(available)`; check
     ///         `treasury.liquidAssets()` and redeem a smaller amount.
     /// @param  amount       sUSD to burn; type(uint256).max redeems the caller's whole balance
-    ///                      after any pending loss has been absorbed.
+    ///                      after any pending loss has been absorbed. A full exit is allowed
+    ///                      below `minAmount()`; a partial one is not (Phase 4, A7).
     /// @param  minAssetsOut Minimum collateral to receive.
     function redeem(uint256 amount, address receiver, uint256 minAssetsOut)
         external
@@ -314,12 +322,14 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
     {
         if (receiver == address(0)) revert ZeroAddress();
         _syncLoss();
-        if (amount == type(uint256).max) amount = token.balanceOf(msg.sender);
-        if (amount < MIN_AMOUNT) revert AmountTooSmall();
+        uint256 balance = token.balanceOf(msg.sender);
+        if (amount == type(uint256).max) amount = balance;
+        if (amount < minAmount() && amount != balance) revert AmountTooSmall();
         uint256 h = oracle.smoothedEntropy();
 
         uint256 fee = Math.mulDiv(amount, redeemFeeRate(h), WAD, Math.Rounding.Ceil);
         assetsOut = (amount - fee) / scale;
+        if (assetsOut == 0) revert AmountTooSmall(); // nothing to pay out
         if (assetsOut < minAssetsOut) revert Slippage();
 
         token.burn(msg.sender, amount);
@@ -480,6 +490,13 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
     }
 
     // ---------------------------------------------------------------------- views
+
+    /// @notice Smallest mint or partial redemption for this reserve asset, in sUSD wei:
+    ///         `10_000 * scale`, the amount at which the 1 bp minimum fee still covers one wei
+    ///         of vault rounding. 0.01 sUSD for a 6-decimal asset (Phase 4, A7).
+    function minAmount() public view returns (uint256) {
+        return 10_000 * scale;
+    }
 
     /// @notice Conservative reserve value in sUSD wei.
     function reserveValue() public view returns (uint256) {

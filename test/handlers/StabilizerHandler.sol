@@ -103,7 +103,7 @@ contract StabilizerHandler is Test {
         uint256 bal = token.balanceOf(a);
         fractionBps = bound(fractionBps, 1, 10_000);
         uint256 amount = fractionBps == 10_000 ? bal : (bal * fractionBps) / 10_000;
-        if (amount < stabilizer.MIN_AMOUNT()) return;
+        if (amount < stabilizer.minAmount()) return;
         uint256 before = usdc.balanceOf(a);
         vm.prank(a);
         try stabilizer.redeem(amount, a, 0) {

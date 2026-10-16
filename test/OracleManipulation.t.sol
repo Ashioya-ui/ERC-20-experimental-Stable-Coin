@@ -37,6 +37,9 @@ contract OracleManipulationTest is Deployers {
     uint160 internal constant FLAGS = uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.AFTER_SWAP_FLAG);
     uint256 internal constant DUST = 10e18; // mainnet setting: 10 wsUSD
     uint256 internal constant BLOCK_TIME = 2; // Base
+    /// @dev How long an attacker is allowed to keep trying. Each block is a transaction under
+    ///      `--isolate`, so this also keeps the measurement inside one test's gas budget.
+    uint256 internal constant MAX_BLOCKS = 150;
 
     MockUSDC internal usdc;
     MockVault internal vault;
@@ -159,7 +162,7 @@ contract OracleManipulationTest is Deployers {
     // ------------------------------------------------------------------ measurements
 
     function test_measureCostToDriveEntropyLow() public {
-        (uint256 blocksUsed, uint256 gasUsed, uint256 volume) = _pushLow(400);
+        (uint256 blocksUsed, uint256 gasUsed, uint256 volume) = _pushLow(MAX_BLOCKS);
         emit log_named_uint("low: blocks", blocksUsed);
         emit log_named_uint("low: seconds", blocksUsed * BLOCK_TIME);
         emit log_named_uint("low: wsUSD traded (wei)", volume);
@@ -171,7 +174,7 @@ contract OracleManipulationTest is Deployers {
     }
 
     function test_measureCostToDriveEntropyHigh() public {
-        (uint256 blocksUsed, uint256 gasUsed, uint256 volume) = _pushHigh(400);
+        (uint256 blocksUsed, uint256 gasUsed, uint256 volume) = _pushHigh(MAX_BLOCKS);
         emit log_named_uint("high: blocks", blocksUsed);
         emit log_named_uint("high: seconds", blocksUsed * BLOCK_TIME);
         emit log_named_uint("high: wsUSD traded (wei)", volume);
@@ -213,9 +216,9 @@ contract OracleManipulationTest is Deployers {
 
     /// A6: packing the same flow into consecutive blocks is far weaker than spacing it out.
     function test_packedFlowMovesEntropyFarLessThanPatientFlow() public {
-        (, , uint256 volume) = _pushLow(200);
+        (,, uint256 volume) = _pushLow(MAX_BLOCKS);
         uint256 packedH = oracle.smoothedEntropy();
-        assertGt(packedH, 0.3e18, "200 packed blocks leave H near neutral");
+        assertGt(packedH, 0.3e18, "packing blocks leaves H near neutral");
         assertGt(volume, 0, "flow happened");
     }
 

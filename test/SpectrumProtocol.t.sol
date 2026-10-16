@@ -16,9 +16,11 @@ pragma solidity ^0.8.26;
 // =====================================================================================
 
 import {Test} from "forge-std/Test.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {Deployers} from "v4-core/test/utils/Deployers.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
@@ -42,6 +44,7 @@ import {MockUSDC} from "./mocks/MockUSDC.sol";
 import {MockVault} from "./mocks/MockVault.sol";
 import {MockOracle} from "./mocks/MockOracle.sol";
 import {MockERC1271Wallet} from "./mocks/MockERC1271Wallet.sol";
+import {OracleGasMeter} from "./mocks/OracleGasMeter.sol";
 import {RoundTripper} from "./mocks/RoundTripper.sol";
 import {MathHarness, StabilizerHarness} from "./mocks/Harnesses.sol";
 import {StabilizerHandler} from "./handlers/StabilizerHandler.sol";
@@ -473,16 +476,27 @@ contract SpectralEntropyOracleTest is Test {
 
     /// Worst case for the hook's oracle call: a window close (full entropy computation)
     /// with every storage slot cold. Documents the gas a swap must budget.
+    /// A8: the worst case for the hook's oracle call is a window close (a full entropy
+    /// computation) with every storage slot cold. Measured from inside a contract call, as the
+    /// hook pays it, and with a budget that holds in both normal and `--isolate` runs; the test
+    /// used to fail under `--isolate`, which is what `--gas-report` turns on. The two modes
+    /// still report different numbers, because isolation re-frames each top-level call as its
+    /// own transaction; both are logged and recorded in REPORT_PHASE4.md.
     function test_record_worstCaseGasFitsHookBudget() public {
+        OracleGasMeter meter = OracleGasMeter(vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1));
+        SpectralEntropyOracle o = new SpectralEntropyOracle(address(meter), DUST, ALPHA, TAU, STALE);
+        new OracleGasMeter(o);
+
         for (uint256 b = 101; b <= 108; ++b) {
-            _recordAt(b, (b * 37 + 11) * 1e18);
+            vm.roll(b);
+            vm.warp(T0 + 2 * (b - 100));
+            meter.record(int256((b * 37 + 11) * 1e18));
         }
         vm.roll(109);
-        vm.cool(address(oracle));
-        vm.prank(hook);
-        uint256 g = gasleft();
-        oracle.record(int256(123e18));
-        uint256 used = g - gasleft();
+        vm.warp(T0 + 20);
+        vm.cool(address(o));
+        meter.record(int256(123e18));
+        uint256 used = meter.lastGas();
         emit log_named_uint("record() closing a window, cold storage (gas)", used);
         assertLt(used, 70_000, "oracle write stays cheap");
     }
@@ -1086,7 +1100,7 @@ contract SpectralStabilizerTest is SpectrumFixture {
         vm.startPrank(alice);
         usdc.approve(address(stabilizer), type(uint256).max);
         vm.expectRevert(SpectralStabilizer.AmountTooSmall.selector);
-        stabilizer.mint(0.5e6, alice, 0);
+        stabilizer.mint(0.005e6, alice, 0);
         vm.expectRevert(SpectralStabilizer.Slippage.selector);
         stabilizer.mint(1_000e6, alice, 999.95e18);
         vm.expectRevert(SpectralStabilizer.ZeroAddress.selector);
@@ -1147,8 +1161,8 @@ contract SpectralStabilizerTest is SpectrumFixture {
                 _mintFor(bob, bound(amounts[i], 1e6, room));
             } else {
                 uint256 bal = token.balanceOf(bob);
-                if (bal < stabilizer.MIN_AMOUNT()) continue;
-                _redeemFor(bob, bound(amounts[i], stabilizer.MIN_AMOUNT(), bal));
+                if (bal < stabilizer.minAmount()) continue;
+                _redeemFor(bob, bound(amounts[i], stabilizer.minAmount(), bal));
             }
             uint256 supply = token.totalSupply();
             if (supply > start) assertLe(supply - start, 10_000e18, "net growth within the cap");
@@ -1189,7 +1203,7 @@ contract SpectralStabilizerTest is SpectrumFixture {
         _mintFor(alice, 1_000e6);
         vm.startPrank(alice);
         vm.expectRevert(SpectralStabilizer.AmountTooSmall.selector);
-        stabilizer.redeem(0.5e18, alice, 0);
+        stabilizer.redeem(0.005e18, alice, 0);
         vm.expectRevert(SpectralStabilizer.Slippage.selector);
         stabilizer.redeem(100e18, alice, 100e6);
         vm.expectRevert(SpectralToken.InsufficientBalance.selector);
@@ -1203,6 +1217,31 @@ contract SpectralStabilizerTest is SpectrumFixture {
         assertEq(token.totalSupply(), 0);
         // mint fee 0.1 + redemption fee ceil(999.9 * 1 bp) = 0.09999
         assertEq(stabilizer.reserveValue(), 0.19999e18, "both fees remain");
+    }
+
+    /// A7: the minimum is derived from vault rounding, and a holder below it can still exit in
+    /// full, so no balance is ever trapped.
+    function test_minimumIsDerivedAndDustCanStillExit() public {
+        assertEq(stabilizer.minAmount(), 10_000 * SCALE, "10,000 x one wei of USDC");
+        assertEq(stabilizer.minAmount(), 0.01e18);
+        // At the minimum the 1 bp fee still covers one wei of vault rounding.
+        uint256 feeAtMin = Math.mulDiv(stabilizer.minAmount(), stabilizer.REDEEM_FEE_MIN(), 1e18, Math.Rounding.Ceil);
+        assertGe(feeAtMin, SCALE, "fee >= worst-case rounding");
+
+        _mintFor(alice, 1_000e6);
+        vm.startPrank(alice);
+        stabilizer.redeem(token.balanceOf(alice) - 0.005e18, alice, 0); // leave dust behind
+        uint256 dust = token.balanceOf(alice);
+        assertLt(dust, stabilizer.minAmount(), "below the minimum");
+        assertGt(dust, 0);
+
+        vm.expectRevert(SpectralStabilizer.AmountTooSmall.selector); // a partial redemption is not allowed
+        stabilizer.redeem(dust / 2, alice, 0);
+        uint256 out = stabilizer.redeem(type(uint256).max, alice, 0); // the whole balance is
+        vm.stopPrank();
+        assertGt(out, 0);
+        assertEq(token.balanceOf(alice), 0, "dust is not trapped");
+        _assertSolvent();
     }
 
     function test_redeem_illiquidVaultRevertsCleanly() public {
@@ -1633,7 +1672,9 @@ contract SpectralHookTest is Deployers {
         (bytes4 sel,) =
             hook.afterSwap{gas: 300_000}(address(this), key, sp, toBalanceDelta(-100e18, 99e18), ZERO_BYTES);
         assertEq(sel, IHooks.afterSwap.selector);
-        assertEq(oracle.window()[7], 100e18);
+        // The measured leg is whichever currency wsUSD happens to be in this deployment.
+        uint256 measured = Currency.unwrap(key.currency0) == address(wsusd) ? 100e18 : 99e18;
+        assertEq(oracle.window()[7], measured);
     }
 
     // ------------------------------------------------------------------ data flow
@@ -1763,7 +1804,7 @@ contract SpectrumInvariantTest is SpectrumFixture {
         uint256 owed;
         for (uint256 i; i < handler.actorCount(); ++i) {
             uint256 bal = token.balanceOf(handler.actors(i));
-            if (bal >= stabilizer.MIN_AMOUNT()) {
+            if (bal >= stabilizer.minAmount()) {
                 (uint256 assetsOut,) = stabilizer.quoteRedeem(bal);
                 owed += assetsOut;
             }
@@ -1810,13 +1851,13 @@ contract SpectrumInvariantTest is SpectrumFixture {
         for (uint256 i; i < handler.actorCount(); ++i) {
             address a = handler.actors(i);
             uint256 bal = token.balanceOf(a);
-            if (bal >= stabilizer.MIN_AMOUNT() + 1) {
+            if (bal >= stabilizer.minAmount() + 1) {
                 vm.prank(a);
                 stabilizer.redeem(i == 0 ? type(uint256).max : bal, a, 0); // also exercise "redeem all"
             }
         }
         assertGe(stabilizer.reserveValue(), token.totalSupply(), "floor after a bank run");
-        assertLt(token.totalSupply(), handler.actorCount() * stabilizer.MIN_AMOUNT(), "only dust left");
+        assertLt(token.totalSupply(), handler.actorCount() * stabilizer.minAmount(), "only dust left");
         emit log_named_uint("mints", handler.ghostMints());
         emit log_named_uint("redeems", handler.ghostRedeems());
         emit log_named_uint("rebases", handler.ghostRebases());

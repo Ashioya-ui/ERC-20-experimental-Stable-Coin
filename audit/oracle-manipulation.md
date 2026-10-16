@@ -40,12 +40,13 @@ Three changes:
 
 | Attack | Blocks | Wall time | wsUSD traded | LP fees | Resulting H |
 |---|---|---|---|---|---|
-| Packed, towards 0 | 400 (gave up) | 13 min | 4,000 | 0.40 | 0.401 |
-| Packed, towards 1 | 400 (gave up) | 13 min | 103,500 | 10.35 | 0.463 |
+| Packed, towards 0 | 150 (gave up) | 5 min | 1,500 | 0.15 | 0.460 |
+| Packed, towards 1 | 150 (gave up) | 5 min | 39,310 | 3.93 | 0.529 |
 | Patient, towards 0 | 9 folds | **24 h** | 810 | 0.081 | 0.0487 |
 
-Packing no longer works: 13 minutes of solid trading moves H by about 0.1 and then stalls,
-because every extra fold inside the hour is worth almost nothing.
+Packing no longer works. The loop gives up after 150 blocks (it is bounded so the test also
+runs under `--isolate`); an earlier 400-block run reached only 0.401 towards 0 and 0.463
+towards 1, because every extra fold inside the hour is worth almost nothing.
 
 ## The residual: the patient attacker
 

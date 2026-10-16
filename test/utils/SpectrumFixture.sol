@@ -45,9 +45,11 @@ abstract contract SpectrumFixture is Test {
         treasury = new AutonomousTreasury(IERC4626(address(vault)), liquidityBufferBps, stabilizerAt);
         token = new SpectralToken(stabilizerAt);
         oracle = new MockOracle();
-        oracle.setEntropy(0);
         stabilizer = _newStabilizer();
         require(address(stabilizer) == stabilizerAt, "fixture: stabilizer address prediction");
+        // After the four creations: an interleaved call would shift the nonce under --isolate,
+        // where every top-level call is its own transaction.
+        oracle.setEntropy(0);
     }
 
     /// @dev Vaults the stabilizer will allow. Tests that migrate add their second vault here
