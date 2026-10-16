@@ -36,7 +36,7 @@ jobs:
       - name: Gas snapshot unchanged
         env:
           FOUNDRY_PROFILE: default
-        run: forge snapshot --check --tolerance 1
+        run: forge snapshot --check --tolerance 1 --no-match-contract "Invariant|BaseMainnetFork"
       - name: Mainnet rehearsal on anvil (exact mainnet script + runbook commands)
         env:
           FOUNDRY_PROFILE: default

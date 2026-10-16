@@ -94,7 +94,7 @@ contract SpectralEntropyOracle is ISpectralEntropyOracle {
     /// @inheritdoc ISpectralEntropyOracle
     function record(int256 amount) external override {
         if (msg.sender != hook) revert NotHook();
-        uint256 size = amount < 0 ? uint256(-amount) : uint256(amount);
+        uint256 size = _abs(amount);
         if (size < minObservation || size == 0) {
             emit DustIgnored(amount);
             return;
@@ -133,9 +133,16 @@ contract SpectralEntropyOracle is ISpectralEntropyOracle {
 
     /// @dev |net| clamped into uint128.
     function _saturate(int256 net) private pure returns (uint128) {
-        uint256 m = net < 0 ? uint256(-net) : uint256(net);
+        uint256 m = _abs(net);
         // forge-lint: disable-next-line(unsafe-typecast)
         return m > type(uint128).max ? type(uint128).max : uint128(m);
+    }
+
+    /// @dev |v|. Reverts on type(int256).min, which no swap delta can reach: the hook widens
+    ///      an int128, and a block's net is the sum of such values.
+    function _abs(int256 v) private pure returns (uint256) {
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return v < 0 ? uint256(-v) : uint256(v);
     }
 
     // ----------------------------------------------------------------------- read

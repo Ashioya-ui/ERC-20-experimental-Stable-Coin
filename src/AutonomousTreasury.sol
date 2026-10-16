@@ -4,7 +4,7 @@ pragma solidity ^0.8.26;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title  AutonomousTreasury
@@ -36,7 +36,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///           count as reserve (the loss is absorbed pro rata), and anyone can call
 ///           `recoverLegacy` later; recovered funds return as surplus. Nobody can take custody
 ///           of them.
-contract AutonomousTreasury is ReentrancyGuard {
+contract AutonomousTreasury is ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
     uint256 public constant MAX_BPS = 10_000;
@@ -115,32 +115,48 @@ contract AutonomousTreasury is ReentrancyGuard {
     // rounding, so they all go through the stabilizer, which re-syncs the index afterwards.
 
     /// @notice Deposit idle funds above the buffer target (donations, fees) into the vault.
-    function sweep() external onlyStabilizer nonReentrant returns (uint256 shares) {
-        shares = _depositExcess();
+    /// @return shares       Vault shares received.
+    /// @return reserveAfter Reserve value afterwards, in asset units. Returned so the caller
+    ///                      does not have to value the reserve again (Phase 4, B1).
+    function sweep() external onlyStabilizer nonReentrant returns (uint256 shares, uint256 reserveAfter) {
+        (shares, reserveAfter) = _depositExcess();
     }
 
     /// @notice Move funds between idle and the vault toward the buffer target.
-    function rebalance() external onlyStabilizer nonReentrant {
+    /// @return reserveAfter Reserve value afterwards, in asset units.
+    function rebalance() external onlyStabilizer nonReentrant returns (uint256 reserveAfter) {
         uint256 reserve = reserveAssets();
         uint256 idle = asset.balanceOf(address(this));
         uint256 target = Math.mulDiv(reserve, liquidityBufferBps, MAX_BPS);
         uint256 tol = Math.mulDiv(reserve, REBALANCE_TOLERANCE_BPS, MAX_BPS);
+        reserveAfter = reserve;
         if (idle > target + tol) {
-            _depositExcess();
+            (, reserveAfter) = _depositExcess();
         } else if (idle + tol < target) {
             uint256 amount = Math.min(target - idle, vault.maxWithdraw(address(this)));
-            if (amount > 0) vault.withdraw(amount, address(this), address(this));
+            if (amount > 0) {
+                vault.withdraw(amount, address(this), address(this));
+                reserveAfter = reserveAssets();
+            }
         }
         emit Rebalanced(idle, asset.balanceOf(address(this)));
     }
 
     /// @notice Deposit idle funds above the buffer target (called after a mint).
-    function depositReserve() external onlyStabilizer nonReentrant returns (uint256 shares) {
-        shares = _depositExcess();
+    /// @return shares       Vault shares received.
+    /// @return reserveAfter Reserve value afterwards, in asset units.
+    function depositReserve() external onlyStabilizer nonReentrant returns (uint256 shares, uint256 reserveAfter) {
+        (shares, reserveAfter) = _depositExcess();
     }
 
     /// @notice Send `assets` to `to`: idle funds first, then the vault within `maxWithdraw`.
-    function withdrawReserve(uint256 assets, address to) external onlyStabilizer nonReentrant {
+    /// @return reserveAfter Reserve value afterwards, in asset units.
+    function withdrawReserve(uint256 assets, address to)
+        external
+        onlyStabilizer
+        nonReentrant
+        returns (uint256 reserveAfter)
+    {
         if (to == address(0)) revert ZeroAddress();
         uint256 idle = asset.balanceOf(address(this));
         if (idle >= assets) {
@@ -153,6 +169,7 @@ contract AutonomousTreasury is ReentrancyGuard {
             vault.withdraw(need, to, address(this));
         }
         emit ReserveWithdrawn(to, assets);
+        reserveAfter = reserveAssets();
     }
 
     /// @notice Set the idle buffer target (bps of reserve).
@@ -164,6 +181,7 @@ contract AutonomousTreasury is ReentrancyGuard {
 
     /// @notice Emergency: keep everything idle from now on and pull out what the vault pays.
     function exitVault() external onlyStabilizer nonReentrant returns (uint256 recovered) {
+        // (the caller re-values the reserve itself: an exit is rare and not a hot path)
         liquidityBufferBps = MAX_BPS;
         emit LiquidityBufferSet(MAX_BPS);
         uint256 shares = Math.min(vault.balanceOf(address(this)), vault.maxRedeem(address(this)));
@@ -220,17 +238,22 @@ contract AutonomousTreasury is ReentrancyGuard {
 
     // ---------------------------------------------------------------------- internals
 
-    function _depositExcess() private returns (uint256 shares) {
+    /// @dev Deposits idle funds above the buffer target and returns the reserve value
+    ///      afterwards, so callers in the same transaction do not have to value it again.
+    function _depositExcess() private returns (uint256 shares, uint256 reserveAfter) {
         uint256 idle = asset.balanceOf(address(this));
-        uint256 target = Math.mulDiv(reserveAssets(), liquidityBufferBps, MAX_BPS);
-        if (idle <= target) return 0;
+        reserveAfter = reserveAssets();
+        uint256 target = Math.mulDiv(reserveAfter, liquidityBufferBps, MAX_BPS);
+        if (idle <= target) return (0, reserveAfter);
         IERC4626 v = vault;
         uint256 amount = Math.min(idle - target, v.maxDeposit(address(this)));
-        if (amount == 0) return 0;
+        if (amount == 0) return (0, reserveAfter);
         asset.forceApprove(address(v), amount);
         try v.deposit(amount, address(this)) returns (uint256 s) {
             shares = s;
             emit ReserveDeposited(address(v), amount, s);
+            // The vault's own rounding can shave a wei off the conservative valuation.
+            reserveAfter = reserveAssets();
         } catch {
             asset.forceApprove(address(v), 0);
             emit DepositSkipped(address(v), amount);

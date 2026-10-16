@@ -27,6 +27,18 @@ contract MathHarness {
         h = SpectralMath.spectralEntropy8(v);
         gasUsed = g - gasleft();
     }
+
+    function lnGas(uint256 x) external view returns (uint256 gasUsed, int256 r) {
+        uint256 g = gasleft();
+        r = SpectralMath.lnWad(x);
+        gasUsed = g - gasleft();
+    }
+
+    function fwhtGas(int256[8] memory x) external view returns (uint256 gasUsed) {
+        uint256 g = gasleft();
+        SpectralMath.fwht8(x);
+        gasUsed = g - gasleft();
+    }
 }
 
 /// @notice Exposes the stabilizer's churn-budget arithmetic.

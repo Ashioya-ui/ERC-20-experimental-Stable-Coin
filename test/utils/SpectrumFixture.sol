@@ -6,6 +6,7 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 import {SpectralToken} from "../../src/SpectralToken.sol";
 import {SpectralStabilizer} from "../../src/SpectralStabilizer.sol";
+import {SpectrumLens} from "../../src/SpectrumLens.sol";
 import {AutonomousTreasury} from "../../src/AutonomousTreasury.sol";
 import {ISpectralEntropyOracle} from "../../src/interfaces/ISpectralEntropyOracle.sol";
 import {MockUSDC} from "../mocks/MockUSDC.sol";
@@ -35,6 +36,7 @@ abstract contract SpectrumFixture is Test {
     SpectralToken internal token;
     MockOracle internal oracle;
     SpectralStabilizer internal stabilizer;
+    SpectrumLens internal lens;
 
     function _deploySystem() internal {
         vm.warp(1_700_000_000);
@@ -47,8 +49,9 @@ abstract contract SpectrumFixture is Test {
         oracle = new MockOracle();
         stabilizer = _newStabilizer();
         require(address(stabilizer) == stabilizerAt, "fixture: stabilizer address prediction");
-        // After the four creations: an interleaved call would shift the nonce under --isolate,
-        // where every top-level call is its own transaction.
+        lens = new SpectrumLens(stabilizer);
+        // After the predicted creations: an interleaved call would shift the nonce under
+        // --isolate, where every top-level call is its own transaction.
         oracle.setEntropy(0);
     }
 

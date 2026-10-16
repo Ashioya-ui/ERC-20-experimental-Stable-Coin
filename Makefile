@@ -1,7 +1,8 @@
 # Spectrum Protocol: build, test, rehearse and deploy.
 #
 # Mainnet sequence (see RUNBOOK_MAINNET.md):
-#   make test rehearsal                  # everything local, no keys
+#   make test test-isolate rehearsal     # everything local, no keys
+#   make bench                           # gas benchmarks (committed in .gas-snapshot)
 #   make fork-test                       # same scenarios on a Base mainnet fork (BASE_RPC_URL)
 #   make preflight                       # full deployment simulated against live Base state
 #   make deploy-base-mainnet             # broadcast + verify (Ledger by default)
@@ -18,8 +19,9 @@ export
 SIGNER   ?= --ledger
 CHAIN_ID ?= 8453
 
-.PHONY: help build test test-ci rehearsal fork-test preflight deploy-base-mainnet \
-        verify-base-mainnet verify-blockscout post-deploy-check sizes clean-local
+.PHONY: help build test test-ci test-isolate bench snapshot rehearsal fork-test preflight \
+        deploy-base-mainnet verify-base-mainnet verify-blockscout post-deploy-check sizes \
+        clean-local analyze
 
 help:
 	@grep -E '^#' Makefile | sed 's/^# \{0,1\}//'
@@ -32,6 +34,15 @@ test:
 
 test-ci:
 	FOUNDRY_PROFILE=ci forge test
+
+test-isolate:
+	forge test --isolate
+
+bench:
+	forge test --match-contract BenchmarksTest -vv
+
+snapshot:
+	forge snapshot --no-match-contract "Invariant|BaseMainnetFork"
 
 sizes:
 	forge build --sizes | grep -E "Spectral|Autonomous|Wrapped"

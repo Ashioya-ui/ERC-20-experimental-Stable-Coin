@@ -8,8 +8,9 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {AccessControlDefaultAdminRules} from
     "@openzeppelin/contracts/access/extensions/AccessControlDefaultAdminRules.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import {SpectralToken} from "./SpectralToken.sol";
 import {AutonomousTreasury} from "./AutonomousTreasury.sol";
@@ -68,8 +69,9 @@ import {ISpectralEntropyOracle} from "./interfaces/ISpectralEntropyOracle.sol";
 ///         of its own; the worst it can do is move funds between vetted venues, after 7 days
 ///         in which holders can redeem (Phase 4, A5). The emergency exit to idle funds never
 ///         depends on the allowlist.
-contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, ReentrancyGuard {
+contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
+    using SafeCast for uint256;
 
     // ---------------------------------------------------------------------- roles
 
@@ -149,23 +151,30 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
 
     // ---------------------------------------------------------------------- state
 
+    // Three timestamps in one slot (Phase 4, B3). Every amount below is bounded far under
+    // 2^128: supply cannot exceed the reserve, and the reserve is USDC, whose total supply is
+    // about 2^93 in sUSD wei; the index starts at 1e18 and grows by at most 1 bp an hour.
     uint64 public epochStart;
-    uint256 public epochSupply;
-    uint256 public mintedInEpoch;
-
     uint64 public lastRebaseAt;
-
     uint64 public churnWindowStart;
-    uint256 public churnLength;
-    uint256 public churnMax;
-    uint256 public churnMin;
+
+    // One slot: supply at the start of the epoch and net minting inside it.
+    uint128 public epochSupply;
+    uint128 public mintedInEpoch;
+
+    // One slot: the churn path's total variation and its running maximum.
+    uint128 public churnLength;
+    uint128 public churnMax;
+
+    // One slot: the churn minimum and the pending migration's earliest execution time.
+    uint128 public churnMin;
+    uint64 public pendingVaultEta;
 
     /// @notice Maximum total supply reachable by minting (guarded launch).
     uint256 public supplyCap;
 
-    /// @notice Vault proposed for migration and the earliest execution time.
+    /// @notice Vault proposed for migration.
     IERC4626 public pendingVault;
-    uint64 public pendingVaultEta;
 
     /// @dev Vaults the reserve may sit in, fixed at construction.
     address[] private _allowedVaults;
@@ -261,10 +270,10 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         supplyCap = supplyCap_;
         emit SupplyCapSet(supplyCap_);
 
-        epochStart = uint64(block.timestamp);
-        churnWindowStart = uint64(block.timestamp);
-        churnMax = WAD;
-        churnMin = WAD;
+        epochStart = block.timestamp.toUint64();
+        churnWindowStart = block.timestamp.toUint64();
+        churnMax = uint128(WAD);
+        churnMin = uint128(WAD);
 
         _grantRole(GUARDIAN_ROLE, admin);
         if (guardian != address(0)) _grantRole(GUARDIAN_ROLE, guardian);
@@ -283,14 +292,14 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         returns (uint256 out)
     {
         if (receiver == address(0)) revert ZeroAddress();
-        _syncLoss();
+        // The reserve is valued once per state change and the value is carried forward, so a
+        // mint makes 3 valuations instead of 6 (Phase 4, B1).
+        _syncLossWith(reserveValue());
         uint256 h = oracle.smoothedEntropy();
 
-        treasury.sweep(); // donations become surplus before measuring
-        uint256 before = treasury.reserveAssets();
+        (, uint256 before) = treasury.sweep(); // donations become surplus before measuring
         asset.safeTransferFrom(msg.sender, address(treasury), assets);
-        treasury.depositReserve();
-        uint256 afterValue = treasury.reserveAssets();
+        (, uint256 afterValue) = treasury.depositReserve();
         uint256 credited = afterValue > before ? (afterValue - before) * scale : 0;
         if (credited < minAmount()) revert AmountTooSmall();
 
@@ -302,7 +311,7 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         if (supply + out > supplyCap) revert SupplyCapExceeded(supplyCap > supply ? supplyCap - supply : 0);
 
         token.mint(receiver, out);
-        _assertSolvent();
+        _assertSolventWith(afterValue * scale); // minting does not move the reserve
         emit Minted(msg.sender, receiver, assets, out, fee, h);
     }
 
@@ -321,7 +330,7 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         returns (uint256 assetsOut)
     {
         if (receiver == address(0)) revert ZeroAddress();
-        _syncLoss();
+        _syncLossWith(reserveValue());
         uint256 balance = token.balanceOf(msg.sender);
         if (amount == type(uint256).max) amount = balance;
         if (amount < minAmount() && amount != balance) revert AmountTooSmall();
@@ -334,8 +343,8 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
 
         token.burn(msg.sender, amount);
         _releaseExpansion(amount);
-        treasury.withdrawReserve(assetsOut, receiver);
-        _assertSolvent();
+        uint256 reserveAfter = treasury.withdrawReserve(assetsOut, receiver);
+        _assertSolventWith(reserveAfter * scale);
         emit Redeemed(msg.sender, receiver, amount, assetsOut, fee, h);
     }
 
@@ -345,7 +354,8 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
     /// @return distributed False if a loss was absorbed instead, or the churn budget
     ///         deferred the step.
     function rebase() external nonReentrant whenNotPaused returns (bool distributed) {
-        if (_syncLoss()) return false;
+        uint256 reserveWad = reserveValue(); // valued once; a rebase never moves the reserve
+        if (_syncLossWith(reserveWad)) return false;
         if (block.timestamp < uint256(lastRebaseAt) + REBASE_INTERVAL) revert RebaseTooSoon();
 
         uint256 shares = token.totalShares();
@@ -353,7 +363,7 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         uint256 supply = token.totalSupply();
         uint256 h = oracle.smoothedEntropy();
 
-        uint256 maxSupply = Math.mulDiv(reserveValue(), WAD, WAD + bufferRate(h));
+        uint256 maxSupply = Math.mulDiv(reserveWad, WAD, WAD + bufferRate(h));
         if (maxSupply <= supply) revert NothingToDistribute();
         uint256 step = Math.min(maxSupply - supply, Math.mulDiv(supply, rebaseStepRate(h), WAD));
 
@@ -369,8 +379,8 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         }
         _commitChurn(oldIndex, newIndex);
         token.setIndex(newIndex);
-        lastRebaseAt = uint64(block.timestamp);
-        _assertSolvent();
+        lastRebaseAt = block.timestamp.toUint64();
+        _assertSolventWith(reserveWad);
         emit Distributed(oldIndex, newIndex, token.totalSupply() - supply, h);
         return true;
     }
@@ -384,8 +394,7 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
     /// @notice Move reserve funds toward the treasury's idle-buffer target (deposit the excess
     ///         or refill the buffer from the vault), then re-sync. Permissionless keeper call.
     function rebalanceReserve() external nonReentrant {
-        treasury.rebalance();
-        _syncLoss();
+        _syncLossWith(treasury.rebalance() * scale);
     }
 
     // ---------------------------------------------------------------------- guardian
@@ -435,8 +444,7 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         if (!isAllowedVault(address(newVault))) revert VaultNotAllowed(address(newVault));
         pendingVault = newVault;
         uint256 eta = block.timestamp + VAULT_TIMELOCK;
-        // forge-lint: disable-next-line(unsafe-typecast)
-        pendingVaultEta = uint64(eta);
+        pendingVaultEta = eta.toUint64();
         emit VaultProposed(address(newVault), eta);
     }
 
@@ -490,6 +498,9 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
     }
 
     // ---------------------------------------------------------------------- views
+    //
+    // Convenience views (quotes, ratios, room under the caps) live in SpectrumLens, which is
+    // derived entirely from the public state below (Phase 4, B6).
 
     /// @notice Smallest mint or partial redemption for this reserve asset, in sUSD wei:
     ///         `10_000 * scale`, the amount at which the 1 bp minimum fee still covers one wei
@@ -503,25 +514,8 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         return treasury.reserveAssets() * scale;
     }
 
-    /// @notice Reserve value / supply in WAD (max uint if supply is zero).
-    function reserveRatio() external view returns (uint256) {
-        uint256 supply = token.totalSupply();
-        if (supply == 0) return type(uint256).max;
-        return Math.mulDiv(reserveValue(), WAD, supply);
-    }
 
-    /// @notice Reserve value above supply, in sUSD wei (0 if under-reserved).
-    function surplus() external view returns (uint256) {
-        uint256 r = reserveValue();
-        uint256 s = token.totalSupply();
-        return r > s ? r - s : 0;
-    }
 
-    /// @notice Expansion still available in the current epoch, in sUSD wei.
-    function expansionRemaining() external view returns (uint256) {
-        (uint256 cap, uint256 used) = _epochState(oracle.smoothedEntropy());
-        return cap > used ? cap - used : 0;
-    }
 
     /// @notice True if `v` is on the immutable vault allowlist.
     function isAllowedVault(address v) public view returns (bool) {
@@ -537,30 +531,18 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         return _allowedVaults;
     }
 
-    /// @notice Minting room left under the supply cap, in sUSD wei.
-    function supplyCapRemaining() external view returns (uint256) {
-        uint256 supply = token.totalSupply();
-        return supplyCap > supply ? supplyCap - supply : 0;
-    }
 
-    /// @notice Approximate sUSD out for `assets` in (ignores vault rounding and entry fees).
-    function quoteMint(uint256 assets) external view returns (uint256 out, uint256 fee) {
-        uint256 credited = assets * scale;
-        fee = Math.mulDiv(credited, mintFeeRate(oracle.smoothedEntropy()), WAD, Math.Rounding.Ceil);
-        out = credited - fee;
-    }
 
-    /// @notice Collateral out for redeeming `amount` sUSD.
-    function quoteRedeem(uint256 amount) external view returns (uint256 assetsOut, uint256 fee) {
-        fee = Math.mulDiv(amount, redeemFeeRate(oracle.smoothedEntropy()), WAD, Math.Rounding.Ceil);
-        assetsOut = (amount - fee) / scale;
-    }
 
     // ---------------------------------------------------------------------- internals
 
     function _syncLoss() internal returns (bool absorbed) {
+        return _syncLossWith(reserveValue());
+    }
+
+    /// @dev Absorb a loss given an already-computed reserve value (sUSD wei).
+    function _syncLossWith(uint256 reserve) internal returns (bool absorbed) {
         uint256 supply = token.totalSupply();
-        uint256 reserve = reserveValue();
         if (reserve >= supply) return false;
         uint256 shares = token.totalShares();
         uint256 oldIndex = token.index();
@@ -574,13 +556,13 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
 
     function _consumeExpansion(uint256 out, uint256 h) internal {
         if (block.timestamp >= uint256(epochStart) + EPOCH) {
-            epochStart = uint64(block.timestamp);
-            epochSupply = token.totalSupply();
+            epochStart = block.timestamp.toUint64();
+            epochSupply = token.totalSupply().toUint128();
             mintedInEpoch = 0;
         }
         (uint256 cap, uint256 used) = _epochState(h);
         if (used + out > cap) revert ExpansionCapExceeded(cap > used ? cap - used : 0);
-        mintedInEpoch = used + out;
+        mintedInEpoch = (used + out).toUint128();
     }
 
     /// @dev Redemptions in the current epoch free the capacity they return (floored at 0).
@@ -588,7 +570,7 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
     function _releaseExpansion(uint256 amount) internal {
         if (block.timestamp >= uint256(epochStart) + EPOCH) return;
         uint256 used = mintedInEpoch;
-        mintedInEpoch = used > amount ? used - amount : 0;
+        mintedInEpoch = (used > amount ? used - amount : 0).toUint128();
     }
 
     function _epochState(uint256 h) internal view returns (uint256 cap, uint256 used) {
@@ -624,18 +606,22 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
 
     function _commitChurn(uint256 oldIndex, uint256 newIndex) internal {
         if (block.timestamp >= uint256(churnWindowStart) + CHURN_WINDOW) {
-            churnWindowStart = uint64(block.timestamp);
+            churnWindowStart = block.timestamp.toUint64();
             churnLength = 0;
-            churnMax = oldIndex;
-            churnMin = oldIndex;
+            churnMax = oldIndex.toUint128();
+            churnMin = oldIndex.toUint128();
         }
-        churnLength += newIndex > oldIndex ? newIndex - oldIndex : oldIndex - newIndex;
-        if (newIndex > churnMax) churnMax = newIndex;
-        if (newIndex < churnMin) churnMin = newIndex;
+        churnLength += (newIndex > oldIndex ? newIndex - oldIndex : oldIndex - newIndex).toUint128();
+        if (newIndex > churnMax) churnMax = newIndex.toUint128();
+        if (newIndex < churnMin) churnMin = newIndex.toUint128();
     }
 
     function _assertSolvent() internal view {
-        uint256 r = reserveValue();
+        _assertSolventWith(reserveValue());
+    }
+
+    /// @dev The floor check against an already-computed reserve value (sUSD wei).
+    function _assertSolventWith(uint256 r) internal view {
         uint256 s = token.totalSupply();
         if (r < s) revert ReserveFloorBreached(r, s);
     }

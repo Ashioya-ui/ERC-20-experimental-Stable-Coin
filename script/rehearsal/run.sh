@@ -55,6 +55,7 @@ SPECTRUM_CONFIG=deployments/31337-config.json forge script script/DeployBaseMain
 
 D=deployments/31337.json
 STAB=$(jget $D "['stabilizer']"); TOKEN=$(jget $D "['sUSD']"); ORACLE=$(jget $D "['oracle']")
+LENS=$(jget $D "['lens']")
 TREAS=$(jget $D "['treasury']"); HOOK=$(jget $D "['hook']")
 USDC=$(jget deployments/31337-env.json "['usdc']"); VAULT=$(jget deployments/31337-env.json "['vault']")
 FALLBACK=$(jget deployments/31337-env.json "['fallbackVault']")
@@ -87,7 +88,7 @@ echo "index before:    $(cast call $TOKEN 'index()(uint256)' --rpc-url $RPC)"
 cast send "$STAB" "rebase()" --private-key "$PK_KEEPER" --rpc-url "$RPC" >/dev/null
 echo "index after:     $(cast call $TOKEN 'index()(uint256)' --rpc-url $RPC)"
 cast send "$STAB" "rebalanceReserve()" --private-key "$PK_KEEPER" --rpc-url "$RPC" >/dev/null
-echo "reserve ratio:   $(cast call $STAB 'reserveRatio()(uint256)' --rpc-url $RPC)"
+echo "reserve ratio:   $(cast call $LENS 'reserveRatio()(uint256)' --rpc-url $RPC)"
 
 step "8. Guardian: emergency exit from the vault (runbook E1)"
 cast send "$STAB" "emergencyExitVault()" --private-key "$PK_GUARDIAN" --rpc-url "$RPC" >/dev/null

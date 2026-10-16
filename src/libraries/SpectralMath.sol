@@ -100,17 +100,39 @@ library SpectralMath {
         // m < 2^61
         // forge-lint: disable-next-line(unsafe-typecast)
         int256 mi = int256(m);
-        int256 z = ((mi - IWAD) * E36) / (mi + IWAD); // |z| <= 0.1716e36
-        int256 z2 = (z * z) / E36;
-        int256 term = z;
-        int256 sum = z;
+        int256 sum;
         unchecked {
-            // 12 more odd powers; the first omitted term is below 2e-22. Every product is
-            // below 6e69, far from the int256 limit.
-            for (int256 n = 3; n <= 25; n += 2) {
-                term = (term * z2) / E36;
-                sum += term / n;
-            }
+            int256 z = ((mi - IWAD) * E36) / (mi + IWAD); // |z| <= 0.1716e36
+            int256 z2 = (z * z) / E36;
+            int256 term = z;
+            sum = z;
+            // 12 more odd powers, unrolled: the divisors are constants and there is no loop
+            // counter to keep (Phase 4, B4). The first omitted term is below 2e-22, and every
+            // product stays below 6e69, far from the int256 limit.
+            term = (term * z2) / E36;
+            sum += term / 3;
+            term = (term * z2) / E36;
+            sum += term / 5;
+            term = (term * z2) / E36;
+            sum += term / 7;
+            term = (term * z2) / E36;
+            sum += term / 9;
+            term = (term * z2) / E36;
+            sum += term / 11;
+            term = (term * z2) / E36;
+            sum += term / 13;
+            term = (term * z2) / E36;
+            sum += term / 15;
+            term = (term * z2) / E36;
+            sum += term / 17;
+            term = (term * z2) / E36;
+            sum += term / 19;
+            term = (term * z2) / E36;
+            sum += term / 21;
+            term = (term * z2) / E36;
+            sum += term / 23;
+            term = (term * z2) / E36;
+            sum += term / 25;
         }
         r = (k * LN2_E36 + 2 * sum) / IWAD;
     }
@@ -122,6 +144,12 @@ library SpectralMath {
     /// @notice Normalised Shannon entropy of the Walsh-Hadamard power spectrum of `v`.
     /// @param  v Eight non-negative samples (any common unit; the result is scale invariant).
     /// @return h Entropy in WAD, 0 <= h <= 1e18. Returns 0 if all samples are zero.
+    /// @dev    Inputs may be any uint256, so the normalisation keeps `mulDiv`. Everything
+    ///         after it is bounded well inside 256 bits, so plain arithmetic gives exactly what
+    ///         `mulDiv` would and skips its 512-bit path (Phase 4, B4): |X_k| <= 8e18, so a
+    ///         square is at most 6.4e37 < 2^126 and `square * WAD <= 2^186`. Squares are
+    ///         recomputed in the second pass rather than kept in a memory array: eight
+    ///         multiplications are cheaper than allocating and writing one.
     function spectralEntropy8(uint256[8] memory v) internal pure returns (uint256 h) {
         uint256 vmax;
         for (uint256 i; i < 8; ++i) {
@@ -129,8 +157,7 @@ library SpectralMath {
         }
         if (vmax == 0) return 0;
 
-        // Normalise to [0, 1e18]: exact scale invariance, and no int256 overflow even for
-        // raw 128-bit swap deltas.
+        // Normalise to [0, 1e18]: exact scale invariance, and no int256 overflow.
         int256[8] memory x;
         for (uint256 i; i < 8; ++i) {
             // <= 1e18
@@ -139,28 +166,30 @@ library SpectralMath {
         }
         fwht8(x);
 
-        uint256[8] memory pw;
         uint256 total;
-        for (uint256 k; k < 8; ++k) {
-            // |X_k| <= 8e18
-            // forge-lint: disable-next-line(unsafe-typecast)
-            uint256 a = uint256(x[k] < 0 ? -x[k] : x[k]);
-            pw[k] = a * a; // <= 6.4e37
-            total += pw[k];
-        }
-        // total > 0 because vmax > 0 and the transform is invertible.
-
         uint256 hRaw; // -sum P ln P, WAD nats
-        for (uint256 k; k < 8; ++k) {
-            if (pw[k] == 0) continue;
-            uint256 p = Math.mulDiv(pw[k], WAD, total); // P_k in WAD
-            if (p == 0) continue; // below 1e-18: contribution < 4.2e-17
-            int256 lp = lnWad(p); // <= 0
-            // -lp >= 0 because p <= 1e18
-            // forge-lint: disable-next-line(unsafe-typecast)
-            hRaw += (p * uint256(-lp)) / WAD;
+        unchecked {
+            // Bounds: |X_k| <= 8e18, so a square is <= 6.4e37 and the eight of them sum to at
+            // most 5.2e38 < 2^129; hRaw is at most ln 8 * 1e18 < 2^61.
+            for (uint256 k; k < 8; ++k) {
+                // forge-lint: disable-next-line(unsafe-typecast)
+                uint256 a = uint256(x[k] < 0 ? -x[k] : x[k]);
+                total += a * a;
+            }
+            // total > 0 because vmax > 0 and the transform is invertible.
+            for (uint256 k; k < 8; ++k) {
+                // forge-lint: disable-next-line(unsafe-typecast)
+                uint256 a = uint256(x[k] < 0 ? -x[k] : x[k]);
+                if (a == 0) continue;
+                uint256 p = (a * a * WAD) / total; // P_k in WAD; a^2 * WAD <= 2^186
+                if (p == 0) continue; // below 1e-18: contribution < 4.2e-17
+                int256 lp = lnWad(p); // <= 0
+                // -lp >= 0 because p <= 1e18
+                // forge-lint: disable-next-line(unsafe-typecast)
+                hRaw += (p * uint256(-lp)) / WAD;
+            }
+            h = (hRaw * WAD) / LN8_WAD;
         }
-        h = (hRaw * WAD) / LN8_WAD;
         if (h > WAD) h = WAD;
     }
 }

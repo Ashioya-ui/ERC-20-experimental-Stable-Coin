@@ -30,6 +30,7 @@ import {AutonomousTreasury} from "../src/AutonomousTreasury.sol";
 import {SpectralEntropyOracle} from "../src/SpectralEntropyOracle.sol";
 import {SpectralHook} from "../src/SpectralHook.sol";
 import {WrappedSUSD} from "../src/WrappedSUSD.sol";
+import {SpectrumLens} from "../src/SpectrumLens.sol";
 import {MockUSDC} from "./mocks/MockUSDC.sol";
 import {MockVault} from "./mocks/MockVault.sol";
 
@@ -48,6 +49,7 @@ contract OracleManipulationTest is Deployers {
     SpectralEntropyOracle internal oracle;
     SpectralStabilizer internal stabilizer;
     WrappedSUSD internal wsusd;
+    SpectrumLens internal lens;
     SpectralHook internal hook;
     Currency internal ws;
     Currency internal other;
@@ -70,6 +72,7 @@ contract OracleManipulationTest is Deployers {
             token, treasury, oracle, address(this), address(0), 10_000_000e18, type(uint256).max, vaults
         );
         wsusd = new WrappedSUSD(token);
+        lens = new SpectrumLens(stabilizer);
 
         usdc.mint(address(this), 2_000_000e6);
         usdc.approve(address(stabilizer), type(uint256).max);
@@ -223,6 +226,6 @@ contract OracleManipulationTest is Deployers {
     }
 
     function _mintFee() internal view returns (uint256 fee) {
-        (, fee) = stabilizer.quoteMint(1_000e6);
+        (, fee) = lens.quoteMint(1_000e6);
     }
 }

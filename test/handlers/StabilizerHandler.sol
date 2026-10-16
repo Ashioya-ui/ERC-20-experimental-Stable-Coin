@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 
 import {SpectralToken} from "../../src/SpectralToken.sol";
 import {SpectralStabilizer} from "../../src/SpectralStabilizer.sol";
+import {SpectrumLens} from "../../src/SpectrumLens.sol";
 import {AutonomousTreasury} from "../../src/AutonomousTreasury.sol";
 import {MockUSDC} from "../mocks/MockUSDC.sol";
 import {MockVault} from "../mocks/MockVault.sol";
@@ -18,6 +19,7 @@ import {MockOracle} from "../mocks/MockOracle.sol";
 contract StabilizerHandler is Test {
     SpectralToken public immutable token;
     SpectralStabilizer public immutable stabilizer;
+    SpectrumLens public immutable lens;
     AutonomousTreasury public immutable treasury;
     MockUSDC public immutable usdc;
     MockVault public immutable vaultA;
@@ -55,6 +57,7 @@ contract StabilizerHandler is Test {
     ) {
         token = token_;
         stabilizer = stabilizer_;
+        lens = new SpectrumLens(stabilizer_);
         treasury = treasury_;
         usdc = usdc_;
         vaultA = vaultA_;
@@ -82,7 +85,7 @@ contract StabilizerHandler is Test {
 
     function mint(uint256 actorSeed, uint256 assets) external {
         address a = _actor(actorSeed);
-        uint256 room = stabilizer.expansionRemaining() / stabilizer.scale();
+        uint256 room = lens.expansionRemaining() / stabilizer.scale();
         if (room < 2e6) return;
         assets = bound(assets, 1e6, room > 5_000_000e6 ? 5_000_000e6 : room);
         usdc.mint(a, assets);

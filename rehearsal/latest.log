@@ -36,6 +36,7 @@ ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
   EntropyOracle       0x68B1D87F95878fE05B998F19b66F4baba5De1aed
   SpectralStabilizer  0x3Aa5ebB10DC797CAC828524e59A333d0A371443c
   WrappedSUSD wsUSD   0xc6e7DF5E7b4f2A278906862b61205850344D4e7d
+  SpectrumLens        0x59b670e9fA9D0A427751Af201D676719a970857b
   SpectralHook        0xa3193fC2dF7070625B8D27e2cf6f3aF0762a2040
   hook salt           0x0000000000000000000000000000000000000000000000000000000000005919
   written to          deployments/31337.json
@@ -43,8 +44,8 @@ ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
 ==========================
 Chain 31337
 Estimated gas price: 0.319603701 gwei
-Estimated total gas used for script: 17886247
-Estimated amount required: 0.005716510738200147 ETH
+Estimated total gas used for script: 19355131
+Estimated amount required: 0.006185971500939831 ETH
 ==========================
 ==========================
 ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
@@ -73,7 +74,7 @@ Sensitive values saved to: /home/claude/spectrum/cache/DeployBaseMainnet.s.sol/3
 ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
 oracle filled:   8
 oracle window:   [20000000000000000000 [2e19], 30000000000000000000 [3e19], 40000000000000000000 [4e19], 50000000000000000000 [5e19], 60000000000000000000 [6e19], 70000000000000000000 [7e19], 80000000000000000000 [8e19], 90000000000000000000 [9e19]]
-smoothed H:      498849902161305128 [4.988e17]
+smoothed H:      499947417960014229 [4.999e17]
 
 ==== 6. x402 payment in sUSD (EIP-3009), settled by a facilitator that pays gas ====
   x402 sUSD payment settled; merchant balance (wei): 5000000000000000
@@ -84,7 +85,7 @@ merchant sUSD:   5000000000000000 [5e15]
 reverted as expected
 index before:    1000000000000000000 [1e18]
 index after:     1000074999999999999 [1e18]
-reserve ratio:   1052314016605252758 [1.052e18]
+reserve ratio:   1052315430862111676 [1.052e18]
 
 ==== 8. Guardian: emergency exit from the vault (runbook E1) ====
 vault shares:    0
@@ -104,9 +105,9 @@ redeem while paused: ok
 == Logs ==
   note: treasury vault was migrated
   == Spectrum state ==
-  sUSD supply (wei)         3897002731721481766271
+  sUSD supply (wei)         3896997359959020942607
   reserve value (wei)       4106134499000000000000
-  reserve ratio (1e18 = 1)  1053664773077060509
+  reserve ratio (1e18 = 1)  1053666225486788179
   idle USDC                 530947799
   liquid USDC               4106134499
   liquidity buffer (bps)    1500

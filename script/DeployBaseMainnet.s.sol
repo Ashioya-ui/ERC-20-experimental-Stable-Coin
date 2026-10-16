@@ -42,6 +42,7 @@ contract DeployBaseMainnet is Script {
         console2.log("EntropyOracle      ", address(d.oracle));
         console2.log("SpectralStabilizer ", address(d.stabilizer));
         console2.log("WrappedSUSD wsUSD  ", address(d.wsusd));
+        console2.log("SpectrumLens       ", address(d.lens));
         console2.log("SpectralHook       ", address(d.hook));
         console2.log("hook salt          ", vm.toString(d.hookSalt));
         console2.log("written to         ", outPath);

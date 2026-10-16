@@ -23,6 +23,7 @@ import {AutonomousTreasury} from "../../src/AutonomousTreasury.sol";
 import {SpectralEntropyOracle} from "../../src/SpectralEntropyOracle.sol";
 import {SpectralHook} from "../../src/SpectralHook.sol";
 import {WrappedSUSD} from "../../src/WrappedSUSD.sol";
+import {SpectrumLens} from "../../src/SpectrumLens.sol";
 
 /// @title  SpectrumDeploy
 /// @notice One deployment procedure shared by the mainnet script, the post-deploy check, the
@@ -66,6 +67,7 @@ library SpectrumDeploy {
         SpectralEntropyOracle oracle;
         SpectralStabilizer stabilizer;
         WrappedSUSD wsusd;
+        SpectrumLens lens;
         SpectralHook hook;
         bytes32 hookSalt;
         PoolKey key;
@@ -185,6 +187,7 @@ library SpectrumDeploy {
         require(address(d.stabilizer) == stabilizerAt, "deploy: stabilizer address mismatch (deployer nonce moved)");
         d.wsusd = new WrappedSUSD(IERC20(address(d.token)));
         require(address(d.wsusd) == wsusdAt, "deploy: wsUSD address mismatch (deployer nonce moved)");
+        d.lens = new SpectrumLens(d.stabilizer); // read-only views; no address prediction needed
 
         address hookAddr = create2(salt, initCode);
         require(hookAddr == hookAt, "deploy: hook address mismatch");
@@ -217,6 +220,7 @@ library SpectrumDeploy {
         require(address(d.stabilizer.oracle()) == address(d.oracle), "check: stabilizer.oracle");
         require(address(d.stabilizer.asset()) == c.usdc, "check: stabilizer.asset");
         require(d.wsusd.asset() == address(d.token), "check: wsUSD.asset");
+        require(address(d.lens.stabilizer()) == address(d.stabilizer), "check: lens.stabilizer");
         require(d.oracle.hook() == address(d.hook), "check: oracle.hook");
 
         // hook: deterministic address = CREATE2(proxy, salt, initCode), with exactly our flags
@@ -281,7 +285,7 @@ library SpectrumDeploy {
         console2.log("== Spectrum state ==");
         console2.log("sUSD supply (wei)        ", d.token.totalSupply());
         console2.log("reserve value (wei)      ", d.stabilizer.reserveValue());
-        console2.log("reserve ratio (1e18 = 1) ", d.stabilizer.reserveRatio());
+        console2.log("reserve ratio (1e18 = 1) ", d.lens.reserveRatio());
         console2.log("idle USDC                ", d.treasury.idleAssets());
         console2.log("liquid USDC              ", d.treasury.liquidAssets());
         console2.log("liquidity buffer (bps)   ", d.treasury.liquidityBufferBps());
@@ -308,6 +312,7 @@ library SpectrumDeploy {
         vm.serializeAddress(o, "oracle", address(d.oracle));
         vm.serializeAddress(o, "stabilizer", address(d.stabilizer));
         vm.serializeAddress(o, "wsUSD", address(d.wsusd));
+        vm.serializeAddress(o, "lens", address(d.lens));
         vm.serializeAddress(o, "hook", address(d.hook));
         vm.serializeBytes32(o, "hookSalt", d.hookSalt);
         vm.serializeAddress(o, "currency0", Currency.unwrap(d.key.currency0));
@@ -333,6 +338,7 @@ library SpectrumDeploy {
         d.oracle = SpectralEntropyOracle(vm.parseJsonAddress(j, ".oracle"));
         d.stabilizer = SpectralStabilizer(vm.parseJsonAddress(j, ".stabilizer"));
         d.wsusd = WrappedSUSD(vm.parseJsonAddress(j, ".wsUSD"));
+        d.lens = SpectrumLens(vm.parseJsonAddress(j, ".lens"));
         d.hook = SpectralHook(vm.parseJsonAddress(j, ".hook"));
         d.hookSalt = vm.parseJsonBytes32(j, ".hookSalt");
         d.key = PoolKey({

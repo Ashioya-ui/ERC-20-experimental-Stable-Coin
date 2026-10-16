@@ -10,6 +10,7 @@ export O=$(jq -r .oracle     deployments/8453.json)   # SpectralEntropyOracle
 export K=$(jq -r .sUSD       deployments/8453.json)   # sUSD
 export H=$(jq -r .hook       deployments/8453.json)   # SpectralHook
 export W=$(jq -r .wsUSD      deployments/8453.json)   # wsUSD
+export L=$(jq -r .lens       deployments/8453.json)   # SpectrumLens (read-only views)
 ```
 
 Status: unaudited code, guarded launch (25,000 sUSD supply cap). Launch and describe sUSD as an
@@ -120,12 +121,13 @@ When it finishes:
    `cast send` estimates gas first, so a `rebase()` with nothing to distribute costs nothing.
 4. **Monitoring.** Run every few minutes and alert on the conditions in the table:
    ```bash
-   cast call $S "reserveRatio()(uint256)"        --rpc-url $RPC   # alert if < 1.0e18
+   cast call $L "reserveRatio()(uint256)"        --rpc-url $RPC   # alert if < 1.0e18 (L = lens)
    cast call $T "liquidAssets()(uint256)"        --rpc-url $RPC   # USDC payable now
    cast call $T "idleAssets()(uint256)"          --rpc-url $RPC
-   cast call $S "supplyCapRemaining()(uint256)"  --rpc-url $RPC
+   cast call $L "supplyCapRemaining()(uint256)"  --rpc-url $RPC
    cast call $S "pendingVault()(address)"        --rpc-url $RPC   # alert if != 0x0
    cast call $O "isStale()(bool)"                --rpc-url $RPC
+   cast call $O "smoothedEntropy()(uint256)"     --rpc-url $RPC   # alert outside [0.1e18, 0.9e18] for an hour
    cast logs --rpc-url $RPC --address $S "VaultProposed(address,uint256)"
    cast logs --rpc-url $RPC --address $S "LossAbsorbed(uint256,uint256,uint256,uint256)"
    cast logs --rpc-url $RPC --address $H "OracleRecordFailed(bytes)"

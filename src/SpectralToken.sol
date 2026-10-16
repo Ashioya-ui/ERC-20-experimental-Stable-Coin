@@ -345,11 +345,16 @@ contract SpectralToken is IERC20, IERC20Metadata, IERC20Permit, EIP712, Nonces {
 
     /// @dev ceil(amount / index) shares, capped at the holder's shares when `amount` equals
     ///      (up to rounding) the whole balance, so "send everything" always works.
+    ///      The common path costs one mulDiv: the balance is only recomputed when the ceiling
+    ///      lands above the holder's shares, which happens when they are sending everything or
+    ///      overdrawing (Phase 4, B5).
     function _sharesToDebit(address from, uint256 amount) private view returns (uint256 shares) {
         uint256 held = _shares[from];
-        if (amount > Math.mulDiv(held, index, WAD)) revert InsufficientBalance();
         shares = Math.mulDiv(amount, WAD, index, Math.Rounding.Ceil);
-        if (shares > held) shares = held;
+        if (shares > held) {
+            if (amount > Math.mulDiv(held, index, WAD)) revert InsufficientBalance();
+            shares = held;
+        }
     }
 
     function _approve(address owner, address spender, uint256 amount) private {

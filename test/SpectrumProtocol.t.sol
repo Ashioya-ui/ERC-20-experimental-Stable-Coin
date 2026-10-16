@@ -37,6 +37,7 @@ import {AutonomousTreasury} from "../src/AutonomousTreasury.sol";
 import {SpectralEntropyOracle} from "../src/SpectralEntropyOracle.sol";
 import {SpectralHook} from "../src/SpectralHook.sol";
 import {WrappedSUSD} from "../src/WrappedSUSD.sol";
+import {SpectrumLens} from "../src/SpectrumLens.sol";
 import {SpectralMath} from "../src/libraries/SpectralMath.sol";
 import {ISpectralEntropyOracle} from "../src/interfaces/ISpectralEntropyOracle.sol";
 
@@ -291,7 +292,10 @@ contract SpectralMathTest is Test {
     function test_entropy_gas() public {
         (uint256 g,) = m.entropyGas([uint256(13e18), 2e18, 77e18, 4e18, 51e18, 6e18, 1e18, 99e18]);
         emit log_named_uint("spectralEntropy8 gas", g);
-        assertLt(g, 60_000);
+        (uint256 gl,) = m.lnGas(0.125e18);
+        emit log_named_uint("lnWad gas", gl);
+        emit log_named_uint("fwht8 gas", m.fwhtGas([int256(1), 2, 3, 4, 5, 6, 7, 8]));
+        assertLt(g, 20_000, "B4 target");
     }
 }
 
@@ -498,7 +502,7 @@ contract SpectralEntropyOracleTest is Test {
         meter.record(int256(123e18));
         uint256 used = meter.lastGas();
         emit log_named_uint("record() closing a window, cold storage (gas)", used);
-        assertLt(used, 70_000, "oracle write stays cheap");
+        assertLt(used, 56_000, "oracle write stays cheap");
     }
 
     function testFuzz_signalsStayInUnitInterval(uint96[16] memory amounts, uint8[16] memory gaps) public {
@@ -1079,15 +1083,15 @@ contract SpectralStabilizerTest is SpectrumFixture {
     // ------------------------------------------------------------------ mint
 
     function test_mint_creditsReserveAndChargesFee() public {
-        (uint256 qOut, uint256 qFee) = stabilizer.quoteMint(1_000e6);
+        (uint256 qOut, uint256 qFee) = lens.quoteMint(1_000e6);
         uint256 out = _mintFor(alice, 1_000e6);
         assertEq(out, 999.9e18);
         assertEq(qOut, out);
         assertEq(qFee, 0.1e18);
         assertEq(token.balanceOf(alice), 999.9e18);
         assertEq(stabilizer.reserveValue(), 1_000e18);
-        assertEq(stabilizer.surplus(), 0.1e18, "fee stays in the reserve");
-        assertGe(stabilizer.reserveRatio(), 1e18);
+        assertEq(lens.surplus(), 0.1e18, "fee stays in the reserve");
+        assertGe(lens.reserveRatio(), 1e18);
     }
 
     function test_mint_feeRisesWithEntropy() public {
@@ -1112,12 +1116,12 @@ contract SpectralStabilizerTest is SpectrumFixture {
         usdc.mint(address(treasury), 50e6);
         assertEq(_mintFor(alice, 1_000e6), 999.9e18);
         assertEq(stabilizer.reserveValue(), 1_050e18);
-        assertEq(stabilizer.surplus(), 50.1e18);
+        assertEq(lens.surplus(), 50.1e18);
     }
 
     function test_mint_bootstrapCap() public {
         _mintFor(alice, 900_000e6); // 899,910 sUSD
-        assertEq(stabilizer.expansionRemaining(), 100_090e18);
+        assertEq(lens.expansionRemaining(), 100_090e18);
         usdc.mint(bob, 200_000e6);
         vm.startPrank(bob);
         usdc.approve(address(stabilizer), 200_000e6);
@@ -1133,7 +1137,7 @@ contract SpectralStabilizerTest is SpectrumFixture {
         _deploySystem();
         oracle.setEntropy(0); // minimum fees: the cheapest griefing case
         _mintFor(alice, 100e6);
-        uint256 capacityBefore = stabilizer.expansionRemaining();
+        uint256 capacityBefore = lens.expansionRemaining();
 
         RoundTripper rt = new RoundTripper();
         uint256 assets = (capacityBefore * 10_000) / 9_999 / SCALE; // fills the cap after the 1 bp fee
@@ -1141,7 +1145,7 @@ contract SpectralStabilizerTest is SpectrumFixture {
         rt.run(usdc, stabilizer, token, assets);
 
         assertEq(token.balanceOf(address(rt)), 0, "round trip completed");
-        assertEq(stabilizer.expansionRemaining(), capacityBefore, "capacity restored");
+        assertEq(lens.expansionRemaining(), capacityBefore, "capacity restored");
         assertEq(_mintFor(bob, 100e6), 99.99e18, "other minters are not blocked");
     }
 
@@ -1156,7 +1160,7 @@ contract SpectralStabilizerTest is SpectrumFixture {
         uint256 start = token.totalSupply();
         for (uint256 i; i < 8; ++i) {
             if (isMint[i]) {
-                uint256 room = stabilizer.expansionRemaining() / SCALE;
+                uint256 room = lens.expansionRemaining() / SCALE;
                 if (room < 2e6) continue;
                 _mintFor(bob, bound(amounts[i], 1e6, room));
             } else {
@@ -1179,16 +1183,16 @@ contract SpectralStabilizerTest is SpectrumFixture {
         }
         uint256 supply = token.totalSupply(); // 5,999.4 sUSD
         assertEq(supply, 5_999.4e18);
-        assertEq(stabilizer.expansionRemaining(), (supply * 20) / 100, "20% of supply at h = 0");
+        assertEq(lens.expansionRemaining(), (supply * 20) / 100, "20% of supply at h = 0");
         oracle.setEntropy(1e18);
-        assertEq(stabilizer.expansionRemaining(), 1_000e18, "2% of supply < bootstrap at h = 1");
+        assertEq(lens.expansionRemaining(), 1_000e18, "2% of supply < bootstrap at h = 1");
     }
 
     // ------------------------------------------------------------------ redeem
 
     function test_redeem_paysCollateralMinusFee() public {
         _mintFor(alice, 1_000e6);
-        (uint256 qAssets, uint256 qFee) = stabilizer.quoteRedeem(500e18);
+        (uint256 qAssets, uint256 qFee) = lens.quoteRedeem(500e18);
         uint256 out = _redeemFor(alice, 500e18);
         assertEq(out, 499.95e6);
         assertEq(qAssets, out);
@@ -1300,7 +1304,7 @@ contract SpectralStabilizerTest is SpectrumFixture {
         uint256 i1 = token.index();
         assertTrue(_rebaseAfter(1 hours));
         assertGt(token.index(), i1);
-        assertGe(stabilizer.reserveRatio(), 1e18 + stabilizer.bufferRate(0) - 1, "buffer kept");
+        assertGe(lens.reserveRatio(), 1e18 + stabilizer.bufferRate(0) - 1, "buffer kept");
     }
 
     function test_rebase_keepsBuffer() public {
@@ -1537,6 +1541,7 @@ contract SpectralHookTest is Deployers {
     SpectralEntropyOracle internal oracle;
     SpectralStabilizer internal stabilizer;
     WrappedSUSD internal wsusd;
+    SpectrumLens internal lens;
     SpectralHook internal hook;
     Currency internal ws;
     Currency internal other;
@@ -1560,6 +1565,7 @@ contract SpectralHookTest is Deployers {
             token, treasury, oracle, address(this), address(0), 10_000_000e18, type(uint256).max, vaults
         );
         wsusd = new WrappedSUSD(token);
+        lens = new SpectrumLens(stabilizer);
 
         // Liquidity: wrap minted sUSD into wsUSD; pair it with an 18-decimal test token.
         usdc.mint(address(this), 1_000_000e6);
@@ -1713,7 +1719,7 @@ contract SpectralHookTest is Deployers {
             _nextBlock();
             _sellWs(key, 100e18);
         }
-        (, uint256 calmFee) = stabilizer.quoteMint(1_000e6);
+        (, uint256 calmFee) = lens.quoteMint(1_000e6);
         _nextBlock();
         _sellWs(key, 5_000e18); // whale
         assertGt(oracle.instantEntropy(), 0.99e18, "concentrated flow");
@@ -1727,7 +1733,7 @@ contract SpectralHookTest is Deployers {
         // One fold moves the EMA by at most emaAlphaMax (0.25) of the gap, whatever the wait.
         assertGt(oracle.rawEma(), before + 0.1e18);
         assertLt(oracle.rawEma(), before + 0.25e18, "one fold is capped at alphaMax");
-        (, uint256 whaleFee) = stabilizer.quoteMint(1_000e6);
+        (, uint256 whaleFee) = lens.quoteMint(1_000e6);
         assertGt(whaleFee, calmFee, "minting gets more expensive after spiky flow");
     }
 
@@ -1805,7 +1811,7 @@ contract SpectrumInvariantTest is SpectrumFixture {
         for (uint256 i; i < handler.actorCount(); ++i) {
             uint256 bal = token.balanceOf(handler.actors(i));
             if (bal >= stabilizer.minAmount()) {
-                (uint256 assetsOut,) = stabilizer.quoteRedeem(bal);
+                (uint256 assetsOut,) = lens.quoteRedeem(bal);
                 owed += assetsOut;
             }
         }
@@ -2129,7 +2135,7 @@ contract VaultGovernanceTest is SpectrumFixture {
         vault.setLiquidityCap(type(uint256).max);
         assertEq(treasury.recoverLegacy(), 6_000e6);
         assertEq(address(treasury.legacyVault()), address(0));
-        assertGt(stabilizer.surplus(), 5_999e18);
+        assertGt(lens.surplus(), 5_999e18);
         assertTrue(stabilizer.rebase());
         _assertSolvent();
     }
@@ -2171,7 +2177,7 @@ contract SupplyCapTest is SpectrumFixture {
 
     function test_capBlocksMintingBeyondIt() public {
         _mintFor(alice, 4_000e6); // 3,999.6 sUSD
-        assertEq(stabilizer.supplyCapRemaining(), 1_000.4e18);
+        assertEq(lens.supplyCapRemaining(), 1_000.4e18);
         usdc.mint(bob, 3_000e6);
         vm.startPrank(bob);
         usdc.approve(address(stabilizer), 3_000e6);
@@ -2200,7 +2206,7 @@ contract SupplyCapTest is SpectrumFixture {
         vault.simulateYield(200e6);
         assertTrue(stabilizer.rebase());
         assertGt(token.totalSupply(), stabilizer.supplyCap());
-        assertEq(stabilizer.supplyCapRemaining(), 0);
+        assertEq(lens.supplyCapRemaining(), 0);
         usdc.mint(bob, 10e6);
         vm.startPrank(bob);
         usdc.approve(address(stabilizer), 10e6);
