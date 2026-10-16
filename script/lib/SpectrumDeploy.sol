@@ -214,6 +214,13 @@ library SpectrumDeploy {
         require(PoolId.unwrap(d.hook.allowedPoolId()) == PoolId.unwrap(d.key.toId()), "check: hook pool id");
         (uint160 sqrtP,,,) = IPoolManager(c.poolManager).getSlot0(d.key.toId());
         require(sqrtP != 0, "check: pool not initialized");
+        // Before the first recorded swap the pool must sit at its starting price, inside the
+        // hook's band; afterwards trading legitimately moves it, so a deviation is reported.
+        if (d.oracle.filled() == 0) {
+            require(d.hook.priceWithinBand(sqrtP), "check: pool price is more than 50 bp from wsUSD's redemption value");
+        } else if (!d.hook.priceWithinBand(sqrtP)) {
+            console2.log("warning: pool price is more than 50 bp from wsUSD's redemption value");
+        }
 
         // roles
         bytes32 adminRole = d.stabilizer.DEFAULT_ADMIN_ROLE();

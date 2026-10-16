@@ -48,6 +48,7 @@ import {MathHarness, StabilizerHarness} from "./mocks/Harnesses.sol";
 import {StabilizerHandler} from "./handlers/StabilizerHandler.sol";
 import {SpectrumFixture} from "./utils/SpectrumFixture.sol";
 import {ReferenceValues} from "./reference/ReferenceValues.sol";
+import {SpectrumDeploy} from "../script/lib/SpectrumDeploy.sol";
 
 // =====================================================================================
 // 1. SpectralMath
@@ -1488,6 +1489,28 @@ contract SpectralHookTest is Deployers {
         bad.tickSpacing = 10;
         vm.expectRevert();
         manager.initialize(bad, SQRT_PRICE_1_1);
+    }
+
+    /// A2: the one allowed pool can only start near wsUSD's redemption value, in either token
+    /// order, so nobody can front-run the deployment with an off-peg initialisation.
+    function test_initialisationPriceMustBeNearPar() public {
+        address[2] memory places = [address(0x10000), address(0xFFFfFFfFfFFffFFfFFFffffFfFfFffFFfFFFFF00)];
+        for (uint256 i; i < 2; ++i) {
+            deployCodeTo("MockUSDC.sol:MockUSDC", "", places[i]);
+            Currency usd = Currency.wrap(places[i]);
+            address at = address(FLAGS ^ (uint160(0x6000 + i) << 144));
+            deployCodeTo("SpectralHook.sol:SpectralHook", abi.encode(manager, oracle, ws, usd, uint24(100), int24(1)), at);
+            (Currency c0, Currency c1) = Currency.unwrap(ws) < Currency.unwrap(usd) ? (ws, usd) : (usd, ws);
+            PoolKey memory k = PoolKey(c0, c1, 100, 1, IHooks(at));
+            uint160 par = SpectrumDeploy.parSqrtPriceX96(k);
+            assertTrue(SpectralHook(at).priceWithinBand(par), "par is inside the band");
+            assertFalse(SpectralHook(at).priceWithinBand(uint160((uint256(par) * 1003) / 1000)), "0.6% is outside");
+            vm.expectRevert(); // a quarter of par: far outside the 50 bp band
+            manager.initialize(k, par / 2);
+            vm.expectRevert(); // 1% above par
+            manager.initialize(k, uint160((uint256(par) * 1005) / 1000));
+            manager.initialize(k, uint160((uint256(par) * 10_012) / 10_000)); // +0.24%: allowed
+        }
     }
 
     function test_onlyPoolManagerCanCall() public {

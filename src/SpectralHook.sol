@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
@@ -33,6 +36,12 @@ import {ISpectralEntropyOracle} from "./interfaces/ISpectralEntropyOracle.sol";
 ///         rejects every other pool. Nobody can attach this hook to a spam pool and write
 ///         into the oracle.
 ///
+///         Starting price. `beforeInitialize` also requires the starting price to be within
+///         `INIT_PRICE_TOLERANCE_BPS` of wsUSD's redemption value in the paired asset
+///         (`convertToAssets` of the measured wrapper, with the paired asset at par with sUSD).
+///         Once the hook is deployed its pool key is public, so without this check anyone
+///         could initialise the pool off-peg before the deployer does (Phase 4, A2).
+///
 ///         Oracle failures. The oracle call is wrapped in try/catch. A failure that carries
 ///         revert data (a bug or a guard in the oracle) is logged and skipped, so it never
 ///         bricks the pool. A failure without revert data means the call ran out of gas;
@@ -47,12 +56,22 @@ import {ISpectralEntropyOracle} from "./interfaces/ISpectralEntropyOracle.sol";
 contract SpectralHook is IHooks {
     using PoolIdLibrary for PoolKey;
 
+    /// @notice Largest allowed distance, in bp of price, between the pool's starting price and
+    ///         wsUSD's redemption value.
+    uint256 public constant INIT_PRICE_TOLERANCE_BPS = 50;
+    uint256 internal constant Q96 = 1 << 96;
+
     IPoolManager public immutable poolManager;
     ISpectralEntropyOracle public immutable oracle;
     /// @notice The currency whose absolute swap delta is recorded (normally wsUSD).
     Currency public immutable measuredCurrency;
     /// @notice The only pool allowed to use this hook.
     PoolId public immutable allowedPoolId;
+    /// @notice True if the measured currency is currency0 of the allowed pool.
+    bool public immutable measuredIsCurrency0;
+    /// @dev 10^decimals of the measured and of the paired currency.
+    uint256 internal immutable measuredUnit;
+    uint256 internal immutable otherUnit;
 
     event OracleRecordFailed(bytes reason);
 
@@ -61,6 +80,7 @@ contract SpectralHook is IHooks {
     error HookNotImplemented();
     error OracleOutOfGas();
     error SameCurrency();
+    error PriceOutOfBand(uint160 sqrtPriceX96, uint256 parPriceX96);
 
     modifier onlyPoolManager() {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
@@ -85,8 +105,10 @@ contract SpectralHook is IHooks {
         poolManager = poolManager_;
         oracle = oracle_;
         measuredCurrency = measured;
-        (Currency c0, Currency c1) =
-            Currency.unwrap(measured) < Currency.unwrap(other) ? (measured, other) : (other, measured);
+        measuredIsCurrency0 = Currency.unwrap(measured) < Currency.unwrap(other);
+        measuredUnit = 10 ** IERC20Metadata(Currency.unwrap(measured)).decimals();
+        otherUnit = 10 ** IERC20Metadata(Currency.unwrap(other)).decimals();
+        (Currency c0, Currency c1) = measuredIsCurrency0 ? (measured, other) : (other, measured);
         PoolKey memory key =
             PoolKey({currency0: c0, currency1: c1, fee: fee, tickSpacing: tickSpacing, hooks: IHooks(address(this))});
         allowedPoolId = key.toId();
@@ -116,7 +138,8 @@ contract SpectralHook is IHooks {
     // ---------------------------------------------------------------------- enabled hooks
 
     /// @inheritdoc IHooks
-    function beforeInitialize(address, PoolKey calldata key, uint160)
+    /// @dev Only the allowed pool, and only at a starting price near par (see `priceWithinBand`).
+    function beforeInitialize(address, PoolKey calldata key, uint160 sqrtPriceX96)
         external
         view
         override
@@ -124,7 +147,28 @@ contract SpectralHook is IHooks {
         returns (bytes4)
     {
         if (PoolId.unwrap(key.toId()) != PoolId.unwrap(allowedPoolId)) revert PoolNotAllowed();
+        if (!priceWithinBand(sqrtPriceX96)) revert PriceOutOfBand(sqrtPriceX96, parPriceX96());
         return IHooks.beforeInitialize.selector;
+    }
+
+    // ---------------------------------------------------------------------- price band (views)
+
+    /// @notice Pool price, as raw units of currency1 per raw unit of currency0 in Q96, at which
+    ///         one wsUSD trades at its redemption value (the paired asset at par with sUSD).
+    function parPriceX96() public view returns (uint256) {
+        // sUSD wei (18 decimals) redeemable for one whole wsUSD
+        uint256 a = IERC4626(Currency.unwrap(measuredCurrency)).convertToAssets(measuredUnit);
+        // one raw unit of wsUSD is worth a * otherUnit / (measuredUnit * 1e18) raw units of the pair
+        if (measuredIsCurrency0) return Math.mulDiv(a * otherUnit, Q96, measuredUnit * 1e18);
+        return Math.mulDiv(measuredUnit * 1e18, Q96, a * otherUnit);
+    }
+
+    /// @notice True if `sqrtPriceX96` is within INIT_PRICE_TOLERANCE_BPS of `parPriceX96()`.
+    function priceWithinBand(uint160 sqrtPriceX96) public view returns (bool) {
+        uint256 p = Math.mulDiv(sqrtPriceX96, sqrtPriceX96, Q96);
+        uint256 par = parPriceX96();
+        uint256 tol = (par * INIT_PRICE_TOLERANCE_BPS) / 10_000;
+        return p + tol >= par && p <= par + tol;
     }
 
     /// @inheritdoc IHooks
