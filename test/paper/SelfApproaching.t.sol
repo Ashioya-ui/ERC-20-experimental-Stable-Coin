@@ -60,17 +60,26 @@ contract SelfApproachingTest is Test {
         pure
         returns (int256[] memory xs, int256[] memory ys)
     {
+        return _spiralWad(steps, (totalMilliRad * 1e15) / int256(steps), SPIRAL_SLACK);
+    }
+
+    /// @dev `steps` spiral vertices at angles 0, step, 2 step, ... (radians in WAD), then the
+    ///      centre. `slack` is the extra shrink per step in WAD.
+    function _spiralWad(uint256 steps, int256 stepWad, int256 slack)
+        internal
+        pure
+        returns (int256[] memory xs, int256[] memory ys)
+    {
         xs = new int256[](steps + 1);
         ys = new int256[](steps + 1);
-        int256 step = totalMilliRad / int256(steps);
-        (int256 cosStep,) = _cosSin(step);
+        (int256 cosStep,) = _cosSinWad(stepWad);
         int256 r = ONE;
         for (uint256 i; i < steps; ++i) {
-            (int256 c, int256 s) = _cosSin(step * int256(i));
+            (int256 c, int256 s) = _cosSinWad(stepWad * int256(i));
             xs[i] = (r * c) / ONE;
             ys[i] = (r * s) / ONE;
             r = (r * cosStep) / ONE;
-            r -= (r * SPIRAL_SLACK) / ONE;
+            r -= (r * slack) / ONE;
         }
         xs[steps] = 0; // the final chord into the centre
         ys[steps] = 0;
@@ -96,10 +105,15 @@ contract SelfApproachingTest is Test {
         }
     }
 
-    /// @dev cos and sin of `milliRad` milliradians, scaled by 1e18, from the Taylor series.
-    ///      Only these test inputs are approximate; the library itself is exact.
+    /// @dev cos and sin of `milliRad` milliradians, scaled by 1e18.
     function _cosSin(int256 milliRad) internal pure returns (int256 c, int256 s) {
-        int256 a = milliRad * 1e15; // radians in WAD
+        return _cosSinWad(milliRad * 1e15);
+    }
+
+    /// @dev cos and sin of `a` radians (WAD), scaled by 1e18, from the Taylor series: accurate
+    ///      to about 1e-16 at pi/3 and 2e-8 at 2.8. Only these test inputs are approximate; the
+    ///      library itself is exact.
+    function _cosSinWad(int256 a) internal pure returns (int256 c, int256 s) {
         int256 a2 = (a * a) / ONE;
         int256 t = ONE;
         c = ONE;
@@ -251,8 +265,10 @@ contract SelfApproachingTest is Test {
     }
 
     /// Theorem 5.4's family in polygonal form: a spiral of pi/3 about the end point, then the
-    /// chord into it. The factor-2 cascade the paper puts on that last segment cannot be drawn
-    /// as a polygon (Lemma 6.8), so this is the construction without it.
+    /// chord into it. The paper doubles that last segment with a cycloidal cascade (Lemma 5.1),
+    /// which a polygon reproduces only with many vertices per cycloid (Section 7.5); sampling
+    /// the cascade does not give a self-approaching polygon (see the cascade test below). So
+    /// this is the construction without the cascade, whose limit is 1 + pi/3.
     function test_theorem54FamilyIsAcceptedAndBounded() public {
         (int256[] memory xs, int256[] memory ys) = _spiral(24, 1_047); // pi/3
         require(SelfApproaching.isSelfApproaching(xs, ys), "construction accepted");
@@ -262,6 +278,67 @@ contract SelfApproachingTest is Test {
         emit log_named_uint("spiral + chord L/D (WAD)", ratio);
         assertGt(ratio, 1.9e18, "well above a straight line");
         assertLt(ratio, SelfApproaching.C_SA_UPPER_WAD, "inside the proven bound");
+    }
+
+    /// The limit curve of Theorem 5.4 without the cascade, a unit arc of pi/3 about its end
+    /// point followed by the chord into it, has L/D = 1 + pi/3. Its spiral polygons converge to
+    /// that value from below; the inward spiral costs about 0.84/N (Section 7.6).
+    function test_theorem54LimitCurveConvergesFromBelow() public {
+        uint256 onePlusPiOver3 = 2_047_197_551_196_597_746;
+        uint256 piOver3 = 1_047_197_551_196_597_746;
+        uint256[3] memory ns = [uint256(24), 96, 384];
+        uint256 previous;
+        for (uint256 k; k < 3; ++k) {
+            uint256 n = ns[k];
+            // n spiral vertices sweeping exactly pi/3, then the centre.
+            (int256[] memory xs, int256[] memory ys) = _spiralWad(n, int256(piOver3 / (n - 1)), 1e9);
+            require(SelfApproaching.isSelfApproaching(xs, ys), "spiral polygon accepted");
+            (uint256 len, uint256 diam, bool ok) = SelfApproaching.lengthBound(xs, ys);
+            require(ok, "Theorem 4.3");
+            uint256 ratio = (len * 1e18) / diam;
+            emit log_named_uint(string.concat("N = ", vm.toString(n), ": L/D (WAD)"), ratio);
+            emit log_named_uint(string.concat("N = ", vm.toString(n), ": N x gap (WAD)"), n * (onePlusPiOver3 - ratio));
+            assertLt(ratio, onePlusPiOver3, "below the limit curve");
+            assertGt(ratio, previous, "increasing in N");
+            previous = ratio;
+        }
+        assertLt(onePlusPiOver3 - previous, 0.003e18, "within 0.003 of 1 + pi/3 at N = 384");
+    }
+
+    /// Lemma 5.1: a cycloidal cascade on a segment of length w with n pieces has length 2w and
+    /// stays within pi w / (2n) of the segment. The fixture samples the paper's own cascade
+    /// (sa_fix/code/cascade.py) with m points per piece. Two lessons for on-chain checks:
+    /// a band (shape) condition admits doubled length, and sampling a self-approaching curve
+    /// does not give a self-approaching polygon. Lemma 7.1 rejects every sample, with a witness.
+    function test_lemma51CascadeSamplesStayInTheBandAndAreRejected() public {
+        string memory j = vm.readFile("test/paper/fixtures/cascade_lemma51.json");
+        uint256 count = vm.parseJsonUint(j, ".count");
+        for (uint256 p; p < count; ++p) {
+            string memory key = string.concat(".polygons[", vm.toString(p), "]");
+            uint256 pieces = vm.parseJsonUint(j, string.concat(key, ".pieces"));
+            string[] memory xsStr = vm.parseJsonStringArray(j, string.concat(key, ".xs"));
+            string[] memory ysStr = vm.parseJsonStringArray(j, string.concat(key, ".ys"));
+            int256[] memory xs = new int256[](xsStr.length);
+            int256[] memory ys = new int256[](ysStr.length);
+            for (uint256 i; i < xs.length; ++i) {
+                xs[i] = vm.parseInt(xsStr[i]);
+                ys[i] = vm.parseInt(ysStr[i]);
+            }
+            // The band: pi r <= x <= 2 pi r with r = w / (2n), w = 1 (to 1e-15 for rounding).
+            int256 piR = int256(3_141_592_653_589_793_238 / (2 * pieces));
+            for (uint256 i; i < xs.length; ++i) {
+                assertGe(xs[i], piR - 1e3, "inside the band");
+                assertLe(xs[i], 2 * piR + 1e3, "inside the band");
+            }
+            // Length close to 2w, never more than the curve's 2w.
+            (uint256 lengthUp,,) = SelfApproaching.lengthBound(xs, ys);
+            assertGt(lengthUp, 1.95e18, "close to doubled length");
+            assertLe(lengthUp, 2e18 + xs.length, "no longer than the cascade");
+            // Not self-approaching as a polygon, and the rejection has a witness.
+            assertFalse(SelfApproaching.isSelfApproaching(xs, ys), "sampled cascade rejected");
+            _checkRejected(xs, ys);
+        }
+        emit log_named_uint("sampled cascades checked", count);
     }
 
     function test_cloudIsRejectedWithAWitness() public pure {
