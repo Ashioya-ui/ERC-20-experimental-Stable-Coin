@@ -155,6 +155,25 @@ stack-too-deep in `PoolManager` under via-IR.
 
    Pools pair wsUSD, an ERC-4626 wrapper over sUSD (the stETH/wstETH pattern), with USDC.
 
+## The paper
+
+The geometry comes from E. Langetepe and W. A. Ashioya, *The length-over-diameter ratio of
+self-approaching curves*, revised version 21 (October 2026). [`docs/paper-map.md`](docs/paper-map.md)
+lists every result, its status (proven, numerical, or open) and where the code uses it.
+
+- `src/libraries/SelfApproaching.sol` implements the proven results exactly, in integers:
+  Lemma 7.1 (a polygon is self-approaching iff `(v_j − v_i)·(v_i − v_{i−1}) ≥ 0`), Lemma 2.1
+  (the diameter is the largest distance from the start) and Theorem 4.3
+  (`L ≤ (5π/6 + 2 sin(π/12))·D = 3.1356…·D`).
+- `test/paper/` uses the proven results as test oracles, keeps the paper's Section 7.5
+  counterexample (sampled checks are not enough) as a regression test, and checks the library
+  against the paper's own Python on 1,000 polygons: every verdict, diameter and length agrees.
+- `C_DIAM_WAD = 2 + π/3` in the stabilizer is **Conjecture 1.2, which is open**. It is used only
+  as the churn budget's design constant; no safety property depends on it.
+- Nothing on-chain calls `SelfApproaching` yet. [`docs/design/reserve-allocation.md`](docs/design/reserve-allocation.md)
+  describes where the proven bound would become load-bearing (a reserve split across two vaults)
+  and why a plain turnover cap should come first.
+
 ## Verified properties (test suite)
 
 1. FWHT matches the naive Hadamard product (fuzz), is an involution up to 8x, and satisfies Parseval.

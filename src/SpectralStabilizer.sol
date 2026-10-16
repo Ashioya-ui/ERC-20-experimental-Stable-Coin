@@ -46,10 +46,10 @@ import {ISpectralEntropyOracle} from "./interfaces/ISpectralEntropyOracle.sol";
 ///         distribution) always satisfy L = D. The budget binds only when gains and losses
 ///         alternate: with equal swings, the third upward leg in a window is deferred. Loss
 ///         absorption is never deferred.
-///         C_DIAM = 2 + pi/3 is the conjectured sharp length-over-diameter ratio of
-///         self-approaching plane curves (proven: 3.0472 <= C_diam <= 3.1356). Here it is a
-///         design constant chosen by analogy. No stability property follows from the
-///         geometry.
+///         C_DIAM = 2 + pi/3 is attained by self-approaching plane curves and conjectured to
+///         be their sharp length-over-diameter ratio (proven: 3.0472 <= C_diam <= 3.1356).
+///         Here it is a design constant chosen by analogy, and no stability property follows
+///         from the geometry; see C_DIAM_WAD and docs/paper-map.md.
 ///
 ///         Guarded launch. `supplyCap` bounds total minting (rebases may exceed it); the admin
 ///         raises it as confidence grows. The daily expansion cap still applies under it.
@@ -82,7 +82,18 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
 
     uint256 internal constant WAD = 1e18;
 
-    /// @notice 2 + pi/3 in WAD (3.047197551196597746...).
+    /// @notice 2 + pi/3 in WAD (3.047197551196597746...), the churn budget's constant.
+    /// @dev    From E. Langetepe and W. A. Ashioya, "The length-over-diameter ratio of
+    ///         self-approaching curves", revised version 21 (October 2026). Ratios arbitrarily
+    ///         close to this value are attained by self-approaching plane curves (Theorem 5.4,
+    ///         proven); that none is larger is Conjecture 1.2, which is open. The proven upper
+    ///         bound is 5*pi/6 + 2 sin(pi/12) = 3.1356... (Theorem 4.3), available as
+    ///         SelfApproaching.C_SA_UPPER_WAD.
+    ///
+    ///         Here it is a design constant, chosen by analogy, in a one-dimensional rule. On a
+    ///         line a self-approaching path is simply monotone, so none of the planar theorems
+    ///         applies and no stability property follows from the geometry. See
+    ///         docs/paper-map.md.
     uint256 public constant C_DIAM_WAD = 3_047_197_551_196_597_746;
 
     /// @notice Minting fee at h = 0 and at h = 1 (WAD rates): 1 bp to 50 bp, quadratic in h.
@@ -514,9 +525,6 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         return treasury.reserveAssets() * scale;
     }
 
-
-
-
     /// @notice True if `v` is on the immutable vault allowlist.
     function isAllowedVault(address v) public view returns (bool) {
         uint256 n = _allowedVaults.length;
@@ -530,9 +538,6 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
     function allowedVaults() external view returns (address[] memory) {
         return _allowedVaults;
     }
-
-
-
 
     // ---------------------------------------------------------------------- internals
 
@@ -614,10 +619,6 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         churnLength += (newIndex > oldIndex ? newIndex - oldIndex : oldIndex - newIndex).toUint128();
         if (newIndex > churnMax) churnMax = newIndex.toUint128();
         if (newIndex < churnMin) churnMin = newIndex.toUint128();
-    }
-
-    function _assertSolvent() internal view {
-        _assertSolventWith(reserveValue());
     }
 
     /// @dev The floor check against an already-computed reserve value (sUSD wei).
