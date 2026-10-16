@@ -49,10 +49,9 @@ contract SpectralToken is IERC20, IERC20Metadata, IERC20Permit, EIP712, Nonces {
 
     // ---------------------------------------------------------------------- storage
 
-    /// @notice Account allowed to call `setStabilizer` exactly once.
-    address public immutable deployer;
-    /// @notice Sole minter, burner and rebaser (set once).
-    address public stabilizer;
+    /// @notice Sole minter, burner and rebaser, fixed at construction (Phase 4, A3: no
+    ///         post-deployment wiring transaction that a leaked deployer key could race).
+    address public immutable stabilizer;
     /// @notice sUSD per share, WAD. Starts at 1e18.
     uint256 public index = WAD;
 
@@ -70,8 +69,6 @@ contract SpectralToken is IERC20, IERC20Metadata, IERC20Permit, EIP712, Nonces {
     event AuthorizationCanceled(address indexed authorizer, bytes32 indexed nonce);
 
     error NotStabilizer();
-    error NotDeployer();
-    error StabilizerAlreadySet();
     error ZeroAddress();
     error InsufficientBalance();
     error InsufficientAllowance();
@@ -89,15 +86,11 @@ contract SpectralToken is IERC20, IERC20Metadata, IERC20Permit, EIP712, Nonces {
         _;
     }
 
-    constructor() EIP712("Spectrum Agentic USD", "1") {
-        deployer = msg.sender;
-    }
-
-    /// @notice Wire the stabilizer. Callable once by the deployer.
-    function setStabilizer(address stabilizer_) external {
-        if (msg.sender != deployer) revert NotDeployer();
+    /// @param stabilizer_ The SpectralStabilizer, deployed after this contract at an address the
+    ///                    deployment predicts from the deployer's nonce. The stabilizer's
+    ///                    constructor checks that this token names it.
+    constructor(address stabilizer_) EIP712("Spectrum Agentic USD", "1") {
         if (stabilizer_ == address(0)) revert ZeroAddress();
-        if (stabilizer != address(0)) revert StabilizerAlreadySet();
         stabilizer = stabilizer_;
         emit StabilizerSet(stabilizer_);
     }

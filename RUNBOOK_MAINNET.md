@@ -76,9 +76,13 @@ The workflow:
 - broadcasts, verifies on Basescan, runs the post-deploy check;
 - uploads `deployments/8453.json` as an artifact.
 
-You will confirm 15 transactions: treasury, token, oracle, stabilizer, two `setStabilizer`
-calls, wsUSD, the hook (through the CREATE2 proxy), `setHook`, oracle `renounceOwnership`, pool
-`initialize`, and the seed (USDC approve, mint, sUSD approve, wsUSD deposit to `0xdead`).
+You will confirm 11 transactions: treasury, token, oracle, stabilizer, wsUSD, the hook (through
+the CREATE2 proxy), pool `initialize`, and the seed (USDC approve, mint, sUSD approve, wsUSD
+deposit to `0xdead`). There are no wiring transactions: each contract receives the addresses it
+trusts in its constructor, predicted from the deployer's nonce and the hook's mined salt. The
+script aborts if a prediction is wrong, and the stabilizer's constructor refuses a token or
+treasury that names another stabilizer. Send nothing else from the deployer key while the
+script runs.
 
 When it finishes:
 - `deployments/8453.json` holds the addresses, the hook salt and the constructor arguments.

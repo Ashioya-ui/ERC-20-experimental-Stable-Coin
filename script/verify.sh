@@ -33,10 +33,11 @@ verify() {
 }
 
 verify "$(j treasury)" src/AutonomousTreasury.sol:AutonomousTreasury \
-  "$(cast abi-encode 'constructor(address,uint256)' "$(j vault)" "$(j liquidityBufferBps)")"
-verify "$(j sUSD)" src/SpectralToken.sol:SpectralToken ""
+  "$(cast abi-encode 'constructor(address,uint256,address)' "$(j vault)" "$(j liquidityBufferBps)" "$(j stabilizer)")"
+verify "$(j sUSD)" src/SpectralToken.sol:SpectralToken \
+  "$(cast abi-encode 'constructor(address)' "$(j stabilizer)")"
 verify "$(j oracle)" src/SpectralEntropyOracle.sol:SpectralEntropyOracle \
-  "$(cast abi-encode 'constructor(address,uint256,uint256,uint256)' "$(j deployer)" "$(j minObservation)" "$(j emaAlpha)" "$(j staleAfter)")"
+  "$(cast abi-encode 'constructor(address,uint256,uint256,uint256)' "$(j hook)" "$(j minObservation)" "$(j emaAlpha)" "$(j staleAfter)")"
 verify "$(j stabilizer)" src/SpectralStabilizer.sol:SpectralStabilizer \
   "$(cast abi-encode 'constructor(address,address,address,address,address,uint256,uint256)' "$(j sUSD)" "$(j treasury)" "$(j oracle)" "$(j admin)" "$(j guardian)" "$(j bootstrapCap)" "$(j supplyCap)")"
 verify "$(j wsUSD)" src/WrappedSUSD.sol:WrappedSUSD \

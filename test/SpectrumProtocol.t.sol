@@ -18,7 +18,6 @@ pragma solidity ^0.8.26;
 import {Test} from "forge-std/Test.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
 import {Deployers} from "v4-core/test/utils/Deployers.sol";
@@ -310,9 +309,7 @@ contract SpectralEntropyOracleTest is Test {
     function setUp() public {
         vm.roll(100);
         vm.warp(T0);
-        oracle = new SpectralEntropyOracle(owner, DUST, ALPHA, STALE);
-        vm.prank(owner);
-        oracle.setHook(hook);
+        oracle = new SpectralEntropyOracle(hook, DUST, ALPHA, STALE);
     }
 
     function _recordAt(uint256 blockNumber, uint256 amount) internal {
@@ -324,31 +321,29 @@ contract SpectralEntropyOracleTest is Test {
 
     function test_constructor_validatesParameters() public {
         vm.expectRevert(SpectralEntropyOracle.InvalidParameter.selector);
-        new SpectralEntropyOracle(owner, DUST, 0, STALE);
+        new SpectralEntropyOracle(hook, DUST, 0, STALE);
         vm.expectRevert(SpectralEntropyOracle.InvalidParameter.selector);
-        new SpectralEntropyOracle(owner, DUST, 1e18 + 1, STALE);
+        new SpectralEntropyOracle(hook, DUST, 1e18 + 1, STALE);
         vm.expectRevert(SpectralEntropyOracle.InvalidParameter.selector);
-        new SpectralEntropyOracle(owner, DUST, ALPHA, 0);
+        new SpectralEntropyOracle(hook, DUST, ALPHA, 0);
     }
 
-    function test_setHook_onlyOwner_once() public {
-        SpectralEntropyOracle o = new SpectralEntropyOracle(owner, DUST, ALPHA, STALE);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(this)));
-        o.setHook(hook);
-        vm.startPrank(owner);
+    /// A3: the writer is fixed at construction. There is no owner and no setter, so neither a
+    /// deployer key nor anyone else can redirect the data, during or after deployment.
+    function test_hookFixedAtConstruction() public {
         vm.expectRevert(SpectralEntropyOracle.ZeroAddress.selector);
-        o.setHook(address(0));
-        o.setHook(hook);
-        vm.expectRevert(SpectralEntropyOracle.HookAlreadySet.selector);
-        o.setHook(address(1));
-        vm.stopPrank();
-        assertEq(o.hook(), hook);
+        new SpectralEntropyOracle(address(0), DUST, ALPHA, STALE);
+        assertEq(oracle.hook(), hook);
+        (bool hasOwner,) = address(oracle).call(abi.encodeWithSignature("owner()"));
+        assertFalse(hasOwner, "no owner");
+        (bool canSet,) = address(oracle).call(abi.encodeWithSignature("setHook(address)", owner));
+        assertFalse(canSet, "no setter");
     }
 
     function test_record_onlyHook() public {
         vm.expectRevert(SpectralEntropyOracle.NotHook.selector);
         oracle.record(100e18);
-        vm.prank(owner); // the owner has no write access either
+        vm.prank(owner); // nobody else has write access
         vm.expectRevert(SpectralEntropyOracle.NotHook.selector);
         oracle.record(100e18);
     }
@@ -486,8 +481,7 @@ contract SpectralTokenTest is Test {
     function setUp() public {
         vm.warp(1_700_000_000);
         alice = vm.addr(ALICE_PK);
-        token = new SpectralToken();
-        token.setStabilizer(address(this)); // this test acts as the stabilizer
+        token = new SpectralToken(address(this)); // this test acts as the stabilizer
         wallet = new MockERC1271Wallet(alice);
         token.mint(alice, 1_000e18);
         token.mint(address(wallet), 1_000e18);
@@ -534,16 +528,15 @@ contract SpectralTokenTest is Test {
         assertEq(token.DOMAIN_SEPARATOR(), expected);
     }
 
-    function test_setStabilizer_onceByDeployer() public {
-        SpectralToken t = new SpectralToken();
-        vm.prank(bob);
-        vm.expectRevert(SpectralToken.NotDeployer.selector);
-        t.setStabilizer(bob);
+    /// A3: the stabilizer is fixed at construction; there is no setter to race.
+    function test_stabilizerFixedAtConstruction() public {
         vm.expectRevert(SpectralToken.ZeroAddress.selector);
-        t.setStabilizer(address(0));
-        t.setStabilizer(bob);
-        vm.expectRevert(SpectralToken.StabilizerAlreadySet.selector);
-        t.setStabilizer(address(this));
+        new SpectralToken(address(0));
+        SpectralToken t = new SpectralToken(bob);
+        assertEq(t.stabilizer(), bob);
+        (bool canSet,) = address(t).call(abi.encodeWithSignature("setStabilizer(address)", address(this)));
+        assertFalse(canSet, "no setter");
+        assertEq(t.stabilizer(), bob);
     }
 
     function test_onlyStabilizerMintsBurnsRebases() public {
@@ -788,23 +781,21 @@ contract AutonomousTreasuryTest is Test {
     function setUp() public {
         usdc = new MockUSDC();
         vault = new MockVault(usdc);
-        treasury = new AutonomousTreasury(IERC4626(address(vault)), 0);
-        treasury.setStabilizer(address(this));
+        treasury = new AutonomousTreasury(IERC4626(address(vault)), 0, address(this));
         usdc.mint(address(treasury), 1_000e6);
         treasury.depositReserve();
     }
 
+    /// A3: the stabilizer is fixed at construction; there is no setter to race.
     function test_wiring() public {
         assertEq(address(treasury.asset()), address(usdc));
-        AutonomousTreasury t = new AutonomousTreasury(IERC4626(address(vault)), 0);
-        vm.prank(bob);
-        vm.expectRevert(AutonomousTreasury.NotDeployer.selector);
-        t.setStabilizer(bob);
-        t.setStabilizer(bob);
-        vm.expectRevert(AutonomousTreasury.StabilizerAlreadySet.selector);
-        t.setStabilizer(bob);
+        assertEq(treasury.stabilizer(), address(this));
+        (bool canSet,) = address(treasury).call(abi.encodeWithSignature("setStabilizer(address)", bob));
+        assertFalse(canSet, "no setter");
         vm.expectRevert(AutonomousTreasury.ZeroAddress.selector);
-        new AutonomousTreasury(IERC4626(address(0)), 0);
+        new AutonomousTreasury(IERC4626(address(0)), 0, address(this));
+        vm.expectRevert(AutonomousTreasury.ZeroAddress.selector);
+        new AutonomousTreasury(IERC4626(address(vault)), 0, address(0));
     }
 
     function test_onlyStabilizerMovesFunds() public {
@@ -934,6 +925,20 @@ contract SpectralStabilizerTest is SpectrumFixture {
         new SpectralStabilizer(
             token, treasury, ISpectralEntropyOracle(address(oracle)), address(0), address(0), 1, type(uint256).max
         );
+    }
+
+    /// A3: a stabilizer refuses to exist unless the token and the treasury both name it, so a
+    /// wrong address prediction (or a raced nonce) aborts the deployment.
+    function test_constructorRejectsMiswiring() public {
+        address next = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
+        SpectralToken foreign = new SpectralToken(bob);
+        vm.expectRevert(SpectralStabilizer.WiringMismatch.selector);
+        new SpectralStabilizer(foreign, treasury, ISpectralEntropyOracle(address(oracle)), admin, address(0), 1, 1);
+
+        next = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
+        SpectralToken mine = new SpectralToken(next);
+        vm.expectRevert(SpectralStabilizer.WiringMismatch.selector); // the treasury names the old stabilizer
+        new SpectralStabilizer(mine, treasury, ISpectralEntropyOracle(address(oracle)), admin, address(0), 1, 1);
     }
 
     // ------------------------------------------------------------------ policy
@@ -1413,13 +1418,13 @@ contract SpectralHookTest is Deployers {
         // Monetary system with the real oracle.
         usdc = new MockUSDC();
         vault = new MockVault(usdc);
-        treasury = new AutonomousTreasury(IERC4626(address(vault)), 0);
-        token = new SpectralToken();
-        oracle = new SpectralEntropyOracle(address(this), 1e18, 0.25e18, 1 hours);
+        address hookAt = address(FLAGS ^ (uint160(0x4444) << 144));
+        address stabilizerAt = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 3);
+        treasury = new AutonomousTreasury(IERC4626(address(vault)), 0, stabilizerAt);
+        token = new SpectralToken(stabilizerAt);
+        oracle = new SpectralEntropyOracle(hookAt, 1e18, 0.25e18, 1 hours);
         stabilizer =
             new SpectralStabilizer(token, treasury, oracle, address(this), address(0), 10_000_000e18, type(uint256).max);
-        token.setStabilizer(address(stabilizer));
-        treasury.setStabilizer(address(stabilizer));
         wsusd = new WrappedSUSD(token);
 
         // Liquidity: wrap minted sUSD into wsUSD; pair it with an 18-decimal test token.
@@ -1434,7 +1439,6 @@ contract SpectralHookTest is Deployers {
         other = deployMintAndApproveCurrency();
 
         hook = _deployHook(oracle, address(FLAGS ^ (uint160(0x4444) << 144)));
-        oracle.setHook(address(hook));
         key = _initPool(hook);
     }
 
@@ -1817,7 +1821,7 @@ contract TreasuryLiquidityTest is SpectrumFixture {
         vm.expectRevert(AutonomousTreasury.NotStabilizer.selector);
         treasury.setLiquidityBuffer(0);
         vm.expectRevert(AutonomousTreasury.InvalidBuffer.selector);
-        new AutonomousTreasury(IERC4626(address(vault)), 10_001);
+        new AutonomousTreasury(IERC4626(address(vault)), 10_001, address(this));
     }
 }
 

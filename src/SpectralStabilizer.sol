@@ -170,6 +170,7 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
     error AssetMismatch();
     error NoPendingVault();
     error VaultTimelockActive(uint256 eta);
+    error WiringMismatch();
 
     // ---------------------------------------------------------------------- constructor
 
@@ -190,6 +191,11 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
             address(token_) == address(0) || address(treasury_) == address(0) || address(oracle_) == address(0)
                 || admin == address(0)
         ) revert ZeroAddress();
+        // The token and the treasury were deployed first, naming this contract's predicted
+        // address. Refuse to exist if either names someone else (Phase 4, A3).
+        if (token_.stabilizer() != address(this) || treasury_.stabilizer() != address(this)) {
+            revert WiringMismatch();
+        }
         token = token_;
         treasury = treasury_;
         oracle = oracle_;

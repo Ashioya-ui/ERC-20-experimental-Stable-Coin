@@ -45,10 +45,9 @@ contract AutonomousTreasury is ReentrancyGuard {
 
     /// @notice Reserve asset (USDC). Every vault must use it.
     IERC20 public immutable asset;
-    /// @notice Account allowed to call `setStabilizer` exactly once.
-    address public immutable deployer;
-    /// @notice The only account allowed to move funds out or change settings.
-    address public stabilizer;
+    /// @notice The only account allowed to move funds out or change settings, fixed at
+    ///         construction (Phase 4, A3).
+    address public immutable stabilizer;
 
     /// @notice Current yield venue.
     IERC4626 public vault;
@@ -68,8 +67,6 @@ contract AutonomousTreasury is ReentrancyGuard {
     event LegacyRecovered(address indexed legacyVault, uint256 assetsRecovered, uint256 sharesLeft);
 
     error NotStabilizer();
-    error NotDeployer();
-    error StabilizerAlreadySet();
     error ZeroAddress();
     error InvalidBuffer();
     error AssetMismatch();
@@ -85,21 +82,16 @@ contract AutonomousTreasury is ReentrancyGuard {
 
     /// @param vault_              ERC-4626 vault over the reserve asset.
     /// @param liquidityBufferBps_ Share of the reserve kept idle (e.g. 1_500 = 15%).
-    constructor(IERC4626 vault_, uint256 liquidityBufferBps_) {
-        if (address(vault_) == address(0)) revert ZeroAddress();
+    /// @param stabilizer_         The SpectralStabilizer, deployed after this contract at an
+    ///                            address predicted from the deployer's nonce; its constructor
+    ///                            checks that this treasury names it.
+    constructor(IERC4626 vault_, uint256 liquidityBufferBps_, address stabilizer_) {
+        if (address(vault_) == address(0) || stabilizer_ == address(0)) revert ZeroAddress();
         if (liquidityBufferBps_ > MAX_BPS) revert InvalidBuffer();
         vault = vault_;
         asset = IERC20(vault_.asset());
-        deployer = msg.sender;
-        liquidityBufferBps = liquidityBufferBps_;
-    }
-
-    /// @notice Wire the stabilizer. Callable once by the deployer.
-    function setStabilizer(address stabilizer_) external {
-        if (msg.sender != deployer) revert NotDeployer();
-        if (stabilizer_ == address(0)) revert ZeroAddress();
-        if (stabilizer != address(0)) revert StabilizerAlreadySet();
         stabilizer = stabilizer_;
+        liquidityBufferBps = liquidityBufferBps_;
         emit StabilizerSet(stabilizer_);
     }
 

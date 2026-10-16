@@ -40,13 +40,14 @@ abstract contract SpectrumFixture is Test {
         vm.warp(1_700_000_000);
         usdc = new MockUSDC();
         vault = new MockVault(usdc);
-        treasury = new AutonomousTreasury(IERC4626(address(vault)), liquidityBufferBps);
-        token = new SpectralToken();
+        // Wiring is fixed in constructors: the stabilizer is the 4th contract created below.
+        address stabilizerAt = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 3);
+        treasury = new AutonomousTreasury(IERC4626(address(vault)), liquidityBufferBps, stabilizerAt);
+        token = new SpectralToken(stabilizerAt);
         oracle = new MockOracle();
         oracle.setEntropy(0);
         stabilizer = _newStabilizer();
-        token.setStabilizer(address(stabilizer));
-        treasury.setStabilizer(address(stabilizer));
+        require(address(stabilizer) == stabilizerAt, "fixture: stabilizer address prediction");
     }
 
     /// @dev Overridden by tests that need a harness.

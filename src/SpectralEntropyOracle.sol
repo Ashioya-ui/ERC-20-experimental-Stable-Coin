@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {SpectralMath} from "./libraries/SpectralMath.sol";
 import {ISpectralEntropyOracle} from "./interfaces/ISpectralEntropyOracle.sol";
 
@@ -25,10 +24,11 @@ import {ISpectralEntropyOracle} from "./interfaces/ISpectralEntropyOracle.sol";
 ///         Fallbacks. `NEUTRAL_ENTROPY` (0.5) is returned until 8 blocks have been seen, and
 ///         whenever no swap has been recorded for `staleAfter` seconds.
 ///
-///         Trust. Only the hook may write, and the hook can be set exactly once. After that
-///         the owner has no power over the data. (The previous SPCM oracle's red-team
-///         finding CRITICAL-1, an owner able to spoof entropy, stays closed.)
-contract SpectralEntropyOracle is ISpectralEntropyOracle, Ownable2Step {
+///         Trust. Only the hook may write, and the hook is fixed at construction: the
+///         deployment predicts its CREATE2 address (Phase 4, A3). There is no owner, so nobody
+///         can redirect or spoof the data. (The previous SPCM oracle's red-team finding
+///         CRITICAL-1, an owner able to spoof entropy, stays closed.)
+contract SpectralEntropyOracle is ISpectralEntropyOracle {
     /// @notice Window length (number of block slots).
     uint256 public constant WINDOW = 8;
     /// @notice Value reported when no meaningful signal exists.
@@ -41,8 +41,8 @@ contract SpectralEntropyOracle is ISpectralEntropyOracle, Ownable2Step {
     /// @notice Seconds without any recorded swap after which the signal is neutral.
     uint256 public immutable staleAfter;
 
-    /// @notice The only address allowed to call `record` (set once).
-    address public hook;
+    /// @notice The only address allowed to call `record`.
+    address public immutable hook;
 
     uint128[8] private _volumes; // per-block summed notional, ring buffer
     uint8 public head; // slot of the newest block
@@ -58,30 +58,20 @@ contract SpectralEntropyOracle is ISpectralEntropyOracle, Ownable2Step {
 
     error NotHook();
     error ZeroAddress();
-    error HookAlreadySet();
     error InvalidParameter();
 
-    /// @param owner_          Account allowed to call `setHook` once (Ownable2Step).
+    /// @param hook_           The SpectralHook allowed to call `record` (its CREATE2 address).
     /// @param minObservation_ Dust threshold in sUSD wei, e.g. 10e18.
     /// @param emaAlpha_       EMA weight in WAD, 0 < alpha <= 1e18.
     /// @param staleAfter_     Staleness horizon in seconds, > 0.
-    constructor(address owner_, uint256 minObservation_, uint256 emaAlpha_, uint256 staleAfter_)
-        Ownable(owner_)
-    {
+    constructor(address hook_, uint256 minObservation_, uint256 emaAlpha_, uint256 staleAfter_) {
+        if (hook_ == address(0)) revert ZeroAddress();
         if (emaAlpha_ == 0 || emaAlpha_ > 1e18 || staleAfter_ == 0) revert InvalidParameter();
+        hook = hook_;
         minObservation = minObservation_;
         emaAlpha = emaAlpha_;
         staleAfter = staleAfter_;
         _ema = NEUTRAL_ENTROPY;
-    }
-
-    // ----------------------------------------------------------------------- admin
-
-    /// @notice Register the Uniswap v4 hook. Callable once; irreversible.
-    function setHook(address hook_) external onlyOwner {
-        if (hook_ == address(0)) revert ZeroAddress();
-        if (hook != address(0)) revert HookAlreadySet();
-        hook = hook_;
         emit HookSet(hook_);
     }
 

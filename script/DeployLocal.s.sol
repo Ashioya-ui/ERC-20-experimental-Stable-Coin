@@ -72,24 +72,28 @@ contract DeployLocal is Script {
         d.liquidityRouter = new PoolModifyLiquidityTest(d.manager);
         d.swapRouter = new PoolSwapTest(d.manager);
 
-        d.treasury = new AutonomousTreasury(IERC4626(address(d.vault)), 1_500);
-        d.token = new SpectralToken();
-        d.oracle = new SpectralEntropyOracle(me, 1e18, 0.25e18, 1 hours);
+        // Wiring is fixed in constructors (Phase 4, A3): predict the CREATE addresses from the
+        // broadcaster's nonce and the hook's CREATE2 address from the mined salt.
+        uint256 n = vm.getNonce(me);
+        address stabilizerAt = vm.computeCreateAddress(me, n + 3); // treasury n, token n+1, oracle n+2
+        address wsusdAt = vm.computeCreateAddress(me, n + 4);
+        Currency ws = Currency.wrap(wsusdAt);
+        Currency usd = Currency.wrap(address(d.usdc));
+        uint160 flags = uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.AFTER_SWAP_FLAG);
+        bytes memory args = abi.encode(d.manager, vm.computeCreateAddress(me, n + 2), ws, usd, FEE, TICK_SPACING);
+        (address hookAt, bytes32 salt) = HookMiner.find(CREATE2_DEPLOYER, flags, type(SpectralHook).creationCode, args);
+
+        d.treasury = new AutonomousTreasury(IERC4626(address(d.vault)), 1_500, stabilizerAt);
+        d.token = new SpectralToken(stabilizerAt);
+        d.oracle = new SpectralEntropyOracle(hookAt, 1e18, 0.25e18, 1 hours);
         d.stabilizer =
             new SpectralStabilizer(d.token, d.treasury, d.oracle, me, address(0), 1_000_000e18, type(uint256).max);
-        d.token.setStabilizer(address(d.stabilizer));
-        d.treasury.setStabilizer(address(d.stabilizer));
         d.wsusd = new WrappedSUSD(d.token);
+        require(address(d.stabilizer) == stabilizerAt && address(d.wsusd) == wsusdAt, "address prediction failed");
 
         // ---------------------------------------------------------------- hook (CREATE2, mined)
-        Currency ws = Currency.wrap(address(d.wsusd));
-        Currency usd = Currency.wrap(address(d.usdc));
-        bytes memory args = abi.encode(d.manager, d.oracle, ws, usd, FEE, TICK_SPACING);
-        uint160 flags = uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.AFTER_SWAP_FLAG);
-        (address predicted, bytes32 salt) = HookMiner.find(CREATE2_DEPLOYER, flags, type(SpectralHook).creationCode, args);
         d.hook = new SpectralHook{salt: salt}(d.manager, d.oracle, ws, usd, FEE, TICK_SPACING);
-        require(address(d.hook) == predicted, "hook address mismatch");
-        d.oracle.setHook(address(d.hook));
+        require(address(d.hook) == hookAt, "hook address mismatch");
 
         // ---------------------------------------------------------------- liquidity
         d.usdc.mint(me, 400_000e6);

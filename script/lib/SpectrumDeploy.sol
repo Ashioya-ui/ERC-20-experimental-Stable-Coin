@@ -148,29 +148,42 @@ library SpectrumDeploy {
 
     // ------------------------------------------------------------------------ deploy
 
-    /// @notice Deploy and wire everything. Run inside vm.startBroadcast() in scripts.
+    /// @notice Deploy everything. Run inside vm.startBroadcast() in scripts.
+    /// @dev    Wiring is fixed in constructors, so there is no setter transaction a leaked key
+    ///         could race (Phase 4, A3). CREATE addresses are predicted from the deployer's
+    ///         nonce and the hook's CREATE2 address from the mined salt; the hook's init code
+    ///         names the oracle's predicted address, so there is no cycle. Every prediction is
+    ///         checked as soon as the contract exists, and the stabilizer's constructor itself
+    ///         refuses a token or treasury that names another stabilizer.
     /// @param  deployer The account whose transactions are sent (msg.sender of every call).
     function deploy(Config memory c, address deployer) internal returns (Deployment memory d) {
-        d.treasury = new AutonomousTreasury(IERC4626(c.vault), c.liquidityBufferBps);
-        d.token = new SpectralToken();
-        d.oracle = new SpectralEntropyOracle(deployer, c.minObservation, c.emaAlpha, c.staleAfter);
-        d.stabilizer =
-            new SpectralStabilizer(d.token, d.treasury, d.oracle, c.admin, c.guardian, c.bootstrapCap, c.supplyCap);
-        d.token.setStabilizer(address(d.stabilizer));
-        d.treasury.setStabilizer(address(d.stabilizer));
-        d.wsusd = new WrappedSUSD(IERC20(address(d.token)));
-
+        uint256 n = vm.getNonce(deployer);
+        address treasuryAt = vm.computeCreateAddress(deployer, n);
+        address tokenAt = vm.computeCreateAddress(deployer, n + 1);
+        address oracleAt = vm.computeCreateAddress(deployer, n + 2);
+        address stabilizerAt = vm.computeCreateAddress(deployer, n + 3);
+        address wsusdAt = vm.computeCreateAddress(deployer, n + 4);
         // Hook through the CREATE2 proxy, explicitly, so the mined address is the same in
         // scripts, tests and on-chain.
-        bytes memory initCode = hookInitCode(c, address(d.oracle), address(d.wsusd));
-        (bytes32 salt, address predicted) = mineHookSalt(keccak256(initCode));
+        bytes memory initCode = hookInitCode(c, oracleAt, wsusdAt);
+        (bytes32 salt, address hookAt) = mineHookSalt(keccak256(initCode));
+
+        d.treasury = new AutonomousTreasury(IERC4626(c.vault), c.liquidityBufferBps, stabilizerAt);
+        require(address(d.treasury) == treasuryAt, "deploy: treasury address mismatch (deployer nonce moved)");
+        d.token = new SpectralToken(stabilizerAt);
+        require(address(d.token) == tokenAt, "deploy: token address mismatch (deployer nonce moved)");
+        d.oracle = new SpectralEntropyOracle(hookAt, c.minObservation, c.emaAlpha, c.staleAfter);
+        require(address(d.oracle) == oracleAt, "deploy: oracle address mismatch (deployer nonce moved)");
+        d.stabilizer =
+            new SpectralStabilizer(d.token, d.treasury, d.oracle, c.admin, c.guardian, c.bootstrapCap, c.supplyCap);
+        require(address(d.stabilizer) == stabilizerAt, "deploy: stabilizer address mismatch (deployer nonce moved)");
+        d.wsusd = new WrappedSUSD(IERC20(address(d.token)));
+        require(address(d.wsusd) == wsusdAt, "deploy: wsUSD address mismatch (deployer nonce moved)");
+
         address hookAddr = create2(salt, initCode);
-        require(hookAddr == predicted, "deploy: hook address mismatch");
+        require(hookAddr == hookAt, "deploy: hook address mismatch");
         d.hook = SpectralHook(hookAddr);
         d.hookSalt = salt;
-
-        d.oracle.setHook(hookAddr);
-        d.oracle.renounceOwnership(); // its only power (setHook) is spent
 
         d.key = poolKey(c, address(d.wsusd), hookAddr);
         IPoolManager(c.poolManager).initialize(d.key, parSqrtPriceX96(d.key));
@@ -199,7 +212,6 @@ library SpectrumDeploy {
         require(address(d.stabilizer.asset()) == c.usdc, "check: stabilizer.asset");
         require(d.wsusd.asset() == address(d.token), "check: wsUSD.asset");
         require(d.oracle.hook() == address(d.hook), "check: oracle.hook");
-        require(d.oracle.owner() == address(0), "check: oracle ownership not renounced");
 
         // hook: deterministic address = CREATE2(proxy, salt, initCode), with exactly our flags
         require(uint160(address(d.hook)) & Hooks.ALL_HOOK_MASK == HOOK_FLAGS, "check: hook address flags");
