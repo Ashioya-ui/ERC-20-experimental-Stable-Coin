@@ -78,7 +78,7 @@ cap and the surplus buffer within fixed ranges. H never touches backing.
 | Racing the deployment wiring | constructor wiring with predicted addresses; the script aborts on any mismatch (A3) |
 | CI dependency stealing the deployer key | key only in the broadcast step; pinned actions (A4) |
 | Admin moves the reserve to a malicious vault | immutable allowlist plus a 7-day timelock in which holders can exit (A5) |
-| Vault loss | `sync` absorbs it pro rata; the surplus and protocol capital absorb small losses first; loss front-running analysed in A9 |
+| Vault loss | `sync` absorbs it pro rata; the surplus and protocol capital absorb small losses first; loss front-running: section 5.1 (A9) |
 | Vault illiquidity (bank run) | idle buffer; `InsufficientLiquidity(available)`; emergency exit; quarantine of unredeemable shares on migration |
 | Donations and inflation attacks | donations become surplus; measured-increase crediting; wsUSD virtual shares plus dead shares |
 | Reentrancy, including read-only | `nonReentrant` on every state-changing path; the index changes only inside stabilizer calls; the only callbacks are to the vault and PoolManager, both trusted |
@@ -86,6 +86,51 @@ cap and the surplus buffer within fixed ranges. H never touches backing.
 | Oracle gas griefing | the worst-case `record()` cost is measured and bounded (A8, B4); a deliberate gas starvation reverts the swap |
 | USDC blacklisting or pause | out of the protocol's control; documented in the runbook |
 | Base sequencer downtime | no transactions while it is down; the oracle reads neutral after `staleAfter` |
+
+### 5.1 Loss front-running (A9)
+
+A holder who learns of a vault loss before it is realised on-chain can redeem at par first.
+Once the loss is visible in the vault's share price, `sync` runs first in every mint, redeem and
+rebase, so nobody can exit at the old price after that. On Base the sequencer keeps no public
+mempool, so the realistic case is not a mempool race but information that arrives before the
+loss lands: an exploit in progress, disclosed bad debt, a governance decision.
+
+**What it shifts.** With supply `S`, surplus `U = reserve − supply` (the first-loss cushion,
+which after B8 includes protocol capital) and redemption fee rate `f`, a holder who exits `b`
+sUSD ahead of a loss `l` shifts onto everyone who stays
+
+    shifted = b · max(0, (l − U)/S − f)
+
+and gains exactly that over holding through the loss. A loss no larger than `U` lowers no
+balance at all, so front-running it gains nothing and costs the fee. If a fraction `φ` of the
+supply exits ahead of the loss, whoever stays loses `max(0, l/S − U/S − f φ) / (1 − φ)` per
+unit: the late holder's loss is amplified by `1/(1 − φ)`.
+
+Measured (`test/LossFrontRunning.t.sol`, H = 0, so `f` = 1 bp): with `S` = 20,000, `U` = 102,
+`l` = 600 and `b` = 9,999, the shift onto the other holder is 248.0001 sUSD, equal to the
+formula to 5e-15 sUSD. When 90% of the supply exits ahead of a 2% loss, the holder who stays
+loses 19.81%, against 1.99% pro rata. A loss inside the cushion leaves every balance unchanged
+in both orders (`test_frontRunningGainsNothingInsideTheCushion`), and a fuzz test checks that
+a loss no larger than the surplus never lowers the index, whatever action meets it first.
+
+Gain per sUSD front-run, `(l − U)/S − f` with `f` = 3.25 bp (neutral H):
+
+| Cushion `U/S` | loss 0.5% | loss 2% | loss 5% | loss 10% |
+|---|---|---|---|---|
+| 0.13% (day one: accumulated mint fees only) | 0.34% | 1.84% | 4.84% | 9.84% |
+| 2.75% (surplus buffer filled, neutral H) | 0 | 0 | 2.22% | 7.22% |
+| 5.13% (5% protocol capital, B8, plus fees) | 0 | 0 | 0 | 4.84% |
+
+**Decision.** The launch parameters do leave exposure beyond the cushion: on day one the
+cushion is only the mint fees collected so far, and the surplus buffer takes months to fill
+from yield (README, limitation 7). The remedy is B8's protocol capital, which the prompt already
+makes the default: `params.seedCapitalUSDC` = 1,250 USDC gives a 5% cushion at the 25,000 sUSD
+supply cap, so every loss up to 5% of supply lowers no balance and front-running it gains
+nothing. When the admin raises the supply cap, keep protocol capital at 5% of it or accept
+the exposure in the table. Nothing else is built. Delaying or pausing redemptions would swap
+this risk for a run at the exit gate and remove the property the peg rests on (redeem at any
+time), so redemption stays unpausable. The guardian's emergency exit can still move the reserve
+to idle USDC when a loss is anticipated but not yet realised.
 
 ## 6. Invariants and the tests that enforce them
 
@@ -101,6 +146,7 @@ cap and the surplus buffer within fixed ranges. H never touches backing.
 | Churn budget holds after every distribution | `invariant_churnBudgetHoldsAfterEveryDistribution`; `ChurnBudgetTest` |
 | Net expansion per epoch ≤ cap | `invariant_expansionWithinCap` (net definition after A1) |
 | Index > 0 | `invariant_indexPositive` |
+| A realised loss no larger than the surplus never lowers the index | `testFuzz_lossWithinTheSurplusNeverLowersTheIndex` (A9) |
 | No actor ends with more than it put in plus its share of distributed surplus | `invariant_noFreeLunch` (A10) |
 | Protocol capital is never distributed | `invariant_protocolCapitalNeverDistributed` (B8) |
 | H stays in [0, 1e18]; warm-up and stale periods read neutral | `SpectralEntropyOracleTest` |
