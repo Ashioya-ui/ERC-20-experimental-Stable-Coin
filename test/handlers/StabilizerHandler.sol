@@ -168,8 +168,14 @@ contract StabilizerHandler is Test {
         usdc.mint(address(treasury), assets);
     }
 
+    /// A6: entropy is attacker-controlled, so the handler includes the extremes and sudden
+    /// switches between them, not just values in between.
     function setEntropy(uint256 h) external {
-        oracle.setEntropy(bound(h, 0, 1e18));
+        uint256 pick = h % 4;
+        if (pick == 0) oracle.setEntropy(0);
+        else if (pick == 1) oracle.setEntropy(1e18);
+        else if (pick == 2) oracle.setEntropy(oracle.h() == 0 ? 1e18 : 0); // flip
+        else oracle.setEntropy(bound(h, 0, 1e18));
     }
 
     function warp(uint256 secs) external {

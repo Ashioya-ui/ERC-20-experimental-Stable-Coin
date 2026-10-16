@@ -8,7 +8,7 @@ contract MockOracle is ISpectralEntropyOracle {
     uint256 public h = 0.5e18;
     bool public shouldRevert;
     uint256 public burnGas;
-    uint256 public recorded;
+    int256 public recorded;
     uint256 public calls;
 
     function setEntropy(uint256 h_) external {
@@ -23,7 +23,7 @@ contract MockOracle is ISpectralEntropyOracle {
         burnGas = g;
     }
 
-    function record(uint256 amount) external override {
+    function record(int256 amount) external override {
         if (shouldRevert) revert("oracle down");
         uint256 start = gasleft();
         while (start - gasleft() < burnGas) {}

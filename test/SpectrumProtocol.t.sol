@@ -303,36 +303,38 @@ contract SpectralEntropyOracleTest is Test {
 
     uint256 internal constant DUST = 10e18;
     uint256 internal constant ALPHA = 0.25e18;
+    uint256 internal constant TAU = 1 hours;
     uint256 internal constant STALE = 1 hours;
     uint256 internal constant T0 = 1_700_000_000;
 
     function setUp() public {
         vm.roll(100);
         vm.warp(T0);
-        oracle = new SpectralEntropyOracle(hook, DUST, ALPHA, STALE);
+        oracle = new SpectralEntropyOracle(hook, DUST, ALPHA, TAU, STALE);
     }
 
     function _recordAt(uint256 blockNumber, uint256 amount) internal {
+        // Positive deltas: the per-block net is the sum (see the net-flow tests for signs).
         vm.roll(blockNumber);
         vm.warp(T0 + 2 * (blockNumber - 100)); // 2-second blocks
         vm.prank(hook);
-        oracle.record(amount);
+        oracle.record(int256(amount));
     }
 
     function test_constructor_validatesParameters() public {
         vm.expectRevert(SpectralEntropyOracle.InvalidParameter.selector);
-        new SpectralEntropyOracle(hook, DUST, 0, STALE);
+        new SpectralEntropyOracle(hook, DUST, 0, TAU, STALE);
         vm.expectRevert(SpectralEntropyOracle.InvalidParameter.selector);
-        new SpectralEntropyOracle(hook, DUST, 1e18 + 1, STALE);
+        new SpectralEntropyOracle(hook, DUST, 1e18 + 1, TAU, STALE);
         vm.expectRevert(SpectralEntropyOracle.InvalidParameter.selector);
-        new SpectralEntropyOracle(hook, DUST, ALPHA, 0);
+        new SpectralEntropyOracle(hook, DUST, ALPHA, TAU, 0);
     }
 
     /// A3: the writer is fixed at construction. There is no owner and no setter, so neither a
     /// deployer key nor anyone else can redirect the data, during or after deployment.
     function test_hookFixedAtConstruction() public {
         vm.expectRevert(SpectralEntropyOracle.ZeroAddress.selector);
-        new SpectralEntropyOracle(address(0), DUST, ALPHA, STALE);
+        new SpectralEntropyOracle(address(0), DUST, ALPHA, TAU, STALE);
         assertEq(oracle.hook(), hook);
         (bool hasOwner,) = address(oracle).call(abi.encodeWithSignature("owner()"));
         assertFalse(hasOwner, "no owner");
@@ -342,17 +344,17 @@ contract SpectralEntropyOracleTest is Test {
 
     function test_record_onlyHook() public {
         vm.expectRevert(SpectralEntropyOracle.NotHook.selector);
-        oracle.record(100e18);
+        oracle.record(int256(100e18));
         vm.prank(owner); // nobody else has write access
         vm.expectRevert(SpectralEntropyOracle.NotHook.selector);
-        oracle.record(100e18);
+        oracle.record(int256(100e18));
     }
 
     function test_record_ignoresDust() public {
         vm.expectEmit(address(oracle));
-        emit SpectralEntropyOracle.DustIgnored(DUST - 1);
+        emit SpectralEntropyOracle.DustIgnored(int256(DUST) - 1);
         vm.prank(hook);
-        oracle.record(DUST - 1);
+        oracle.record(int256(DUST) - 1);
         assertEq(oracle.filled(), 0);
     }
 
@@ -391,31 +393,64 @@ contract SpectralEntropyOracleTest is Test {
         assertEq(oracle.smoothedEntropy(), 0.5e18, "EMA starts neutral");
     }
 
-    function test_ema_foldsClosedWindowOnNextBlock() public {
+    /// A6: a fold carries weight min(alphaMax, dt/(dt + tau)), so folds packed into
+    /// consecutive 2-second blocks barely move the EMA.
+    function test_ema_foldWeightGrowsWithTime() public {
         for (uint256 b = 101; b <= 108; ++b) {
             _recordAt(b, 50e18);
         }
+        uint256 dt = 16; // eight 2-second blocks since construction
+        assertEq(oracle.foldWeight(), (dt * 1e18) / (dt + TAU));
+        uint256 wAtFold = ((dt + 2) * 1e18) / (dt + 2 + TAU); // the fold lands one block later
+        uint256 expected = 0.5e18 - ((0.5e18 * wAtFold) / 1e18); // towards h = 0
         vm.expectEmit(address(oracle));
-        emit SpectralEntropyOracle.WindowClosed(108, 0, 0.375e18); // 0.5 + 0.25 (0 - 0.5)
+        emit SpectralEntropyOracle.WindowClosed(108, 0, wAtFold, expected);
         _recordAt(109, 50e18);
-        assertEq(oracle.rawEma(), 0.375e18);
-        assertEq(oracle.smoothedEntropy(), 0.375e18);
+        assertEq(oracle.rawEma(), expected);
+        assertGt(oracle.rawEma(), 0.49e18, "one packed fold moves H by well under 1%");
+
+        // After a quiet hour the next fold carries the full alphaMax.
+        vm.warp(vm.getBlockTimestamp() + 2 hours);
+        assertEq(oracle.foldWeight(), ALPHA);
     }
 
-    function test_ema_followsWhaleFlow() public {
-        // calm: the EMA decays from 0.5 toward 0 (x 0.75 per closed window)
-        for (uint256 b = 101; b <= 130; ++b) {
-            _recordAt(b, 50e18);
+    /// A6: the same eight calm blocks move H much further when they are spread over hours than
+    /// when they are packed into consecutive blocks. Attacking the signal costs wall time.
+    function test_ema_packedFoldsAreWeakerThanSpacedFolds() public {
+        uint256 packed;
+        {
+            for (uint256 b = 101; b <= 140; ++b) {
+                _recordAt(b, 50e18); // 2-second blocks, 40 of them
+            }
+            packed = oracle.rawEma();
         }
-        uint256 calm = oracle.smoothedEntropy();
-        assertLt(calm, 0.001e18);
-        // one whale block among calm blocks
-        _recordAt(131, 50_000e18);
-        assertGt(oracle.instantEntropy(), 0.99e18, "spiky window");
-        for (uint256 b = 132; b <= 139; ++b) {
-            _recordAt(b, 50e18);
+        SpectralEntropyOracle spaced = new SpectralEntropyOracle(hook, DUST, ALPHA, TAU, 10 days);
+        uint256 b2 = 1_000;
+        for (uint256 i; i < 40; ++i) {
+            vm.roll(++b2);
+            vm.warp(vm.getBlockTimestamp() + 20 minutes);
+            vm.prank(hook);
+            spaced.record(int256(50e18));
         }
-        assertGt(oracle.smoothedEntropy(), calm + 0.5e18, "EMA reacts to the whale");
+        assertGt(packed, 0.4e18, "40 packed folds barely move H");
+        assertLt(spaced.rawEma(), 0.05e18, "the same flow spread out drives H to 0");
+    }
+
+    /// A6: each slot holds the absolute *net* flow of its block, so a round trip inside one
+    /// block records almost nothing however large its legs are.
+    function test_netFlowPerBlockCancelsRoundTrips() public {
+        vm.roll(101);
+        vm.warp(T0 + 2);
+        vm.startPrank(hook);
+        oracle.record(int256(10_000e18)); // buy
+        oracle.record(-int256(9_990e18)); // sell back in the same block
+        vm.stopPrank();
+        assertEq(oracle.currentNet(), int256(10e18));
+        assertEq(oracle.window()[7], 10e18, "net, not gross");
+
+        // Across blocks the flows stand on their own.
+        _recordAt(102, 10_000e18);
+        assertEq(oracle.window()[7], 10_000e18);
     }
 
     function test_staleness_returnsNeutral() public {
@@ -429,8 +464,10 @@ contract SpectralEntropyOracleTest is Test {
     }
 
     function test_record_saturatesHugeAmounts() public {
-        _recordAt(101, type(uint256).max);
-        _recordAt(101, type(uint256).max);
+        uint256 huge = uint256(type(uint128).max) + 1e18;
+        _recordAt(101, huge);
+        assertEq(oracle.window()[7], type(uint128).max, "clamped into the slot");
+        _recordAt(102, huge);
         assertEq(oracle.window()[7], type(uint128).max);
     }
 
@@ -444,7 +481,7 @@ contract SpectralEntropyOracleTest is Test {
         vm.cool(address(oracle));
         vm.prank(hook);
         uint256 g = gasleft();
-        oracle.record(123e18);
+        oracle.record(int256(123e18));
         uint256 used = g - gasleft();
         emit log_named_uint("record() closing a window, cold storage (gas)", used);
         assertLt(used, 70_000, "oracle write stays cheap");
@@ -871,7 +908,7 @@ contract WrappedSUSDTest is SpectrumFixture {
     function test_wrapperBalanceIsFixedWhileValueTracksIndex() public {
         uint256 shares = ws.balanceOf(alice);
         assertEq(shares, 1_000e18);
-        vault.simulateYield(200e6);
+        vault.simulateYield(600e6); // above the 2.75% buffer on a 10,000 USDC reserve
         assertTrue(stabilizer.rebase());
         assertEq(ws.balanceOf(alice), shares, "wsUSD does not rebase");
         assertGt(ws.convertToAssets(shares), 1_000e18, "value accrues");
@@ -882,7 +919,7 @@ contract WrappedSUSDTest is SpectrumFixture {
     }
 
     function test_unwrapReturnsSUSD() public {
-        vault.simulateYield(200e6);
+        vault.simulateYield(600e6);
         stabilizer.rebase();
         uint256 before = token.balanceOf(alice);
         uint256 shares = ws.balanceOf(alice);
@@ -997,7 +1034,9 @@ contract SpectralStabilizerTest is SpectrumFixture {
         assertEq(stabilizer.redeemFeeRate(1e18), 0.001e18);
         assertEq(stabilizer.expansionCapRate(0), 0.2e18);
         assertEq(stabilizer.expansionCapRate(1e18), 0.02e18);
-        assertEq(stabilizer.bufferRate(0), 0.005e18);
+        assertEq(stabilizer.bufferRate(0), 0.0275e18, "floored at the neutral buffer (D4)");
+        assertEq(stabilizer.bufferRate(0.5e18), 0.0275e18);
+        assertEq(stabilizer.bufferRate(0.75e18), 0.038_75e18);
         assertEq(stabilizer.bufferRate(1e18), 0.05e18);
         assertEq(stabilizer.rebaseStepRate(0), 0.0001e18);
         assertEq(stabilizer.rebaseStepRate(1e18), 0.00005e18);
@@ -1208,7 +1247,7 @@ contract SpectralStabilizerTest is SpectrumFixture {
 
     function test_rebase_distributesSurplusInBoundedSteps() public {
         _mintFor(alice, 10_000e6); // 9,999 sUSD
-        vault.simulateYield(200e6);
+        vault.simulateYield(400e6); // 4% > the 2.75% neutral buffer
         uint256 supply0 = token.totalSupply();
 
         vm.prank(bob); // permissionless keeper
@@ -1227,10 +1266,10 @@ contract SpectralStabilizerTest is SpectrumFixture {
 
     function test_rebase_keepsBuffer() public {
         _mintFor(alice, 10_000e6);
-        vault.simulateYield(40e6); // 0.4% < 0.5% buffer
+        vault.simulateYield(250e6); // 2.5% < the 2.75% buffer
         vm.expectRevert(SpectralStabilizer.NothingToDistribute.selector);
         stabilizer.rebase();
-        vault.simulateYield(20e6); // 0.6% > buffer
+        vault.simulateYield(100e6); // 3.5% > buffer
         assertTrue(stabilizer.rebase());
     }
 
@@ -1326,13 +1365,13 @@ contract SpectralStabilizerTest is SpectrumFixture {
 
     function test_churn_defersThirdUpLegWhenWhipsawing() public {
         _mintFor(alice, 10_000e6);
-        vault.simulateYield(100e6);
+        vault.simulateYield(400e6); // above the 2.75% buffer
         assertTrue(_rebaseAfter(1 hours), "up 1");
         _whipsawLoss(); // down 1
-        vault.simulateYield(vault.totalAssets() / 100);
+        vault.simulateYield(vault.totalAssets() / 25); // > 2.75% buffer after the whipsaw loss
         assertTrue(_rebaseAfter(1 hours), "up 2: L = 3D <= C_DIAM D");
         _whipsawLoss(); // down 2
-        vault.simulateYield(vault.totalAssets() / 100);
+        vault.simulateYield(vault.totalAssets() / 25); // > 2.75% buffer after the whipsaw loss
 
         uint256 idx = token.index();
         vm.expectEmit(false, false, false, false, address(stabilizer));
@@ -1475,7 +1514,7 @@ contract SpectralHookTest is Deployers {
         address stabilizerAt = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 3);
         treasury = new AutonomousTreasury(IERC4626(address(vault)), 0, stabilizerAt);
         token = new SpectralToken(stabilizerAt);
-        oracle = new SpectralEntropyOracle(hookAt, 1e18, 0.25e18, 1 hours);
+        oracle = new SpectralEntropyOracle(hookAt, 1e18, 0.25e18, 1 hours, 1 hours);
         address[] memory vaults = new address[](1);
         vaults[0] = address(vault);
         stabilizer = new SpectralStabilizer(
@@ -1628,7 +1667,7 @@ contract SpectralHookTest is Deployers {
             _sellWs(key, 100e18);
         }
         assertEq(oracle.instantEntropy(), 0, "homogeneous flow");
-        assertEq(oracle.smoothedEntropy(), 0.375e18);
+        assertLt(oracle.smoothedEntropy(), 0.5e18, "the EMA has started to fall");
         for (uint256 i; i < 7; ++i) {
             _nextBlock();
             _sellWs(key, 100e18);
@@ -1637,10 +1676,16 @@ contract SpectralHookTest is Deployers {
         _nextBlock();
         _sellWs(key, 5_000e18); // whale
         assertGt(oracle.instantEntropy(), 0.99e18, "concentrated flow");
-        uint256 before = oracle.smoothedEntropy();
+        uint256 before = oracle.rawEma();
+        // A6: the fold weight grows with time, so the whale window only moves the smoothed
+        // signal materially once the pool has been quiet for a while (50 minutes here, which
+        // is still inside the 1-hour staleness horizon).
+        vm.warp(vm.getBlockTimestamp() + 50 minutes);
         _nextBlock();
         _sellWs(key, 100e18); // closes the whale window
-        assertGt(oracle.smoothedEntropy(), before + 0.2e18);
+        // One fold moves the EMA by at most emaAlphaMax (0.25) of the gap, whatever the wait.
+        assertGt(oracle.rawEma(), before + 0.1e18);
+        assertLt(oracle.rawEma(), before + 0.25e18, "one fold is capped at alphaMax");
         (, uint256 whaleFee) = stabilizer.quoteMint(1_000e6);
         assertGt(whaleFee, calmFee, "minting gets more expensive after spiky flow");
     }

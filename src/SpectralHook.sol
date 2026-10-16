@@ -172,8 +172,8 @@ contract SpectralHook is IHooks {
     }
 
     /// @inheritdoc IHooks
-    /// @dev Records |delta| of the measured leg. An oracle failure with revert data is logged
-    ///      and skipped; an out-of-gas failure (no revert data) reverts the swap.
+    /// @dev Records the signed delta of the measured leg. An oracle failure with revert data is
+    ///      logged and skipped; an out-of-gas failure (no revert data) reverts the swap.
     function afterSwap(address, PoolKey calldata key, SwapParams calldata, BalanceDelta delta, bytes calldata)
         external
         override
@@ -183,11 +183,10 @@ contract SpectralHook is IHooks {
         int128 d = Currency.unwrap(key.currency0) == Currency.unwrap(measuredCurrency)
             ? delta.amount0()
             : delta.amount1();
-        // |d| fits in uint256 for every int128 (widened to int256 before negation).
-        // forge-lint: disable-next-line(unsafe-typecast)
-        uint256 amount = d < 0 ? uint256(-int256(d)) : uint256(int256(d));
-        if (amount > 0) {
-            try oracle.record(amount) {}
+        if (d != 0) {
+            // Signed: the oracle keeps the net flow per block, so same-block round trips and
+            // sandwiches add almost nothing to the signal (Phase 4, A6).
+            try oracle.record(int256(d)) {}
             catch (bytes memory reason) {
                 if (reason.length == 0) revert OracleOutOfGas();
                 emit OracleRecordFailed(reason);

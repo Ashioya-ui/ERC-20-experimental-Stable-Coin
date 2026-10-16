@@ -204,7 +204,10 @@ can send directly: `cast send $S "<fn>" --ledger --rpc-url $RPC`.
 - **E4. Realised vault loss.** `cast send $S "sync()"` (anyone). Every action also syncs first,
   so nobody exits at the old price. Communicate the index change: `cast call $K "index()(uint256)"`.
 - **E5. Entropy oddities.** H only moves fees, caps, buffer and rebase step within fixed bounds,
-  and never touches backing. A stale oracle reads as neutral. No on-chain action needed.
+  and never touches backing. A stale oracle reads as neutral, and H can never lower the surplus
+  buffer below 2.75%. Steering it takes about a day of continuous, visible trading
+  (`audit/oracle-manipulation.md`). Alert if the smoothed H stays below 0.1 or above 0.9 for
+  more than an hour; no on-chain action is needed.
 - **E6. Cancel a pending migration.** `script/safe-tx.sh cancel-migration` (guardian).
 - **E7. Key compromise.**
   - Guardian: the admin runs `script/safe-tx.sh revoke-guardian <addr>`.

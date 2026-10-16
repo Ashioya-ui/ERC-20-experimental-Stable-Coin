@@ -7,9 +7,11 @@ import {ISpectralEntropyOracle} from "./interfaces/ISpectralEntropyOracle.sol";
 /// @title  SpectralEntropyOracle
 /// @notice Walsh-Hadamard spectral entropy H_WHT of recent sUSD swap flow.
 ///
-/// @dev    Window. A ring buffer of the last 8 *blocks* of activity. All swaps in one block
-///         are summed into one slot, so filling the window takes 8 distinct blocks, not 8
-///         swaps in one transaction. Swaps below `minObservation` are ignored (dust filter).
+/// @dev    Window. A ring buffer of the last 8 *blocks* of activity. Each slot holds the
+///         absolute **net** flow of its block: the hook passes the signed delta of the measured
+///         currency, and the slot keeps |sum of signed deltas| for that block. A round trip in
+///         one block therefore records close to nothing, which is what makes wash trading an
+///         expensive way to shape the signal (Phase 4, A6). The dust filter applies per swap.
 ///
 ///         Signal. H_WHT in [0, 1e18] is the normalised Shannon entropy of the Walsh power
 ///         spectrum of the window, oldest block first (see SpectralMath). A homogeneous flow
@@ -17,9 +19,13 @@ import {ISpectralEntropyOracle} from "./interfaces/ISpectralEntropyOracle.sol";
 ///         (a whale or MEV spike) gives H near 1. Consumers should treat LOW H as calm,
 ///         organic flow and HIGH H as concentrated, spiky flow.
 ///
-///         Smoothing. When the first swap of a new block arrives, the entropy of the full
-///         window (8 closed blocks) is folded into an exponential moving average with weight
-///         `emaAlpha`. Consumers read the EMA through `smoothedEntropy()`.
+///         Smoothing. When the first swap of a new block arrives and the window is full, the
+///         entropy of the 8 closed blocks is folded into an exponential moving average with
+///         weight w = min(emaAlphaMax, dt / (dt + tau)), where dt is the time since the previous
+///         fold. Folds packed into consecutive blocks therefore carry almost no weight (on
+///         Base, dt = 2 s against tau = 1 h gives w = 0.00055), while the first fold after a
+///         quiet period carries at most emaAlphaMax. Moving the signal costs an attacker wall
+///         time, which cannot be bought, instead of a few blocks of gas.
 ///
 ///         Fallbacks. `NEUTRAL_ENTROPY` (0.5) is returned until 8 blocks have been seen, and
 ///         whenever no swap has been recorded for `staleAfter` seconds.
@@ -36,25 +42,29 @@ contract SpectralEntropyOracle is ISpectralEntropyOracle {
 
     /// @notice Smallest swap notional (sUSD wei) that is recorded.
     uint256 public immutable minObservation;
-    /// @notice EMA weight of the newest window entropy, WAD (e.g. 0.25e18).
-    uint256 public immutable emaAlpha;
+    /// @notice Largest weight any single fold may carry, WAD (e.g. 0.25e18).
+    uint256 public immutable emaAlphaMax;
+    /// @notice Time constant of the fold weight, in seconds: w = min(alphaMax, dt/(dt+tau)).
+    uint256 public immutable tau;
     /// @notice Seconds without any recorded swap after which the signal is neutral.
     uint256 public immutable staleAfter;
 
     /// @notice The only address allowed to call `record`.
     address public immutable hook;
 
-    uint128[8] private _volumes; // per-block summed notional, ring buffer
+    uint128[8] private _volumes; // |net flow| per block, ring buffer
     uint8 public head; // slot of the newest block
     uint8 public filled; // number of slots holding data (<= 8)
     uint64 public currentBlock; // block number of _volumes[head]
     uint64 public lastObservationTime; // timestamp of the latest recorded swap
+    uint64 public lastFoldTime; // timestamp of the latest EMA fold
+    int256 private _currentNet; // signed net flow of the open block
     uint256 private _ema; // smoothed entropy, WAD
 
     event HookSet(address indexed hook);
-    event Observed(uint256 amount, uint256 indexed blockNumber, uint8 slot);
-    event WindowClosed(uint256 indexed blockNumber, uint256 entropy, uint256 ema);
-    event DustIgnored(uint256 amount);
+    event Observed(int256 amount, uint256 indexed blockNumber, uint8 slot);
+    event WindowClosed(uint256 indexed blockNumber, uint256 entropy, uint256 weight, uint256 ema);
+    event DustIgnored(int256 amount);
 
     error NotHook();
     error ZeroAddress();
@@ -62,47 +72,48 @@ contract SpectralEntropyOracle is ISpectralEntropyOracle {
 
     /// @param hook_           The SpectralHook allowed to call `record` (its CREATE2 address).
     /// @param minObservation_ Dust threshold in sUSD wei, e.g. 10e18.
-    /// @param emaAlpha_       EMA weight in WAD, 0 < alpha <= 1e18.
+    /// @param emaAlphaMax_    Largest fold weight in WAD, 0 < alphaMax <= 1e18.
+    /// @param tau_            Fold-weight time constant in seconds, > 0 (e.g. 1 hour).
     /// @param staleAfter_     Staleness horizon in seconds, > 0.
-    constructor(address hook_, uint256 minObservation_, uint256 emaAlpha_, uint256 staleAfter_) {
+    constructor(address hook_, uint256 minObservation_, uint256 emaAlphaMax_, uint256 tau_, uint256 staleAfter_) {
         if (hook_ == address(0)) revert ZeroAddress();
-        if (emaAlpha_ == 0 || emaAlpha_ > 1e18 || staleAfter_ == 0) revert InvalidParameter();
+        if (emaAlphaMax_ == 0 || emaAlphaMax_ > 1e18 || tau_ == 0 || staleAfter_ == 0) revert InvalidParameter();
         hook = hook_;
         minObservation = minObservation_;
-        emaAlpha = emaAlpha_;
+        emaAlphaMax = emaAlphaMax_;
+        tau = tau_;
         staleAfter = staleAfter_;
         _ema = NEUTRAL_ENTROPY;
+        // forge-lint: disable-next-line(unsafe-typecast)
+        lastFoldTime = uint64(block.timestamp);
         emit HookSet(hook_);
     }
 
     // ----------------------------------------------------------------------- write
 
     /// @inheritdoc ISpectralEntropyOracle
-    function record(uint256 amount) external override {
+    function record(int256 amount) external override {
         if (msg.sender != hook) revert NotHook();
-        if (amount < minObservation || amount == 0) {
+        uint256 size = amount < 0 ? uint256(-amount) : uint256(amount);
+        if (size < minObservation || size == 0) {
             emit DustIgnored(amount);
             return;
         }
-        // Saturating casts: the values are clamped to uint128 first.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        uint128 a = amount > type(uint128).max ? type(uint128).max : uint128(amount);
 
         if (filled != 0 && block.number == currentBlock) {
-            uint256 sum = uint256(_volumes[head]) + a;
-            // forge-lint: disable-next-line(unsafe-typecast)
-            _volumes[head] = sum > type(uint128).max ? type(uint128).max : uint128(sum);
+            _currentNet += amount;
         } else {
             // A new block starts: the previous block is now closed.
             if (filled == WINDOW) _foldWindowIntoEma();
             // forge-lint: disable-next-line(unsafe-typecast)
             uint8 next = filled == 0 ? 0 : uint8((uint256(head) + 1) % WINDOW); // < 8
-            _volumes[next] = a;
             head = next;
             if (filled < WINDOW) filled += 1;
             // forge-lint: disable-next-line(unsafe-typecast)
             currentBlock = uint64(block.number);
+            _currentNet = amount;
         }
+        _volumes[head] = _saturate(_currentNet);
         // forge-lint: disable-next-line(unsafe-typecast)
         lastObservationTime = uint64(block.timestamp);
         emit Observed(amount, block.number, head);
@@ -110,14 +121,31 @@ contract SpectralEntropyOracle is ISpectralEntropyOracle {
 
     function _foldWindowIntoEma() private {
         uint256 h = SpectralMath.spectralEntropy8(_chronological());
+        uint256 w = foldWeight();
         uint256 e = _ema;
-        // e += alpha * (h - e), written without signed arithmetic
-        e = h >= e ? e + ((h - e) * emaAlpha) / 1e18 : e - ((e - h) * emaAlpha) / 1e18;
+        // e += w * (h - e), written without signed arithmetic
+        e = h >= e ? e + ((h - e) * w) / 1e18 : e - ((e - h) * w) / 1e18;
         _ema = e;
-        emit WindowClosed(currentBlock, h, e);
+        // forge-lint: disable-next-line(unsafe-typecast)
+        lastFoldTime = uint64(block.timestamp);
+        emit WindowClosed(currentBlock, h, w, e);
+    }
+
+    /// @dev |net| clamped into uint128.
+    function _saturate(int256 net) private pure returns (uint128) {
+        uint256 m = net < 0 ? uint256(-net) : uint256(net);
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return m > type(uint128).max ? type(uint128).max : uint128(m);
     }
 
     // ----------------------------------------------------------------------- read
+
+    /// @notice Weight the next fold would carry: min(emaAlphaMax, dt / (dt + tau)), WAD.
+    function foldWeight() public view returns (uint256) {
+        uint256 dt = block.timestamp - uint256(lastFoldTime);
+        uint256 w = (dt * 1e18) / (dt + tau);
+        return w < emaAlphaMax ? w : emaAlphaMax;
+    }
 
     /// @inheritdoc ISpectralEntropyOracle
     function smoothedEntropy() external view override returns (uint256) {
@@ -134,6 +162,11 @@ contract SpectralEntropyOracle is ISpectralEntropyOracle {
     /// @notice Raw EMA state (no warm-up or staleness substitution).
     function rawEma() external view returns (uint256) {
         return _ema;
+    }
+
+    /// @notice Signed net flow recorded so far in the open block.
+    function currentNet() external view returns (int256) {
+        return _currentNet;
     }
 
     /// @notice True if no swap has been recorded for `staleAfter` seconds.

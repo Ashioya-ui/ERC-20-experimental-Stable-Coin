@@ -26,10 +26,11 @@ import {ISpectralEntropyOracle} from "./interfaces/ISpectralEntropyOracle.sol";
 ///         cap), and sets how much surplus is kept as a buffer before a rebase.
 ///
 ///         Entropy semantics (see SpectralMath). Low H = homogeneous flow (cheap minting,
-///         larger expansion cap, smaller buffer). High H = flow dominated by a few large swaps
-///         (higher fees, tighter cap, larger buffer, smaller rebase steps). H is a heuristic
-///         and cheap to move (for example with many equal-sized small swaps), so its effect
-///         is limited to the bounded policy ranges below and never reaches the backing.
+///         larger expansion cap). High H = flow dominated by a few large swaps (higher fees,
+///         tighter cap, larger buffer, smaller rebase steps). H is a heuristic that an
+///         attacker can steer at some cost, so its effect is limited to the bounded policy
+///         ranges below, never reaches the backing, and can only ever *raise* a safety margin:
+///         the surplus buffer is floored at its neutral value whatever H reads (Phase 4, D4).
 ///
 ///         Reserve floor. Every state-changing entry point re-checks
 ///         `reserveValue() >= totalSupply()` and reverts otherwise. Protocol actions can
@@ -104,8 +105,12 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
     uint256 public constant REBASE_INTERVAL = 1 hours;
     uint256 public constant REBASE_STEP_MAX = 0.0001e18;
 
-    /// @notice Surplus kept as a buffer before anything is distributed: 0.5% to 5% of supply.
-    uint256 public constant BUFFER_LOW_H = 0.005e18;
+    /// @notice Surplus kept as a buffer before anything is distributed: 2.75% to 5% of supply.
+    /// @dev    H may raise a safety margin but never lower it (Phase 4, D4), so the buffer is
+    ///         floored at its neutral value, BUFFER_LOW_H + (BUFFER_HIGH_H - BUFFER_LOW_H)/2
+    ///         with the pre-Phase-4 endpoints 0.5% and 5%. Steering H towards 0 can therefore
+    ///         no longer drain the first-loss cushion; it can only fail to raise it.
+    uint256 public constant BUFFER_LOW_H = 0.0275e18;
     uint256 public constant BUFFER_HIGH_H = 0.05e18;
 
     /// @notice Length of the churn-budget window.
@@ -460,10 +465,12 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         return EXPANSION_CAP_LOW_H - Math.mulDiv(EXPANSION_CAP_LOW_H - EXPANSION_CAP_HIGH_H, h, WAD);
     }
 
-    /// @notice Reserve buffer kept before distributing (WAD fraction of supply).
+    /// @notice Reserve buffer kept before distributing (WAD fraction of supply). Rises with H
+    ///         from the neutral floor; never falls below it (Phase 4, D4).
     function bufferRate(uint256 h) public pure returns (uint256) {
         h = _clamp(h);
-        return BUFFER_LOW_H + Math.mulDiv(BUFFER_HIGH_H - BUFFER_LOW_H, h, WAD);
+        if (h <= 0.5e18) return BUFFER_LOW_H;
+        return BUFFER_LOW_H + Math.mulDiv(BUFFER_HIGH_H - BUFFER_LOW_H, 2 * (h - 0.5e18), WAD);
     }
 
     /// @notice Maximum rebase step (WAD fraction of supply): halves from h = 0 to h = 1.

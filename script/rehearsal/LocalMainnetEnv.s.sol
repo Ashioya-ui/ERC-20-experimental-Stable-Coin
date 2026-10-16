@@ -44,10 +44,11 @@ contract LocalMainnetEnv is Script {
         vm.serializeAddress(roles, "guardian", guardian);
         string memory rolesJson = vm.serializeBool(roles, "allowEoaAdmin", true);
         string memory params = "params";
-        string[9] memory keys = [
+        string[10] memory keys = [
             "poolFeePips",
             "minObservationWsUSD",
-            "emaAlphaBps",
+            "emaAlphaMaxBps",
+            "emaTauSeconds",
             "staleAfterSeconds",
             "bootstrapCapSUSD",
             "supplyCapSUSD",

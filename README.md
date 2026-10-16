@@ -110,7 +110,10 @@ stack-too-deep in `PoolManager` under via-IR.
    - one block dominating the window (a whale or MEV spike) gives H = 1.
 
    (The original prompt had this backwards.) H is neutral (0.5) during warm-up and after one hour
-   without swaps.
+   without swaps. Each block contributes its **net** flow, and each fold of the moving average
+   carries weight `min(0.25, dt / (dt + 1 hour))`, so steering the signal costs wall time rather
+   than a few blocks of gas (`audit/oracle-manipulation.md`). H can raise a safety margin but
+   never lower one: the surplus buffer never falls below its neutral 2.75%.
 6. **Policy (all bounded):**
 
    | | H = 0 (calm) | H = 0.5 | H = 1 (spiky) |
@@ -118,7 +121,7 @@ stack-too-deep in `PoolManager` under via-IR.
    | Mint fee | 1 bp | 13.25 bp | 50 bp |
    | Redeem fee | 1 bp | 3.25 bp | 10 bp |
    | Daily mint cap (share of supply, or the bootstrap cap if larger) | 20% | 11% | 2% |
-   | Surplus buffer kept before distributing | 0.5% | 2.75% | 5% |
+   | Surplus buffer kept before distributing | 2.75% | 2.75% | 5% |
    | Max rebase step | 1 bp | 0.75 bp | 0.5 bp |
 
 7. **Churn budget (`C_DIAM`).** Within a 7-day window, let L be the index's total variation

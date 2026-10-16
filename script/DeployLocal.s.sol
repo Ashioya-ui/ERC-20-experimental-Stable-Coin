@@ -85,7 +85,7 @@ contract DeployLocal is Script {
 
         d.treasury = new AutonomousTreasury(IERC4626(address(d.vault)), 1_500, stabilizerAt);
         d.token = new SpectralToken(stabilizerAt);
-        d.oracle = new SpectralEntropyOracle(hookAt, 1e18, 0.25e18, 1 hours);
+        d.oracle = new SpectralEntropyOracle(hookAt, 1e18, 0.25e18, 1 hours, 1 hours);
         address[] memory vaults = new address[](1);
         vaults[0] = address(d.vault);
         d.stabilizer = new SpectralStabilizer(

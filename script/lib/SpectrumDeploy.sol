@@ -51,7 +51,8 @@ library SpectrumDeploy {
         uint24 poolFee;
         int24 tickSpacing;
         uint256 minObservation;
-        uint256 emaAlpha;
+        uint256 emaAlphaMax;
+        uint256 emaTau;
         uint256 staleAfter;
         uint256 bootstrapCap;
         uint256 supplyCap;
@@ -88,7 +89,8 @@ library SpectrumDeploy {
         // forge-lint: disable-next-line(unsafe-typecast)
         c.tickSpacing = int24(vm.parseJsonInt(j, ".params.tickSpacing"));
         c.minObservation = vm.parseJsonUint(j, ".params.minObservationWsUSD") * 1e18;
-        c.emaAlpha = vm.parseJsonUint(j, ".params.emaAlphaBps") * 1e14;
+        c.emaAlphaMax = vm.parseJsonUint(j, ".params.emaAlphaMaxBps") * 1e14;
+        c.emaTau = vm.parseJsonUint(j, ".params.emaTauSeconds");
         c.staleAfter = vm.parseJsonUint(j, ".params.staleAfterSeconds");
         c.bootstrapCap = vm.parseJsonUint(j, ".params.bootstrapCapSUSD") * 1e18;
         c.supplyCap = vm.parseJsonUint(j, ".params.supplyCapSUSD") * 1e18;
@@ -122,7 +124,10 @@ library SpectrumDeploy {
             "preflight: bad tick spacing"
         );
         require(c.liquidityBufferBps <= 10_000, "preflight: buffer > 100%");
-        require(c.emaAlpha > 0 && c.emaAlpha <= 1e18 && c.staleAfter > 0, "preflight: bad oracle params");
+        require(
+            c.emaAlphaMax > 0 && c.emaAlphaMax <= 1e18 && c.emaTau > 0 && c.staleAfter > 0,
+            "preflight: bad oracle params"
+        );
         require(c.supplyCap > 0 && c.bootstrapCap > 0, "preflight: caps must be > 0");
 
         IERC4626 v = IERC4626(c.vault);
@@ -172,7 +177,7 @@ library SpectrumDeploy {
         require(address(d.treasury) == treasuryAt, "deploy: treasury address mismatch (deployer nonce moved)");
         d.token = new SpectralToken(stabilizerAt);
         require(address(d.token) == tokenAt, "deploy: token address mismatch (deployer nonce moved)");
-        d.oracle = new SpectralEntropyOracle(hookAt, c.minObservation, c.emaAlpha, c.staleAfter);
+        d.oracle = new SpectralEntropyOracle(hookAt, c.minObservation, c.emaAlphaMax, c.emaTau, c.staleAfter);
         require(address(d.oracle) == oracleAt, "deploy: oracle address mismatch (deployer nonce moved)");
         d.stabilizer = new SpectralStabilizer(
             d.token, d.treasury, d.oracle, c.admin, c.guardian, c.bootstrapCap, c.supplyCap, allowedVaults(c)
@@ -259,7 +264,8 @@ library SpectrumDeploy {
         if (address(d.treasury.vault()) != c.vault) console2.log("note: treasury vault was migrated");
         require(d.stabilizer.bootstrapCap() == c.bootstrapCap, "check: bootstrap cap");
         require(d.oracle.minObservation() == c.minObservation, "check: oracle dust");
-        require(d.oracle.emaAlpha() == c.emaAlpha, "check: oracle alpha");
+        require(d.oracle.emaAlphaMax() == c.emaAlphaMax, "check: oracle alpha");
+        require(d.oracle.tau() == c.emaTau, "check: oracle tau");
         require(d.oracle.staleAfter() == c.staleAfter, "check: oracle staleness");
         if (d.oracle.filled() < d.oracle.WINDOW()) {
             require(d.oracle.smoothedEntropy() == 0.5e18, "check: entropy not neutral during warm-up");
@@ -311,7 +317,8 @@ library SpectrumDeploy {
         // constructor arguments, for explorer verification
         vm.serializeUint(o, "liquidityBufferBps", c.liquidityBufferBps);
         vm.serializeUint(o, "minObservation", c.minObservation);
-        vm.serializeUint(o, "emaAlpha", c.emaAlpha);
+        vm.serializeUint(o, "emaAlphaMax", c.emaAlphaMax);
+        vm.serializeUint(o, "emaTau", c.emaTau);
         vm.serializeUint(o, "staleAfter", c.staleAfter);
         vm.serializeUint(o, "bootstrapCap", c.bootstrapCap);
         vm.serializeUint(o, "supplyCap", c.supplyCap);
