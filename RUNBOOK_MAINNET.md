@@ -62,8 +62,11 @@ make deploy-base-mainnet      # type 'deploy'; confirm each transaction on the L
 ```
 
 **B. From GitHub Actions** (`.github/workflows/deploy-base-mainnet.yml`):
-1. Add three repository secrets: `BASE_RPC_URL`, `ETHERSCAN_API_KEY` and `DEPLOYER_PRIVATE_KEY`.
-   Use a fresh key holding about 0.002 ETH and 2 USDC; it ends with no roles.
+1. Add three repository secrets: `BASE_RPC_URL`, `ETHERSCAN_API_KEY` and `DEPLOYER_PRIVATE_KEY`,
+   and one repository **variable**, `DEPLOYER`, holding that key's address. Use a fresh key with
+   about 0.002 ETH and 2 USDC; it ends with no roles. The key is given to the broadcast step
+   alone, which first checks that it matches the `DEPLOYER` variable; no other step, `forge
+   test` included, can read it.
 2. Create the `base-mainnet` environment with yourself as required reviewer.
 3. Go to Actions → deploy-base-mainnet → Run workflow, then:
    - first with `mode=dry-run` and `admin=<your Safe>`;

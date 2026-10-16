@@ -3,13 +3,19 @@ name: deploy-base-mainnet
 # Deploys Spectrum to Base mainnet from GitHub's runners.
 #
 # One-time setup (repository Settings):
+#   Variables -> Actions:
+#     DEPLOYER               address of the deploying account (not a secret)
 #   Secrets -> Actions:
 #     BASE_RPC_URL           Base mainnet RPC (provider endpoint recommended)
 #     ETHERSCAN_API_KEY      Etherscan API V2 key (covers Basescan)
-#     DEPLOYER_PRIVATE_KEY   fresh key holding ~0.002 ETH + 2 USDC on Base. It ends with NO roles:
-#                            all power goes to the admin Safe given below, so this key is
-#                            worthless after the run. Rotate it out afterwards anyway.
+#     DEPLOYER_PRIVATE_KEY   key of the DEPLOYER address, holding ~0.002 ETH + 2 USDC on Base.
+#                            It ends with NO roles: all power goes to the admin Safe given
+#                            below, so this key is worthless after the run. Rotate it anyway.
 #   Environments -> base-mainnet: add yourself as a required reviewer.
+#
+# The private key is passed to the broadcast step only (Phase 4, A4): every other step,
+# `forge test` included, runs dependency code that must never see it. Every action is pinned
+# to a commit.
 #
 # Run: Actions -> deploy-base-mainnet -> Run workflow. Do a dry-run first, then broadcast.
 
@@ -41,27 +47,30 @@ concurrency:
   group: deploy-base-mainnet
   cancel-in-progress: false
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: base-mainnet
+    timeout-minutes: 45
+    permissions:
+      contents: read
     env:
       BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}
-      ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
-      DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
       ADMIN: ${{ inputs.admin }}
       GUARDIAN: ${{ inputs.guardian }}
       MODE: ${{ inputs.mode }}
       CONFIRM: ${{ inputs.confirm }}
+      # Not a secret: the address only. The key itself reaches the broadcast step alone.
+      DEPLOYER_ADDRESS: ${{ vars.DEPLOYER }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           submodules: recursive
+          persist-credentials: false
 
-      - uses: foundry-rs/foundry-toolchain@v1
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
           version: v1.5.1
 
@@ -75,13 +84,12 @@ jobs:
           GUARDIAN=$(cast to-check-sum-address "$GUARDIAN")
           if [[ "$MODE" == "broadcast" ]]; then
             [[ "$CONFIRM" == "DEPLOY" ]] || { echo "::error::type DEPLOY in 'confirm' to broadcast"; exit 1; }
-            [[ -n "$DEPLOYER_PRIVATE_KEY" ]] || { echo "::error::set the DEPLOYER_PRIVATE_KEY secret"; exit 1; }
-            [[ -n "$ETHERSCAN_API_KEY" ]] || { echo "::error::set the ETHERSCAN_API_KEY secret"; exit 1; }
-          fi
-          if [[ -n "$DEPLOYER_PRIVATE_KEY" ]]; then
-            DEPLOYER=$(cast wallet address --private-key "$DEPLOYER_PRIVATE_KEY")
+            [[ -n "$DEPLOYER_ADDRESS" ]] || { echo "::error::set the DEPLOYER repository variable to the deployer's address"; exit 1; }
+            [[ -n "${{ secrets.DEPLOYER_PRIVATE_KEY }}" ]] || { echo "::error::set the DEPLOYER_PRIVATE_KEY secret"; exit 1; }
+            [[ -n "${{ secrets.ETHERSCAN_API_KEY }}" ]] || { echo "::error::set the ETHERSCAN_API_KEY secret"; exit 1; }
+            DEPLOYER=$(cast to-check-sum-address "$DEPLOYER_ADDRESS")
           else
-            DEPLOYER=0x000000000000000000000000000000000000bEEF   # dry-run sender
+            DEPLOYER=0x000000000000000000000000000000000000bEEF   # unfunded dry-run sender
           fi
           [[ "$DEPLOYER" != "$ADMIN" ]] || { echo "::error::the deployer must not be the admin"; exit 1; }
           echo "ADMIN=$ADMIN" >> "$GITHUB_ENV"
@@ -92,14 +100,17 @@ jobs:
       - name: Tests, including the Base mainnet fork scenarios
         run: forge test
 
+      - name: Tests in isolated mode (per-call gas budgets)
+        run: forge test --isolate
+
       - name: Write roles into config/8453.json
         run: |
           set -euo pipefail
           jq --arg a "$ADMIN" --arg g "$GUARDIAN" '.roles.admin=$a | .roles.guardian=$g | .roles.allowEoaAdmin=false' \
             config/8453.json > config/8453.tmp && mv config/8453.tmp config/8453.json
-          if [[ "$MODE" == "dry-run" && "$DEPLOYER" == "0x000000000000000000000000000000000000bEEF" ]]; then
+          if [[ "$MODE" == "dry-run" ]]; then
             # an unfunded dry-run sender cannot pay the 2 USDC dead-share seed
-            jq '.params.seedUSDC=0' config/8453.json > config/8453.tmp && mv config/8453.tmp config/8453.json
+            jq '.params.seedUSDC=0 | .params.seedCapitalUSDC=0' config/8453.json > config/8453.tmp && mv config/8453.tmp config/8453.json
           fi
           jq '.roles, .params' config/8453.json
 
@@ -108,7 +119,15 @@ jobs:
 
       - name: Broadcast and verify on Basescan
         if: inputs.mode == 'broadcast'
+        env:
+          # The only step that sees the key. It must match the DEPLOYER variable.
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
         run: |
+          set -euo pipefail
+          KEY_ADDRESS=$(cast wallet address --private-key "$DEPLOYER_PRIVATE_KEY")
+          [[ "$(cast to-check-sum-address "$KEY_ADDRESS")" == "$DEPLOYER" ]] || {
+            echo "::error::DEPLOYER_PRIVATE_KEY does not match the DEPLOYER variable"; exit 1; }
           forge script script/DeployBaseMainnet.s.sol --rpc-url "$BASE_RPC_URL" \
             --private-key "$DEPLOYER_PRIVATE_KEY" --sender "$DEPLOYER" \
             --broadcast --slow --verify --etherscan-api-key "$ETHERSCAN_API_KEY"
@@ -128,7 +147,7 @@ jobs:
             echo "Commit deployments/8453.json (artifact below) to the repository."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: inputs.mode == 'broadcast'
         with:
           name: base-mainnet-deployment
