@@ -38,7 +38,7 @@ abstract contract SpectrumFixture is Test {
 
     function _deploySystem() internal {
         vm.warp(1_700_000_000);
-        usdc = new MockUSDC();
+        if (address(usdc) == address(0)) usdc = new MockUSDC(); // a test may have made one already
         vault = new MockVault(usdc);
         // Wiring is fixed in constructors: the stabilizer is the 4th contract created below.
         address stabilizerAt = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 3);
@@ -50,11 +50,31 @@ abstract contract SpectrumFixture is Test {
         require(address(stabilizer) == stabilizerAt, "fixture: stabilizer address prediction");
     }
 
+    /// @dev Vaults the stabilizer will allow. Tests that migrate add their second vault here
+    ///      before `_deploySystem()`.
+    address[] internal allowedVaults;
+
     /// @dev Overridden by tests that need a harness.
     function _newStabilizer() internal virtual returns (SpectralStabilizer) {
         return new SpectralStabilizer(
-            token, treasury, ISpectralEntropyOracle(address(oracle)), admin, guardian, bootstrapCap, supplyCap
+            token,
+            treasury,
+            ISpectralEntropyOracle(address(oracle)),
+            admin,
+            guardian,
+            bootstrapCap,
+            supplyCap,
+            _allowlist()
         );
+    }
+
+    /// @dev The vault the treasury starts with, plus anything a test added.
+    function _allowlist() internal view returns (address[] memory list) {
+        list = new address[](allowedVaults.length + 1);
+        list[0] = address(vault);
+        for (uint256 i; i < allowedVaults.length; ++i) {
+            list[i + 1] = allowedVaults[i];
+        }
     }
 
     function _mintFor(address who, uint256 assets) internal returns (uint256 out) {

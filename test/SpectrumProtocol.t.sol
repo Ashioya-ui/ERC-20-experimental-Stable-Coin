@@ -921,9 +921,51 @@ contract SpectralStabilizerTest is SpectrumFixture {
         assertEq(stabilizer.scale(), SCALE);
         assertTrue(stabilizer.hasRole(stabilizer.DEFAULT_ADMIN_ROLE(), admin));
         assertTrue(stabilizer.hasRole(stabilizer.GUARDIAN_ROLE(), admin));
-        vm.expectRevert(SpectralStabilizer.ZeroAddress.selector);
+        assertEq(stabilizer.defaultAdminDelay(), stabilizer.ADMIN_TRANSFER_DELAY());
+        // AccessControlDefaultAdminRules rejects a zero admin before the body runs.
+        vm.expectRevert(
+            abi.encodeWithSignature("AccessControlInvalidDefaultAdmin(address)", address(0))
+        );
         new SpectralStabilizer(
-            token, treasury, ISpectralEntropyOracle(address(oracle)), address(0), address(0), 1, type(uint256).max
+            token,
+            treasury,
+            ISpectralEntropyOracle(address(oracle)),
+            address(0),
+            address(0),
+            1,
+            type(uint256).max,
+            _allowlist()
+        );
+    }
+
+    /// A5: the allowlist must be non-empty, free of duplicates, over the treasury's asset, and
+    /// must contain the vault the treasury starts with.
+    function test_constructorValidatesVaultAllowlist() public {
+        address[] memory list = new address[](0);
+        vm.expectRevert(SpectralStabilizer.BadVaultAllowlist.selector);
+        new SpectralStabilizer(
+            token, treasury, ISpectralEntropyOracle(address(oracle)), admin, address(0), 1, 1, list
+        );
+
+        list = new address[](1);
+        list[0] = address(new MockVault(usdc)); // valid asset, but not the starting vault
+        vm.expectRevert(SpectralStabilizer.BadVaultAllowlist.selector);
+        new SpectralStabilizer(
+            token, treasury, ISpectralEntropyOracle(address(oracle)), admin, address(0), 1, 1, list
+        );
+
+        list = new address[](2);
+        list[0] = address(vault);
+        list[1] = address(vault);
+        vm.expectRevert(SpectralStabilizer.BadVaultAllowlist.selector); // duplicate
+        new SpectralStabilizer(
+            token, treasury, ISpectralEntropyOracle(address(oracle)), admin, address(0), 1, 1, list
+        );
+
+        list[1] = address(new MockVault(new MockUSDC()));
+        vm.expectRevert(SpectralStabilizer.BadVaultAllowlist.selector); // wrong asset
+        new SpectralStabilizer(
+            token, treasury, ISpectralEntropyOracle(address(oracle)), admin, address(0), 1, 1, list
         );
     }
 
@@ -933,12 +975,16 @@ contract SpectralStabilizerTest is SpectrumFixture {
         address next = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
         SpectralToken foreign = new SpectralToken(bob);
         vm.expectRevert(SpectralStabilizer.WiringMismatch.selector);
-        new SpectralStabilizer(foreign, treasury, ISpectralEntropyOracle(address(oracle)), admin, address(0), 1, 1);
+        new SpectralStabilizer(
+            foreign, treasury, ISpectralEntropyOracle(address(oracle)), admin, address(0), 1, 1, _allowlist()
+        );
 
         next = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 1);
         SpectralToken mine = new SpectralToken(next);
         vm.expectRevert(SpectralStabilizer.WiringMismatch.selector); // the treasury names the old stabilizer
-        new SpectralStabilizer(mine, treasury, ISpectralEntropyOracle(address(oracle)), admin, address(0), 1, 1);
+        new SpectralStabilizer(
+            mine, treasury, ISpectralEntropyOracle(address(oracle)), admin, address(0), 1, 1, _allowlist()
+        );
     }
 
     // ------------------------------------------------------------------ policy
@@ -1329,7 +1375,14 @@ contract ChurnBudgetTest is SpectrumFixture {
 
     function _newStabilizer() internal override returns (SpectralStabilizer) {
         return new StabilizerHarness(
-            token, treasury, ISpectralEntropyOracle(address(oracle)), admin, address(0), bootstrapCap, type(uint256).max
+            token,
+            treasury,
+            ISpectralEntropyOracle(address(oracle)),
+            admin,
+            address(0),
+            bootstrapCap,
+            type(uint256).max,
+            _allowlist()
         );
     }
 
@@ -1423,8 +1476,11 @@ contract SpectralHookTest is Deployers {
         treasury = new AutonomousTreasury(IERC4626(address(vault)), 0, stabilizerAt);
         token = new SpectralToken(stabilizerAt);
         oracle = new SpectralEntropyOracle(hookAt, 1e18, 0.25e18, 1 hours);
-        stabilizer =
-            new SpectralStabilizer(token, treasury, oracle, address(this), address(0), 10_000_000e18, type(uint256).max);
+        address[] memory vaults = new address[](1);
+        vaults[0] = address(vault);
+        stabilizer = new SpectralStabilizer(
+            token, treasury, oracle, address(this), address(0), 10_000_000e18, type(uint256).max, vaults
+        );
         wsusd = new WrappedSUSD(token);
 
         // Liquidity: wrap minted sUSD into wsUSD; pair it with an 18-decimal test token.
@@ -1610,8 +1666,10 @@ contract SpectrumInvariantTest is SpectrumFixture {
 
     function setUp() public {
         liquidityBufferBps = 1_500;
-        _deploySystem();
+        usdc = new MockUSDC();
         MockVault vaultB = new MockVault(usdc);
+        allowedVaults.push(address(vaultB));
+        _deploySystem();
         handler = new StabilizerHandler(token, stabilizer, treasury, usdc, vault, vaultB, oracle, admin);
         handler.mint(0, 50_000e6);
         handler.mint(1, 20_000e6);
@@ -1834,8 +1892,10 @@ contract VaultGovernanceTest is SpectrumFixture {
 
     function setUp() public {
         liquidityBufferBps = 1_000;
+        usdc = new MockUSDC();
+        vault2 = new MockVault(usdc); // the allowlisted fallback, created before the system
+        allowedVaults.push(address(vault2));
         _deploySystem();
-        vault2 = new MockVault(usdc);
         _mintFor(alice, 10_000e6); // idle 1,000 + vault 9,000
     }
 
@@ -1875,7 +1935,7 @@ contract VaultGovernanceTest is SpectrumFixture {
 
         MockVault wrong = new MockVault(new MockUSDC());
         vm.prank(admin);
-        vm.expectRevert(SpectralStabilizer.AssetMismatch.selector);
+        vm.expectRevert(SpectralStabilizer.AssetMismatch.selector); // checked before the allowlist
         stabilizer.proposeVault(wrong);
 
         vm.prank(admin);
@@ -1892,6 +1952,57 @@ contract VaultGovernanceTest is SpectrumFixture {
         vm.prank(admin);
         vm.expectRevert(SpectralStabilizer.NoPendingVault.selector);
         stabilizer.executeVaultMigration();
+    }
+
+    /// A5: the admin can only ever move the reserve to a vault fixed at deployment, so a
+    /// compromised Safe cannot route 85% of the reserve into a contract of its own.
+    function test_onlyAllowlistedVaultsCanBeProposed() public {
+        MockVault rogue = new MockVault(usdc); // same asset, not on the allowlist
+        vm.prank(admin);
+        vm.expectRevert(abi.encodeWithSelector(SpectralStabilizer.VaultNotAllowed.selector, address(rogue)));
+        stabilizer.proposeVault(rogue);
+
+        assertTrue(stabilizer.isAllowedVault(address(vault)));
+        assertTrue(stabilizer.isAllowedVault(address(vault2)));
+        assertFalse(stabilizer.isAllowedVault(address(rogue)));
+        address[] memory list = stabilizer.allowedVaults();
+        assertEq(list.length, 2);
+
+        vm.prank(admin);
+        stabilizer.proposeVault(vault2); // the allowlisted fallback still works
+        vm.warp(vm.getBlockTimestamp() + 7 days);
+        vm.prank(admin);
+        stabilizer.executeVaultMigration();
+        assertEq(address(treasury.vault()), address(vault2));
+
+        // The emergency exit never depends on the allowlist.
+        vm.prank(guardian);
+        stabilizer.emergencyExitVault();
+        assertEq(treasury.liquidityBufferBps(), 10_000);
+        _assertSolvent();
+    }
+
+    /// A5: the admin role transfers in two steps with a delay, so one leaked signature cannot
+    /// hand control to an attacker instantly.
+    function test_adminTransferIsTwoStepAndDelayed() public {
+        address newAdmin = makeAddr("newAdmin");
+        vm.prank(admin);
+        stabilizer.beginDefaultAdminTransfer(newAdmin);
+        (address pending, uint48 schedule) = stabilizer.pendingDefaultAdmin();
+        assertEq(pending, newAdmin);
+        assertEq(schedule, vm.getBlockTimestamp() + stabilizer.defaultAdminDelay());
+
+        vm.prank(newAdmin);
+        vm.expectRevert(); // too early
+        stabilizer.acceptDefaultAdminTransfer();
+        vm.warp(uint256(schedule) + 1);
+        vm.prank(admin);
+        vm.expectRevert(); // only the incoming admin may accept
+        stabilizer.acceptDefaultAdminTransfer();
+        vm.prank(newAdmin);
+        stabilizer.acceptDefaultAdminTransfer();
+        assertTrue(stabilizer.hasRole(stabilizer.DEFAULT_ADMIN_ROLE(), newAdmin));
+        assertFalse(stabilizer.hasRole(stabilizer.DEFAULT_ADMIN_ROLE(), admin));
     }
 
     function test_migrationMovesReserveToNewVault() public {

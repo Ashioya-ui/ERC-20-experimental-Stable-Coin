@@ -38,8 +38,9 @@ contract StabilizerHarness is SpectralStabilizer {
         address admin,
         address guardian,
         uint256 bootstrapCap_,
-        uint256 supplyCap_
-    ) SpectralStabilizer(token_, treasury_, oracle_, admin, guardian, bootstrapCap_, supplyCap_) {}
+        uint256 supplyCap_,
+        address[] memory allowedVaults_
+    ) SpectralStabilizer(token_, treasury_, oracle_, admin, guardian, bootstrapCap_, supplyCap_, allowedVaults_) {}
 
     function exposedChurnAfter(uint256 oldIndex, uint256 newIndex)
         external

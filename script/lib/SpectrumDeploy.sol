@@ -174,8 +174,9 @@ library SpectrumDeploy {
         require(address(d.token) == tokenAt, "deploy: token address mismatch (deployer nonce moved)");
         d.oracle = new SpectralEntropyOracle(hookAt, c.minObservation, c.emaAlpha, c.staleAfter);
         require(address(d.oracle) == oracleAt, "deploy: oracle address mismatch (deployer nonce moved)");
-        d.stabilizer =
-            new SpectralStabilizer(d.token, d.treasury, d.oracle, c.admin, c.guardian, c.bootstrapCap, c.supplyCap);
+        d.stabilizer = new SpectralStabilizer(
+            d.token, d.treasury, d.oracle, c.admin, c.guardian, c.bootstrapCap, c.supplyCap, allowedVaults(c)
+        );
         require(address(d.stabilizer) == stabilizerAt, "deploy: stabilizer address mismatch (deployer nonce moved)");
         d.wsusd = new WrappedSUSD(IERC20(address(d.token)));
         require(address(d.wsusd) == wsusdAt, "deploy: wsUSD address mismatch (deployer nonce moved)");
@@ -249,6 +250,12 @@ library SpectrumDeploy {
 
         // parameters (the vault may differ from the config after a governed migration)
         require(d.treasury.vault().asset() == c.usdc, "check: treasury vault asset");
+        require(d.stabilizer.isAllowedVault(c.vault), "check: primary vault not allowlisted");
+        if (c.fallbackVault != address(0)) {
+            require(d.stabilizer.isAllowedVault(c.fallbackVault), "check: fallback vault not allowlisted");
+        }
+        require(d.stabilizer.allowedVaults().length <= 2, "check: unexpected vault allowlist");
+        require(d.stabilizer.defaultAdminDelay() == d.stabilizer.ADMIN_TRANSFER_DELAY(), "check: admin delay");
         if (address(d.treasury.vault()) != c.vault) console2.log("note: treasury vault was migrated");
         require(d.stabilizer.bootstrapCap() == c.bootstrapCap, "check: bootstrap cap");
         require(d.oracle.minObservation() == c.minObservation, "check: oracle dust");
@@ -333,6 +340,15 @@ library SpectrumDeploy {
     }
 
     // ------------------------------------------------------------------------ helpers
+
+    /// @notice The vaults the stabilizer will ever allow: the primary one and, if the config
+    ///         names one, the fallback (Phase 4, A5).
+    function allowedVaults(Config memory c) internal pure returns (address[] memory list) {
+        bool hasFallback = c.fallbackVault != address(0) && c.fallbackVault != c.vault;
+        list = new address[](hasFallback ? 2 : 1);
+        list[0] = c.vault;
+        if (hasFallback) list[1] = c.fallbackVault;
+    }
 
     function hookInitCode(Config memory c, address oracle, address wsusd) internal pure returns (bytes memory) {
         return abi.encodePacked(

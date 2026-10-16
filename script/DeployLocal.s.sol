@@ -86,8 +86,11 @@ contract DeployLocal is Script {
         d.treasury = new AutonomousTreasury(IERC4626(address(d.vault)), 1_500, stabilizerAt);
         d.token = new SpectralToken(stabilizerAt);
         d.oracle = new SpectralEntropyOracle(hookAt, 1e18, 0.25e18, 1 hours);
-        d.stabilizer =
-            new SpectralStabilizer(d.token, d.treasury, d.oracle, me, address(0), 1_000_000e18, type(uint256).max);
+        address[] memory vaults = new address[](1);
+        vaults[0] = address(d.vault);
+        d.stabilizer = new SpectralStabilizer(
+            d.token, d.treasury, d.oracle, me, address(0), 1_000_000e18, type(uint256).max, vaults
+        );
         d.wsusd = new WrappedSUSD(d.token);
         require(address(d.stabilizer) == stabilizerAt && address(d.wsusd) == wsusdAt, "address prediction failed");
 

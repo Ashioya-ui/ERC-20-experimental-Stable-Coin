@@ -5,7 +5,8 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {AccessControlDefaultAdminRules} from
+    "@openzeppelin/contracts/access/extensions/AccessControlDefaultAdminRules.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
@@ -52,12 +53,21 @@ import {ISpectralEntropyOracle} from "./interfaces/ISpectralEntropyOracle.sol";
 ///         raises it as confidence grows. The daily expansion cap still applies under it.
 ///
 ///         Roles. DEFAULT_ADMIN_ROLE (a Safe): supply cap, liquidity buffer, vault migration
-///         behind a 7-day timelock (holders can redeem before it executes). GUARDIAN_ROLE (a
-///         faster Safe or monitored key, plus the admin): pause/unpause minting and rebasing,
-///         emergency exit from the vault into idle funds, cancelling a pending migration.
-///         Nobody can pause redemption or loss absorption, or move reserve funds to an
-///         address of their choosing.
-contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
+///         behind a 7-day timelock (holders can redeem before it executes). The admin role
+///         itself transfers in two steps behind ADMIN_TRANSFER_DELAY (OpenZeppelin
+///         AccessControlDefaultAdminRules), and it cannot be renounced in one call.
+///         GUARDIAN_ROLE (a faster Safe or monitored key, plus the admin): pause/unpause
+///         minting and rebasing, emergency exit from the vault into idle funds, cancelling a
+///         pending migration. Nobody can pause redemption or loss absorption, or move reserve
+///         funds to an address of their choosing.
+///
+///         Vault allowlist. The vaults the reserve may ever sit in are fixed at construction
+///         (at most MAX_ALLOWED_VAULTS, all over the same asset). `proposeVault` rejects
+///         anything else, so even a compromised admin cannot route the reserve into a contract
+///         of its own; the worst it can do is move funds between vetted venues, after 7 days
+///         in which holders can redeem (Phase 4, A5). The emergency exit to idle funds never
+///         depends on the allowlist.
+contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // ---------------------------------------------------------------------- roles
@@ -104,6 +114,12 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
     /// @notice Delay between proposing and executing a vault migration.
     uint256 public constant VAULT_TIMELOCK = 7 days;
 
+    /// @notice Delay on a transfer of DEFAULT_ADMIN_ROLE (two-step, OpenZeppelin rules).
+    uint48 public constant ADMIN_TRANSFER_DELAY = 3 days;
+
+    /// @notice Largest allowlist the constructor accepts.
+    uint256 public constant MAX_ALLOWED_VAULTS = 4;
+
     /// @notice Smallest mint (credited value) or redemption, in sUSD wei. Keeps rounding of
     ///         the reserve asset (for USDC, 1 wei = 1e12 sUSD wei) below the fee floor.
     uint256 public constant MIN_AMOUNT = 1e18;
@@ -139,6 +155,9 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
     IERC4626 public pendingVault;
     uint64 public pendingVaultEta;
 
+    /// @dev Vaults the reserve may sit in, fixed at construction.
+    address[] private _allowedVaults;
+
     // ---------------------------------------------------------------------- events / errors
 
     /// @param amountOut sUSD minted to `receiver`.
@@ -171,6 +190,8 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
     error NoPendingVault();
     error VaultTimelockActive(uint256 eta);
     error WiringMismatch();
+    error VaultNotAllowed(address vault);
+    error BadVaultAllowlist();
 
     // ---------------------------------------------------------------------- constructor
 
@@ -178,6 +199,9 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
     /// @param guardian     Extra GUARDIAN_ROLE holder (address(0) for none).
     /// @param bootstrapCap_ Expansion allowed per epoch regardless of supply.
     /// @param supplyCap_   Maximum total supply reachable by minting.
+    /// @param allowedVaults_ Every vault the reserve may ever sit in, including the one the
+    ///                     treasury starts with. 1 to MAX_ALLOWED_VAULTS entries, all over the
+    ///                     treasury's asset, no duplicates.
     constructor(
         SpectralToken token_,
         AutonomousTreasury treasury_,
@@ -185,12 +209,30 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
         address admin,
         address guardian,
         uint256 bootstrapCap_,
-        uint256 supplyCap_
-    ) {
+        uint256 supplyCap_,
+        address[] memory allowedVaults_
+    ) AccessControlDefaultAdminRules(ADMIN_TRANSFER_DELAY, admin) {
         if (
             address(token_) == address(0) || address(treasury_) == address(0) || address(oracle_) == address(0)
                 || admin == address(0)
         ) revert ZeroAddress();
+        // Vaults the reserve may ever sit in, fixed here (Phase 4, A5).
+        uint256 n = allowedVaults_.length;
+        if (n == 0 || n > MAX_ALLOWED_VAULTS) revert BadVaultAllowlist();
+        address reserveAsset = address(treasury_.asset());
+        address current = address(treasury_.vault());
+        bool startingVaultListed;
+        for (uint256 i; i < n; ++i) {
+            address v = allowedVaults_[i];
+            if (v == address(0) || IERC4626(v).asset() != reserveAsset) revert BadVaultAllowlist();
+            for (uint256 k; k < i; ++k) {
+                if (allowedVaults_[k] == v) revert BadVaultAllowlist();
+            }
+            if (v == current) startingVaultListed = true;
+            _allowedVaults.push(v);
+        }
+        if (!startingVaultListed) revert BadVaultAllowlist();
+
         // The token and the treasury were deployed first, naming this contract's predicted
         // address. Refuse to exist if either names someone else (Phase 4, A3).
         if (token_.stabilizer() != address(this) || treasury_.stabilizer() != address(this)) {
@@ -212,7 +254,6 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
         churnMax = WAD;
         churnMin = WAD;
 
-        _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(GUARDIAN_ROLE, admin);
         if (guardian != address(0)) _grantRole(GUARDIAN_ROLE, guardian);
     }
@@ -376,6 +417,7 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
     function proposeVault(IERC4626 newVault) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (address(newVault) == address(0)) revert ZeroAddress();
         if (newVault.asset() != address(asset)) revert AssetMismatch();
+        if (!isAllowedVault(address(newVault))) revert VaultNotAllowed(address(newVault));
         pendingVault = newVault;
         uint256 eta = block.timestamp + VAULT_TIMELOCK;
         // forge-lint: disable-next-line(unsafe-typecast)
@@ -455,6 +497,20 @@ contract SpectralStabilizer is AccessControl, Pausable, ReentrancyGuard {
     function expansionRemaining() external view returns (uint256) {
         (uint256 cap, uint256 used) = _epochState(oracle.smoothedEntropy());
         return cap > used ? cap - used : 0;
+    }
+
+    /// @notice True if `v` is on the immutable vault allowlist.
+    function isAllowedVault(address v) public view returns (bool) {
+        uint256 n = _allowedVaults.length;
+        for (uint256 i; i < n; ++i) {
+            if (_allowedVaults[i] == v) return true;
+        }
+        return false;
+    }
+
+    /// @notice Every vault the reserve may sit in, fixed at construction.
+    function allowedVaults() external view returns (address[] memory) {
+        return _allowedVaults;
     }
 
     /// @notice Minting room left under the supply cap, in sUSD wei.

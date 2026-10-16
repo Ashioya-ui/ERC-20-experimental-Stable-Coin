@@ -21,7 +21,9 @@ Status: unaudited code, guarded launch (25,000 sUSD supply cap). Launch and desc
 
 1. **Admin Safe on Base.** Create it at app.safe.global; 2-of-3 or stricter is a sensible start.
    Put its address in `config/8453.json` → `roles.admin`. The deploy script refuses a zero or EOA
-   admin.
+   admin. The admin role transfers in two steps with a 3-day delay
+   (`beginDefaultAdminTransfer`, then `acceptDefaultAdminTransfer` from the new Safe), and it
+   cannot be renounced in one call.
 2. **Guardian.** A second, faster Safe (1-of-2) or a monitored hardware-wallet address. Put it in
    `roles.guardian`. The guardian can pause minting and rebasing, pull funds out of the vault,
    and cancel a pending vault migration. Nothing else.
@@ -172,8 +174,10 @@ can send directly: `cast send $S "<fn>" --ledger --rpc-url $RPC`.
   - repeat as liquidity returns;
   - check: `cast call $T "idleAssets()(uint256)"` and `cast call <vault> "balanceOf(address)(uint256)" $T`.
 - **E2. Move to another vault.** Run `script/safe-tx.sh propose-vault 0xeE8F4eC5672F09119b96Ab6fB59C27E1b7e44b61`
-  (Gauntlet USDC Prime, the report's fallback). Announce it; holders have **7 days** to redeem if
-  they disagree. Then:
+  (Gauntlet USDC Prime, the report's fallback). Only vaults on the allowlist fixed at deployment
+  can be proposed: Aave waBasUSDC and Gauntlet USDC Prime. `cast call $S "allowedVaults()(address[])"`
+  shows them, and nothing can add to the list afterwards, so moving to a third venue needs a new
+  deployment. Announce the migration; holders have **7 days** to redeem if they disagree. Then:
   1. `script/safe-tx.sh execute-migration`
   2. `script/safe-tx.sh set-buffer 1500`
   3. `cast send $S "rebalanceReserve()"`
