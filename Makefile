@@ -10,6 +10,8 @@
 #
 # Settings come from the environment or a .env file (see .env.example).
 
+SHELL := /bin/bash
+
 -include .env
 export
 

@@ -30,6 +30,10 @@ make preflight                  # the whole deployment simulated against live Ba
 make deploy-base-mainnet        # broadcast + Basescan verification + post-deploy check
 ```
 
+You can also deploy without a local setup. Run **Actions → deploy-base-mainnet** in GitHub,
+first as a dry-run, then as a broadcast; it takes three secrets (see RUNBOOK_MAINNET.md §2B).
+On every push, CI runs the full suite, the anvil rehearsal and the Base fork scenarios.
+
 The reserve vault is Aave v3 waBasUSDC (StataTokenV2), with Gauntlet USDC Prime as the
 fallback. That choice and every address in `config/8453.json` come from the October 2026
 research report; the runbook lists the sources.

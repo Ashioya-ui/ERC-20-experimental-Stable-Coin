@@ -53,9 +53,28 @@ cast call $V "convertToAssets(uint256)(uint256)" 1000000 --rpc-url $RPC
 
 ## 2. Deploy
 
+Use one of two routes. The steps are the same either way.
+
+**A. From your machine (Ledger):**
+
 ```bash
 make deploy-base-mainnet      # type 'deploy'; confirm each transaction on the Ledger
 ```
+
+**B. From GitHub Actions** (`.github/workflows/deploy-base-mainnet.yml`):
+1. Add three repository secrets: `BASE_RPC_URL`, `ETHERSCAN_API_KEY` and `DEPLOYER_PRIVATE_KEY`.
+   Use a fresh key holding about 0.002 ETH and 2 USDC; it ends with no roles.
+2. Create the `base-mainnet` environment with yourself as required reviewer.
+3. Go to Actions → deploy-base-mainnet → Run workflow, then:
+   - first with `mode=dry-run` and `admin=<your Safe>`;
+   - then with `mode=broadcast` and `confirm=DEPLOY`.
+
+The workflow:
+- rejects a non-Base RPC and an admin that is not a deployed contract;
+- runs every test, including the Base fork scenarios;
+- simulates the deployment against live Base state;
+- broadcasts, verifies on Basescan, runs the post-deploy check;
+- uploads `deployments/8453.json` as an artifact.
 
 You will confirm 15 transactions: treasury, token, oracle, stabilizer, two `setStabilizer`
 calls, wsUSD, the hook (through the CREATE2 proxy), `setHook`, oracle `renounceOwnership`, pool

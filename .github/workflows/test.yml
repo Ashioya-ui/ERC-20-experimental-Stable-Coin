@@ -10,32 +10,41 @@ env:
 
 jobs:
   forge:
-    name: Foundry build, tests and mainnet rehearsal
+    name: Build, tests (10k fuzz, invariants 1,024 x 256) and mainnet rehearsal
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: v1.5.1
-
       - name: Build (sizes)
         run: forge build --sizes
-
-      - name: Test (10k fuzz runs, invariants 1,024 x 256; Base fork scenarios if the secret is set)
-        env:
-          BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}
+      - name: Test
         run: forge test -vv
-
-      - name: Mainnet rehearsal on anvil
+      - name: Mainnet rehearsal on anvil (exact mainnet script + runbook commands)
         env:
           FOUNDRY_PROFILE: default
         run: script/rehearsal/run.sh
-
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: rehearsal-log
           path: rehearsal/latest.log
+
+  base-fork:
+    name: Mainnet scenarios on a live Base fork
+    runs-on: ubuntu-latest
+    env:
+      # Your secret if set, otherwise a public Base RPC (may be rate limited).
+      BASE_RPC_URL: ${{ secrets.BASE_RPC_URL || 'https://base-rpc.publicnode.com' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.5.1
+      - name: Fork tests against Base mainnet (USDC, v4 PoolManager, Aave waBasUSDC, Gauntlet USDC Prime)
+        run: forge test --match-contract BaseMainnetForkTest -vv
