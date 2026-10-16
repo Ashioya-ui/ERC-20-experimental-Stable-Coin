@@ -147,7 +147,8 @@ to idle USDC when a loss is anticipated but not yet realised.
 | Net expansion per epoch ≤ cap | `invariant_expansionWithinCap` (net definition after A1) |
 | Index > 0 | `invariant_indexPositive` |
 | A realised loss no larger than the surplus never lowers the index | `testFuzz_lossWithinTheSurplusNeverLowersTheIndex` (A9) |
-| No actor ends with more than it put in plus its share of distributed surplus | `invariant_noFreeLunch` (A10) |
+| No actor ends with more than it put in plus its share of distributed surplus | `invariant_noFreeLunch` (A10): an attacker actor that flash-borrows up to 10x its own value and, in one call, mints, redeems, gifts, rebases, syncs, rebalances, donates and sets H to an extreme for free |
+| An atomic strategy from no sUSD back to no sUSD never ends above its start, distributions caught included | `invariant_flatRoundTripsNeverProfit` (A10) |
 | Protocol capital is never distributed | `invariant_protocolCapitalNeverDistributed` (B8) |
 | H stays in [0, 1e18]; warm-up and stale periods read neutral | `SpectralEntropyOracleTest` |
 | A rebase step is below the minimum round-trip fee | `testFuzz_rebaseStepBelowRoundTripFees`; Halmos |

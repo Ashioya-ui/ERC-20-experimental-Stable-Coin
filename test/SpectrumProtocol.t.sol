@@ -1765,8 +1765,9 @@ contract SpectrumInvariantTest is SpectrumFixture {
         handler = new StabilizerHandler(token, stabilizer, treasury, usdc, vault, vaultB, oracle, admin);
         handler.mint(0, 50_000e6);
         handler.mint(1, 20_000e6);
+        handler.fundAttacker(100_000e6); // A10: its own capital, on top of any flash loan
 
-        bytes4[] memory selectors = new bytes4[](15);
+        bytes4[] memory selectors = new bytes4[](17);
         selectors[0] = StabilizerHandler.mint.selector;
         selectors[1] = StabilizerHandler.redeem.selector;
         selectors[2] = StabilizerHandler.transfer.selector;
@@ -1782,6 +1783,8 @@ contract SpectrumInvariantTest is SpectrumFixture {
         selectors[12] = StabilizerHandler.emergencyExit.selector;
         selectors[13] = StabilizerHandler.migrate.selector;
         selectors[14] = StabilizerHandler.recoverLegacy.selector;
+        selectors[15] = StabilizerHandler.attack.selector; // A10, weighted x2
+        selectors[16] = StabilizerHandler.attack.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
         targetContract(address(handler));
     }
@@ -1790,32 +1793,63 @@ contract SpectrumInvariantTest is SpectrumFixture {
         assertGe(stabilizer.reserveValue(), token.totalSupply(), "reserve >= supply");
     }
 
+    /// @dev Every holder: the actors, then the attacker (A10).
+    function _holders() internal view returns (address[] memory list) {
+        uint256 n = handler.actorCount();
+        list = new address[](n + 1);
+        for (uint256 i; i < n; ++i) {
+            list[i] = handler.actors(i);
+        }
+        list[n] = handler.attacker();
+    }
+
     function invariant_shareAccounting() public view {
+        address[] memory holders = _holders();
         uint256 sum;
-        for (uint256 i; i < handler.actorCount(); ++i) {
-            sum += token.sharesOf(handler.actors(i));
+        for (uint256 i; i < holders.length; ++i) {
+            sum += token.sharesOf(holders[i]);
         }
         assertEq(sum, token.totalShares());
     }
 
     function invariant_balancesCoveredBySupply() public view {
+        address[] memory holders = _holders();
         uint256 sum;
-        for (uint256 i; i < handler.actorCount(); ++i) {
-            sum += token.balanceOf(handler.actors(i));
+        for (uint256 i; i < holders.length; ++i) {
+            sum += token.balanceOf(holders[i]);
         }
         assertLe(sum, token.totalSupply());
     }
 
     function invariant_everyoneCanExitAtOnce() public view {
+        address[] memory holders = _holders();
         uint256 owed;
-        for (uint256 i; i < handler.actorCount(); ++i) {
-            uint256 bal = token.balanceOf(handler.actors(i));
+        for (uint256 i; i < holders.length; ++i) {
+            uint256 bal = token.balanceOf(holders[i]);
             if (bal >= stabilizer.minAmount()) {
                 (uint256 assetsOut,) = lens.quoteRedeem(bal);
                 owed += assetsOut;
             }
         }
         assertLe(owed, treasury.liquidAssets());
+    }
+
+    /// A10: whatever it does, the attacker never ends above its start plus its pro-rata share
+    /// of distributed surplus. Its sUSD is valued at par, with no exit fee, so this is an upper
+    /// bound on what it could walk away with.
+    function invariant_noFreeLunch() public view {
+        assertLe(
+            handler.attackerValue(),
+            handler.attackerStart() + handler.attackerEntitlement(),
+            "attacker gained more than its pro-rata share of distributions"
+        );
+    }
+
+    /// A10: an atomic strategy that starts and ends with no sUSD never ends above its start,
+    /// even counting the distributions it caught on the way (the rebase step is below the
+    /// round-trip fees).
+    function invariant_flatRoundTripsNeverProfit() public view {
+        assertEq(handler.ghostFlatRoundTripProfits(), 0);
     }
 
     function invariant_redemptionsAndLossSyncNeverFail() public view {
@@ -1854,8 +1888,9 @@ contract SpectrumInvariantTest is SpectrumFixture {
     /// End of every run: everybody redeems everything at once (a bank run). Every
     /// redemption must succeed and the floor must still hold.
     function afterInvariant() public {
-        for (uint256 i; i < handler.actorCount(); ++i) {
-            address a = handler.actors(i);
+        address[] memory holders = _holders();
+        for (uint256 i; i < holders.length; ++i) {
+            address a = holders[i];
             uint256 bal = token.balanceOf(a);
             if (bal >= stabilizer.minAmount() + 1) {
                 vm.prank(a);
@@ -1863,7 +1898,19 @@ contract SpectrumInvariantTest is SpectrumFixture {
             }
         }
         assertGe(stabilizer.reserveValue(), token.totalSupply(), "floor after a bank run");
-        assertLt(token.totalSupply(), handler.actorCount() * stabilizer.minAmount(), "only dust left");
+        assertLt(token.totalSupply(), holders.length * stabilizer.minAmount(), "only dust left");
+        // After its own exit, at the real exit fee, the attacker is still within bounds.
+        assertLe(handler.attackerValue(), handler.attackerStart() + handler.attackerEntitlement(), "no free lunch after exit");
+        emit log_named_uint("attacks", handler.ghostAttacks());
+        emit log_named_uint("atomic flat-to-flat attacks", handler.ghostFlatRoundTrips());
+        emit log_named_decimal_uint("attacker start (sUSD)", handler.attackerStart(), 18);
+        emit log_named_decimal_uint("attacker entitlement (sUSD)", handler.attackerEntitlement(), 18);
+        emit log_named_decimal_int(
+            "attacker net (sUSD, vs start + entitlement)",
+            int256(handler.attackerValue()) - int256(handler.attackerStart() + handler.attackerEntitlement()),
+            18
+        );
+        assertEq(handler.attackerShortfall(), 0, "every flash loan was repaid");
         emit log_named_uint("mints", handler.ghostMints());
         emit log_named_uint("redeems", handler.ghostRedeems());
         emit log_named_uint("rebases", handler.ghostRebases());
