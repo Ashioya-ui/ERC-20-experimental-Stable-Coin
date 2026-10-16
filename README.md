@@ -15,9 +15,10 @@ Uniswap v4 pool. **H never creates or removes backing.** It only adjusts those s
 within fixed bounds.
 
 The previous SPCM v2 files are kept unchanged in [`legacy/spcm-v2/`](legacy/spcm-v2/).
-[`PROMPTS.md`](PROMPTS.md) holds the corrected 3-phase engineering prompts and explains what
-changed and why. [`RUNBOOK_MAINNET.md`](RUNBOOK_MAINNET.md) is the deployment and operations
-runbook for Base.
+[`PROMPTS.md`](PROMPTS.md) holds the engineering prompts for Phases 1–4 and explains what
+changed and why. Phase 4 (optimization, security, and the paper's proven results) is next: run
+it before the mainnet broadcast. [`RUNBOOK_MAINNET.md`](RUNBOOK_MAINNET.md) is the deployment
+and operations runbook for Base.
 
 ## Deploying to Base mainnet
 
