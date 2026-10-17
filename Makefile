@@ -3,11 +3,15 @@
 # Mainnet sequence (see RUNBOOK_MAINNET.md):
 #   make test test-isolate rehearsal     # everything local, no keys
 #   make bench                           # gas benchmarks (committed in .gas-snapshot)
+#   make deploy-base-sepolia             # dress rehearsal on Base Sepolia (BASE_SEPOLIA_RPC_URL)
 #   make fork-test                       # same scenarios on a Base mainnet fork (BASE_RPC_URL)
 #   make preflight                       # full deployment simulated against live Base state
 #   make deploy-base-mainnet             # broadcast + verify (Ledger by default)
 #   make post-deploy-check               # read-only checks against the live deployment
 #   make verify-base-mainnet             # re-verify with explicit constructor args if needed
+#
+# Audit tooling (audit/README.md):
+#   make deps analyze formal coverage sim  # pins, Slither, Halmos, coverage, parameter model
 #
 # Settings come from the environment or a .env file (see .env.example).
 
@@ -21,7 +25,8 @@ CHAIN_ID ?= 8453
 
 .PHONY: help build test test-ci test-isolate bench snapshot rehearsal fork-test preflight \
         deploy-base-mainnet verify-base-mainnet verify-blockscout post-deploy-check sizes \
-        clean-local analyze
+        clean-local analyze formal coverage deps sim preflight-sepolia deploy-base-sepolia \
+        post-deploy-check-sepolia
 
 help:
 	@grep -E '^#' Makefile | sed 's/^# \{0,1\}//'
@@ -49,6 +54,35 @@ sizes:
 
 rehearsal:
 	script/rehearsal/run.sh
+
+deps:
+	script/check-deps.sh
+
+analyze:
+	slither . --filter-paths "lib/|test/|script/" --exclude-dependencies \
+	  --triage-database audit/slither.db.json --fail-medium
+
+formal:
+	FOUNDRY_OUT=out-halmos FOUNDRY_CACHE_PATH=cache-halmos halmos --forge-build-out out-halmos \
+	  --match-contract Halmos --function check_ --loop 9 --solver bitwuzla-abs --solver-timeout-assertion 10m
+
+coverage:
+	forge coverage --ir-minimum --report summary --no-match-coverage "test|script|lib"
+
+sim:
+	python3 sim/simulate.py
+
+preflight-sepolia: _need-sepolia-rpc _need-deployer
+	forge script script/DeployBaseMainnet.s.sol --rpc-url $(BASE_SEPOLIA_RPC_URL) --sender $(DEPLOYER)
+
+deploy-base-sepolia: _need-sepolia-rpc _need-deployer _need-etherscan
+	@test "$$(cast chain-id --rpc-url $(BASE_SEPOLIA_RPC_URL))" = "84532" || (echo "RPC is not Base Sepolia"; exit 1)
+	forge script script/DeployBaseMainnet.s.sol --rpc-url $(BASE_SEPOLIA_RPC_URL) $(SIGNER) --sender $(DEPLOYER) \
+	  --broadcast --slow --verify --etherscan-api-key $(ETHERSCAN_API_KEY)
+	$(MAKE) post-deploy-check-sepolia
+
+post-deploy-check-sepolia: _need-sepolia-rpc
+	forge script script/PostDeployCheck.s.sol --rpc-url $(BASE_SEPOLIA_RPC_URL)
 
 fork-test: _need-rpc
 	forge test --match-contract BaseMainnetForkTest -vv
@@ -79,6 +113,9 @@ clean-local:
 
 _need-rpc:
 	@test -n "$(BASE_RPC_URL)" || (echo "set BASE_RPC_URL (Base mainnet RPC)"; exit 1)
+
+_need-sepolia-rpc:
+	@test -n "$(BASE_SEPOLIA_RPC_URL)" || (echo "set BASE_SEPOLIA_RPC_URL (Base Sepolia RPC)"; exit 1)
 
 _need-deployer:
 	@test -n "$(DEPLOYER)" || (echo "set DEPLOYER (address of your Ledger/keystore account)"; exit 1)

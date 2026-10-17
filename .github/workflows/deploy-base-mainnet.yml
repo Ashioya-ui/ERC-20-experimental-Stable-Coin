@@ -1,29 +1,40 @@
 name: deploy-base-mainnet
 
-# Deploys Spectrum to Base mainnet from GitHub's runners.
+# Deploys Spectrum from GitHub's runners: to Base Sepolia for the dress rehearsal, then to
+# Base mainnet. Same script, same checks; only the config file, RPC and environment differ.
 #
 # One-time setup (repository Settings):
 #   Variables -> Actions:
-#     DEPLOYER               address of the deploying account (not a secret)
+#     DEPLOYER                 address of the deploying account (not a secret)
 #   Secrets -> Actions:
-#     BASE_RPC_URL           Base mainnet RPC (provider endpoint recommended)
-#     ETHERSCAN_API_KEY      Etherscan API V2 key (covers Basescan)
-#     DEPLOYER_PRIVATE_KEY   key of the DEPLOYER address, holding ~0.002 ETH + 2 USDC on Base.
-#                            It ends with NO roles: all power goes to the admin Safe given
-#                            below, so this key is worthless after the run. Rotate it anyway.
-#   Environments -> base-mainnet: add yourself as a required reviewer.
+#     BASE_RPC_URL             Base mainnet RPC (provider endpoint recommended)
+#     BASE_SEPOLIA_RPC_URL     Base Sepolia RPC (for the dress rehearsal)
+#     ETHERSCAN_API_KEY        Etherscan API V2 key (covers Basescan and Base Sepolia)
+#     DEPLOYER_PRIVATE_KEY     key of the DEPLOYER address. Mainnet: ~0.003 ETH and
+#                              1,252 USDC (seedUSDC 2 + seedCapitalUSDC 1,250) on Base.
+#                              Sepolia: test ETH and 7 test USDC from Circle's faucet.
+#                              It ends with NO roles: all power goes to the admin Safe given
+#                              below. Use a fresh key and fund it just before the run.
+#   Environments: base-mainnet (add yourself as a required reviewer) and base-sepolia.
 #
 # The private key is passed to the broadcast step only (Phase 4, A4): every other step,
 # `forge test` included, runs dependency code that must never see it. Every action is pinned
 # to a commit.
 #
-# Run: Actions -> deploy-base-mainnet -> Run workflow. Do a dry-run first, then broadcast.
+# Run: Actions -> deploy-base-mainnet -> Run workflow. Network base-sepolia first (dry-run,
+# then broadcast), then base (dry-run, then broadcast).
 
 on:
   workflow_dispatch:
     inputs:
+      network:
+        description: "base-sepolia = dress rehearsal; base = mainnet"
+        required: true
+        default: base-sepolia
+        type: choice
+        options: [base-sepolia, base]
       admin:
-        description: "Admin Safe on Base (gets DEFAULT_ADMIN_ROLE + GUARDIAN_ROLE)"
+        description: "Admin Safe on that network (gets DEFAULT_ADMIN_ROLE + GUARDIAN_ROLE)"
         required: true
         type: string
       guardian:
@@ -32,7 +43,7 @@ on:
         default: "0x0000000000000000000000000000000000000000"
         type: string
       mode:
-        description: "dry-run = simulate on live Base state; broadcast = deploy for real"
+        description: "dry-run = simulate on live chain state; broadcast = deploy for real"
         required: true
         default: dry-run
         type: choice
@@ -44,7 +55,7 @@ on:
         type: string
 
 concurrency:
-  group: deploy-base-mainnet
+  group: deploy-${{ inputs.network }}
   cancel-in-progress: false
 
 permissions: {}
@@ -52,12 +63,14 @@ permissions: {}
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: base-mainnet
+    environment: ${{ inputs.network == 'base' && 'base-mainnet' || 'base-sepolia' }}
     timeout-minutes: 45
     permissions:
       contents: read
     env:
-      BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}
+      NETWORK: ${{ inputs.network }}
+      CHAIN_ID: ${{ inputs.network == 'base' && '8453' || '84532' }}
+      RPC_URL: ${{ inputs.network == 'base' && secrets.BASE_RPC_URL || secrets.BASE_SEPOLIA_RPC_URL }}
       ADMIN: ${{ inputs.admin }}
       GUARDIAN: ${{ inputs.guardian }}
       MODE: ${{ inputs.mode }}
@@ -75,49 +88,63 @@ jobs:
           version: v1.5.1
 
       - name: Check inputs, secrets and chain
+        env:
+          # Whether the secrets are set, without putting their values into this step (A4).
+          HAS_DEPLOYER_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY != '' }}
+          HAS_ETHERSCAN_KEY: ${{ secrets.ETHERSCAN_API_KEY != '' }}
         run: |
           set -euo pipefail
-          [[ -n "$BASE_RPC_URL" ]] || { echo "::error::set the BASE_RPC_URL secret"; exit 1; }
-          [[ "$(cast chain-id --rpc-url "$BASE_RPC_URL")" == "8453" ]] || { echo "::error::BASE_RPC_URL is not Base mainnet"; exit 1; }
+          CONFIG="config/$CHAIN_ID.json"
+          [[ -n "$RPC_URL" ]] || { echo "::error::set the RPC secret for $NETWORK (BASE_RPC_URL or BASE_SEPOLIA_RPC_URL)"; exit 1; }
+          [[ "$(cast chain-id --rpc-url "$RPC_URL")" == "$CHAIN_ID" ]] || { echo "::error::the RPC is not chain $CHAIN_ID"; exit 1; }
           ADMIN=$(cast to-check-sum-address "$ADMIN")
-          [[ "$(cast code "$ADMIN" --rpc-url "$BASE_RPC_URL")" != "0x" ]] || { echo "::error::admin $ADMIN has no code: create the Safe on Base first"; exit 1; }
+          if [[ "$NETWORK" == "base" || "$(jq -r .roles.allowEoaAdmin "$CONFIG")" != "true" ]]; then
+            [[ "$(cast code "$ADMIN" --rpc-url "$RPC_URL")" != "0x" ]] || { echo "::error::admin $ADMIN has no code: create the Safe on $NETWORK first"; exit 1; }
+          fi
           GUARDIAN=$(cast to-check-sum-address "$GUARDIAN")
           if [[ "$MODE" == "broadcast" ]]; then
             [[ "$CONFIRM" == "DEPLOY" ]] || { echo "::error::type DEPLOY in 'confirm' to broadcast"; exit 1; }
             [[ -n "$DEPLOYER_ADDRESS" ]] || { echo "::error::set the DEPLOYER repository variable to the deployer's address"; exit 1; }
-            [[ -n "${{ secrets.DEPLOYER_PRIVATE_KEY }}" ]] || { echo "::error::set the DEPLOYER_PRIVATE_KEY secret"; exit 1; }
-            [[ -n "${{ secrets.ETHERSCAN_API_KEY }}" ]] || { echo "::error::set the ETHERSCAN_API_KEY secret"; exit 1; }
+            [[ "$HAS_DEPLOYER_KEY" == "true" ]] || { echo "::error::set the DEPLOYER_PRIVATE_KEY secret"; exit 1; }
+            [[ "$HAS_ETHERSCAN_KEY" == "true" ]] || { echo "::error::set the ETHERSCAN_API_KEY secret"; exit 1; }
             DEPLOYER=$(cast to-check-sum-address "$DEPLOYER_ADDRESS")
           else
             DEPLOYER=0x000000000000000000000000000000000000bEEF   # unfunded dry-run sender
           fi
           [[ "$DEPLOYER" != "$ADMIN" ]] || { echo "::error::the deployer must not be the admin"; exit 1; }
-          echo "ADMIN=$ADMIN" >> "$GITHUB_ENV"
-          echo "GUARDIAN=$GUARDIAN" >> "$GITHUB_ENV"
-          echo "DEPLOYER=$DEPLOYER" >> "$GITHUB_ENV"
-          echo "deployer $DEPLOYER: $(cast balance "$DEPLOYER" --ether --rpc-url "$BASE_RPC_URL") ETH, $(cast call 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 'balanceOf(address)(uint256)' "$DEPLOYER" --rpc-url "$BASE_RPC_URL") USDC wei"
+          USDC=$(jq -r .external.usdc "$CONFIG")
+          {
+            echo "CONFIG=$CONFIG"
+            echo "ADMIN=$ADMIN"
+            echo "GUARDIAN=$GUARDIAN"
+            echo "DEPLOYER=$DEPLOYER"
+          } >> "$GITHUB_ENV"
+          echo "deployer $DEPLOYER on $NETWORK: $(cast balance "$DEPLOYER" --ether --rpc-url "$RPC_URL") ETH, $(cast call "$USDC" 'balanceOf(address)(uint256)' "$DEPLOYER" --rpc-url "$RPC_URL") USDC wei"
 
-      - name: Tests, including the Base mainnet fork scenarios
+      - name: Tests (the Base mainnet fork scenarios run when deploying to mainnet)
+        env:
+          BASE_RPC_URL: ${{ inputs.network == 'base' && secrets.BASE_RPC_URL || '' }}
         run: forge test
 
       - name: Tests in isolated mode (per-call gas budgets)
         run: forge test --isolate
 
-      - name: Write roles into config/8453.json
+      - name: Write roles into the config
         run: |
           set -euo pipefail
-          jq --arg a "$ADMIN" --arg g "$GUARDIAN" '.roles.admin=$a | .roles.guardian=$g | .roles.allowEoaAdmin=false' \
-            config/8453.json > config/8453.tmp && mv config/8453.tmp config/8453.json
+          if [[ "$NETWORK" == "base" ]]; then EOA=false; else EOA=$(jq -r .roles.allowEoaAdmin "$CONFIG"); fi
+          jq --arg a "$ADMIN" --arg g "$GUARDIAN" --argjson e "$EOA" '.roles.admin=$a | .roles.guardian=$g | .roles.allowEoaAdmin=$e' \
+            "$CONFIG" > config.tmp && mv config.tmp "$CONFIG"
           if [[ "$MODE" == "dry-run" ]]; then
-            # an unfunded dry-run sender cannot pay the 2 USDC dead-share seed
-            jq '.params.seedUSDC=0 | .params.seedCapitalUSDC=0' config/8453.json > config/8453.tmp && mv config/8453.tmp config/8453.json
+            # an unfunded dry-run sender cannot pay the seed amounts
+            jq '.params.seedUSDC=0 | .params.seedCapitalUSDC=0' "$CONFIG" > config.tmp && mv config.tmp "$CONFIG"
           fi
-          jq '.roles, .params' config/8453.json
+          jq '.roles, .params' "$CONFIG"
 
-      - name: Preflight - simulate the whole deployment against live Base state
-        run: forge script script/DeployBaseMainnet.s.sol --rpc-url "$BASE_RPC_URL" --sender "$DEPLOYER"
+      - name: Preflight - simulate the whole deployment against live chain state
+        run: forge script script/DeployBaseMainnet.s.sol --rpc-url "$RPC_URL" --sender "$DEPLOYER"
 
-      - name: Broadcast and verify on Basescan
+      - name: Broadcast and verify on the explorer
         if: inputs.mode == 'broadcast'
         env:
           # The only step that sees the key. It must match the DEPLOYER variable.
@@ -128,30 +155,30 @@ jobs:
           KEY_ADDRESS=$(cast wallet address --private-key "$DEPLOYER_PRIVATE_KEY")
           [[ "$(cast to-check-sum-address "$KEY_ADDRESS")" == "$DEPLOYER" ]] || {
             echo "::error::DEPLOYER_PRIVATE_KEY does not match the DEPLOYER variable"; exit 1; }
-          forge script script/DeployBaseMainnet.s.sol --rpc-url "$BASE_RPC_URL" \
+          forge script script/DeployBaseMainnet.s.sol --rpc-url "$RPC_URL" \
             --private-key "$DEPLOYER_PRIVATE_KEY" --sender "$DEPLOYER" \
             --broadcast --slow --verify --etherscan-api-key "$ETHERSCAN_API_KEY"
 
       - name: Post-deploy check (read-only, live chain)
         if: inputs.mode == 'broadcast'
-        run: forge script script/PostDeployCheck.s.sol --rpc-url "$BASE_RPC_URL"
+        run: forge script script/PostDeployCheck.s.sol --rpc-url "$RPC_URL"
 
       - name: Summary
         if: inputs.mode == 'broadcast'
         run: |
           {
-            echo "## Spectrum deployed on Base"
+            echo "## Spectrum deployed on $NETWORK"
             echo '```json'
-            cat deployments/8453.json
+            cat "deployments/$CHAIN_ID.json"
             echo '```'
-            echo "Commit deployments/8453.json (artifact below) to the repository."
+            echo "Commit deployments/$CHAIN_ID.json (artifact below) to the repository."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: inputs.mode == 'broadcast'
         with:
-          name: base-mainnet-deployment
+          name: deployment-${{ inputs.network }}
           path: |
-            deployments/8453.json
-            config/8453.json
-            broadcast/DeployBaseMainnet.s.sol/8453/run-latest.json
+            deployments/${{ inputs.network == 'base' && '8453' || '84532' }}.json
+            config/${{ inputs.network == 'base' && '8453' || '84532' }}.json
+            broadcast/DeployBaseMainnet.s.sol/${{ inputs.network == 'base' && '8453' || '84532' }}/run-latest.json

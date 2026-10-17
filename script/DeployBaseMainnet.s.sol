@@ -5,9 +5,10 @@ import {Script, console2} from "forge-std/Script.sol";
 import {SpectrumDeploy} from "./lib/SpectrumDeploy.sol";
 
 /// @title  DeployBaseMainnet
-/// @notice Deploys Spectrum to the chain named in config/<chainId>.json (Base mainnet: 8453).
-///         The same code path runs in the local rehearsal (config/31337.json) and the fork
-///         tests, through SpectrumDeploy.
+/// @notice Deploys Spectrum to the chain named in config/<chainId>.json: Base mainnet (8453)
+///         or the Base Sepolia dress rehearsal (84532, which also deploys two labelled
+///         TestnetVaults first). The same code path runs in the local rehearsal
+///         (config/31337.json) and the fork tests, through SpectrumDeploy.
 ///
 ///         Dry run against live Base state (no transactions):
 ///           forge script script/DeployBaseMainnet.s.sol --rpc-url $BASE_RPC_URL --sender $DEPLOYER
@@ -26,6 +27,11 @@ contract DeployBaseMainnet is Script {
         SpectrumDeploy.Config memory c = SpectrumDeploy.loadConfig(configPath);
         address deployer = msg.sender;
 
+        if (c.deployTestVaults) {
+            vm.startBroadcast(deployer);
+            SpectrumDeploy.deployTestVaults(c);
+            vm.stopBroadcast();
+        }
         SpectrumDeploy.preflight(c, deployer);
 
         vm.startBroadcast(deployer);

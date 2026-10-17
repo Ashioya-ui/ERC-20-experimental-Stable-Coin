@@ -24,6 +24,7 @@ import {SpectralEntropyOracle} from "../../src/SpectralEntropyOracle.sol";
 import {SpectralHook} from "../../src/SpectralHook.sol";
 import {WrappedSUSD} from "../../src/WrappedSUSD.sol";
 import {SpectrumLens} from "../../src/SpectrumLens.sol";
+import {TestnetVault} from "./TestnetVault.sol";
 
 /// @title  SpectrumDeploy
 /// @notice One deployment procedure shared by the mainnet script, the post-deploy check, the
@@ -60,6 +61,7 @@ library SpectrumDeploy {
         uint256 liquidityBufferBps;
         uint256 seedUsdc; // in USDC base units
         uint256 seedCapitalUsdc; // protocol capital contributed at deployment, USDC base units (Phase 4, B8)
+        bool deployTestVaults; // testnets only: deploy two TestnetVaults first (Phase 4, D1)
     }
 
     struct Deployment {
@@ -103,6 +105,22 @@ library SpectrumDeploy {
         if (vm.keyExistsJson(j, ".params.seedCapitalUSDC")) {
             c.seedCapitalUsdc = vm.parseJsonUint(j, ".params.seedCapitalUSDC") * 1e6;
         }
+        // Optional (default false): Base Sepolia has no USDC lending vault to rehearse with.
+        if (vm.keyExistsJson(j, ".external.deployTestVaults")) {
+            c.deployTestVaults = vm.parseJsonBool(j, ".external.deployTestVaults");
+        }
+    }
+
+    /// @notice Testnets only: deploy two plain, clearly labelled ERC-4626 vaults over the
+    ///         config's USDC and use them as the primary and fallback vaults. Run inside the
+    ///         broadcast, before `preflight` and `deploy`. Refuses Base mainnet.
+    function deployTestVaults(Config memory c) internal {
+        require(block.chainid != 8453, "deployTestVaults: never on Base mainnet");
+        c.vault = address(new TestnetVault(IERC20(c.usdc), "Spectrum TEST vault A (no yield, testnet)", "tvUSDC-A"));
+        c.fallbackVault =
+            address(new TestnetVault(IERC20(c.usdc), "Spectrum TEST vault B (no yield, testnet)", "tvUSDC-B"));
+        console2.log("test vault A             ", c.vault);
+        console2.log("test vault B             ", c.fallbackVault);
     }
 
     // ------------------------------------------------------------------------ preflight
@@ -328,6 +346,7 @@ library SpectrumDeploy {
         vm.serializeAddress(o, "poolManager", c.poolManager);
         vm.serializeAddress(o, "usdc", c.usdc);
         vm.serializeAddress(o, "vault", c.vault);
+        vm.serializeAddress(o, "fallbackVault", c.fallbackVault);
         vm.serializeAddress(o, "treasury", address(d.treasury));
         vm.serializeAddress(o, "sUSD", address(d.token));
         vm.serializeAddress(o, "oracle", address(d.oracle));

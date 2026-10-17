@@ -17,6 +17,11 @@ contract PostDeployCheck is Script {
         SpectrumDeploy.Config memory c = SpectrumDeploy.loadConfig(configPath);
         SpectrumDeploy.Deployment memory d = SpectrumDeploy.loadDeployment(deploymentPath);
         string memory j = vm.readFile(deploymentPath);
+        if (c.deployTestVaults) {
+            // testnets: the vaults were deployed by the script, so they are in the record
+            c.vault = vm.parseJsonAddress(j, ".vault");
+            c.fallbackVault = vm.parseJsonAddress(j, ".fallbackVault");
+        }
         address deployer = vm.parseJsonAddress(j, ".deployer");
         SpectrumDeploy.check(c, d, deployer);
         SpectrumDeploy.report(d);
