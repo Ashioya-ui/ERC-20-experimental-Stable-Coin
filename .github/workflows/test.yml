@@ -25,8 +25,8 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
           version: v1.5.1
-      - name: Submodule commits match the lockfile
-        run: git submodule status --recursive | grep -v '^ ' && { echo "::error::a submodule is not at its pinned commit"; exit 1; } || true
+      - name: Dependencies at their reviewed commits (audit/dependencies.md)
+        run: script/check-deps.sh
       - name: Build (sizes)
         run: forge build --sizes
       - name: Test
