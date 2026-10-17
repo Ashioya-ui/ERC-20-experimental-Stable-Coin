@@ -9,10 +9,13 @@ import {SelfApproaching} from "./SelfApproaching.sol";
 ///         the stabilizer executes (internal functions are inlined), not on a copy (Phase 4,
 ///         A11). Every curve clamps h to [0, 1e18] first, so it is defined for any input.
 ///
-///         Plain checked arithmetic, not `mulDiv`: after the clamp every product is far below
-///         2^256 (the largest, (MINT_FEE_MAX - MINT_FEE_MIN) * h * h, is under 2.4e51), so
-///         `(a * b) / c` is exactly the floor `mulDiv` would return, costs less gas, and keeps
-///         the formulas simple enough for an SMT solver to prove things about.
+///         Plain arithmetic, not `mulDiv`, and unchecked after the clamp: every product is far
+///         below 2^256 (the largest, (MINT_FEE_MAX - MINT_FEE_MIN) * h * h, is under 2.4e51 <
+///         2^172) and every subtraction is of a smaller value (the bound is next to each one),
+///         so `(a * b) / c` is exactly the floor `mulDiv` would return. Checked multiplication
+///         would add a guard that divides by a variable, which SMT solvers cannot discharge in
+///         reasonable time; without it Halmos proves the bounds, monotonicity and the churn
+///         step's freedom from reverts for every input (audit/formal.md).
 library SpectralPolicy {
     uint256 internal constant WAD = 1e18;
 
@@ -43,48 +46,70 @@ library SpectralPolicy {
     /// @dev MIN + (MAX - MIN) h^2.
     function mintFeeRate(uint256 h) internal pure returns (uint256) {
         h = clamp(h);
-        return MINT_FEE_MIN + ((MINT_FEE_MAX - MINT_FEE_MIN) * (h * h)) / (WAD * WAD);
+        // h <= 1e18: h * h <= 1e36, and (MAX - MIN) * h * h <= 2.4e51.
+        unchecked {
+            return MINT_FEE_MIN + ((MINT_FEE_MAX - MINT_FEE_MIN) * (h * h)) / (WAD * WAD);
+        }
     }
 
     /// @dev MIN + (MAX - MIN) h^2.
     function redeemFeeRate(uint256 h) internal pure returns (uint256) {
         h = clamp(h);
-        return REDEEM_FEE_MIN + ((REDEEM_FEE_MAX - REDEEM_FEE_MIN) * (h * h)) / (WAD * WAD);
+        // h <= 1e18: h * h <= 1e36, and (MAX - MIN) * h * h <= 9e50.
+        unchecked {
+            return REDEEM_FEE_MIN + ((REDEEM_FEE_MAX - REDEEM_FEE_MIN) * (h * h)) / (WAD * WAD);
+        }
     }
 
     /// @dev LOW - (LOW - HIGH) h.
     function expansionCapRate(uint256 h) internal pure returns (uint256) {
         h = clamp(h);
-        return EXPANSION_CAP_LOW_H - ((EXPANSION_CAP_LOW_H - EXPANSION_CAP_HIGH_H) * h) / WAD;
+        // h <= 1e18: the subtrahend is at most LOW - HIGH < LOW.
+        unchecked {
+            return EXPANSION_CAP_LOW_H - ((EXPANSION_CAP_LOW_H - EXPANSION_CAP_HIGH_H) * h) / WAD;
+        }
     }
 
     /// @dev Flat at the neutral floor up to h = 0.5, then linear up to HIGH (Phase 4, D4).
     function bufferRate(uint256 h) internal pure returns (uint256) {
         h = clamp(h);
         if (h <= 0.5e18) return BUFFER_LOW_H;
-        return BUFFER_LOW_H + ((BUFFER_HIGH_H - BUFFER_LOW_H) * (2 * (h - 0.5e18))) / WAD;
+        // 0.5e18 < h <= 1e18: 2 * (h - 0.5e18) <= 1e18.
+        unchecked {
+            return BUFFER_LOW_H + ((BUFFER_HIGH_H - BUFFER_LOW_H) * (2 * (h - 0.5e18))) / WAD;
+        }
     }
 
     /// @dev MAX - MAX h / 2.
     function rebaseStepRate(uint256 h) internal pure returns (uint256) {
         h = clamp(h);
-        return REBASE_STEP_MAX - (REBASE_STEP_MAX * h) / (2 * WAD);
+        // h <= 1e18: the subtrahend is at most MAX / 2.
+        unchecked {
+            return REBASE_STEP_MAX - (REBASE_STEP_MAX * h) / (2 * WAD);
+        }
     }
 
     /// @notice One step of the churn budget: the window's total variation `len`, maximum `mx`
     ///         and minimum `mn` after the index moves from `oldIndex` to `newIndex`, its range,
     ///         and whether `len <= CHURN_BUDGET * range` afterwards.
-    /// @dev    All arithmetic is in uint256. With every input below 2^128, `len` stays below
-    ///         2^129 and both products below 2^191, so nothing can overflow (checked by Halmos).
-    function churnStep(uint256 len, uint256 mx, uint256 mn, uint256 oldIndex, uint256 newIndex)
+    /// @dev    The inputs are uint128: the window's statistics live in uint128 slots and the
+    ///         stabilizer converts the indices with SafeCast. So `len2 < 2^129` and
+    ///         `range < 2^128`, and both products, below 2^191, are computed unchecked. The
+    ///         additions and subtractions stay checked. With the old index inside the window's
+    ///         range (mn <= oldIndex <= mx, which the stabilizer maintains), the step cannot
+    ///         revert; Halmos proves this, and the results, for every such input. Loss
+    ///         absorption runs through this step, so that matters.
+    function churnStep(uint128 len, uint128 mx, uint128 mn, uint128 oldIndex, uint128 newIndex)
         internal
         pure
         returns (uint256 len2, uint256 mx2, uint256 mn2, uint256 range, bool ok)
     {
-        len2 = len + (newIndex > oldIndex ? newIndex - oldIndex : oldIndex - newIndex);
+        len2 = uint256(len) + (newIndex > oldIndex ? newIndex - oldIndex : oldIndex - newIndex);
         mx2 = newIndex > mx ? newIndex : mx;
         mn2 = newIndex < mn ? newIndex : mn;
         range = mx2 - mn2;
-        ok = len2 * WAD <= CHURN_BUDGET_WAD * range;
+        unchecked {
+            ok = len2 * WAD <= CHURN_BUDGET_WAD * range;
+        }
     }
 }

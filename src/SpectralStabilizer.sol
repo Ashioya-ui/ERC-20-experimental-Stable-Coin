@@ -638,10 +638,14 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
     }
 
     /// @dev The churn window's statistics before the next move: restarted at `oldIndex` once
-    ///      the window has expired.
-    function _churnState(uint256 oldIndex) internal view returns (bool expired, uint256 len, uint256 mx, uint256 mn) {
+    ///      the window has expired. The index is far below 2^128 (it starts at 1e18), and
+    ///      SafeCast keeps the churn step's input domain honest regardless.
+    function _churnState(uint256 oldIndex) internal view returns (bool expired, uint128 len, uint128 mx, uint128 mn) {
         expired = block.timestamp >= uint256(churnWindowStart) + CHURN_WINDOW;
-        if (expired) return (true, 0, oldIndex, oldIndex);
+        if (expired) {
+            uint128 start = oldIndex.toUint128();
+            return (true, 0, start, start);
+        }
         return (false, churnLength, churnMax, churnMin);
     }
 
@@ -651,14 +655,15 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         view
         returns (bool ok, uint256 len, uint256 range)
     {
-        (, uint256 len0, uint256 mx, uint256 mn) = _churnState(oldIndex);
-        (len,,, range, ok) = SpectralPolicy.churnStep(len0, mx, mn, oldIndex, newIndex);
+        (, uint128 len0, uint128 mx, uint128 mn) = _churnState(oldIndex);
+        (len,,, range, ok) = SpectralPolicy.churnStep(len0, mx, mn, oldIndex.toUint128(), newIndex.toUint128());
     }
 
     function _commitChurn(uint256 oldIndex, uint256 newIndex) internal {
-        (bool expired, uint256 len, uint256 mx, uint256 mn) = _churnState(oldIndex);
+        (bool expired, uint128 len0, uint128 mx0, uint128 mn0) = _churnState(oldIndex);
         if (expired) churnWindowStart = block.timestamp.toUint64();
-        (len, mx, mn,,) = SpectralPolicy.churnStep(len, mx, mn, oldIndex, newIndex);
+        (uint256 len, uint256 mx, uint256 mn,,) =
+            SpectralPolicy.churnStep(len0, mx0, mn0, oldIndex.toUint128(), newIndex.toUint128());
         churnLength = len.toUint128();
         churnMax = mx.toUint128();
         churnMin = mn.toUint128();

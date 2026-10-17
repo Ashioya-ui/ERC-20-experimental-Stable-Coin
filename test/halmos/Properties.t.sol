@@ -102,7 +102,7 @@ contract HalmosToken is Test {
 
 /// @notice External entry to the churn step, so that a revert can be caught and asserted on.
 contract ChurnHarness {
-    function churnStep(uint256 len, uint256 mx, uint256 mn, uint256 oldIndex, uint256 newIndex)
+    function churnStep(uint128 len, uint128 mx, uint128 mn, uint128 oldIndex, uint128 newIndex)
         external
         pure
         returns (uint256, uint256, uint256, uint256, bool)
@@ -199,20 +199,30 @@ contract HalmosPolicy is Test {
         assert(SpectralPolicy.rebaseStepRate(h) < SpectralPolicy.mintFeeRate(h) + SpectralPolicy.redeemFeeRate(h));
     }
 
-    /// For every index path below 2^128 the churn step cannot overflow or revert, its results
-    /// fit the uint128 slots they are stored in whenever the window's length does, and `ok`
-    /// is exactly L <= CHURN_BUDGET * D. (uint128 inputs cover exactly the domain claimed.)
-    function check_churnStepCannotOverflow(uint128 len, uint128 mx, uint128 mn, uint128 oldIndex, uint128 newIndex)
-        public
-        view
-    {
+    /// For every input (uint128, as the stabilizer passes them) with the old index inside the
+    /// window's range, the churn step never reverts, and its results are exact: the length
+    /// grows by |newIndex - oldIndex|, the maximum and minimum take in the new index, the range
+    /// is their difference, and `ok` is L * 1e18 <= CHURN_BUDGET_WAD * D over the integers
+    /// (both sides are below 2^191, so the 256-bit comparison is the integer one).
+    function check_churnStepNeverRevertsAndIsExact(
+        uint128 len,
+        uint128 mx,
+        uint128 mn,
+        uint128 oldIndex,
+        uint128 newIndex
+    ) public view {
         vm.assume(mn <= oldIndex && oldIndex <= mx); // the current index lies in the window's range
         try harness.churnStep(len, mx, mn, oldIndex, newIndex) returns (
             uint256 len2, uint256 mx2, uint256 mn2, uint256 range, bool ok
         ) {
-            assert(len2 < uint256(1) << 129);
-            assert(mx2 < uint256(1) << 128 && mn2 <= mx2 && range == mx2 - mn2);
-            assert(ok == (len2 * WAD <= SpectralPolicy.CHURN_BUDGET_WAD * range));
+            uint256 step = newIndex > oldIndex ? uint256(newIndex) - oldIndex : uint256(oldIndex) - newIndex;
+            assert(len2 == uint256(len) + step && len2 < uint256(1) << 129);
+            assert(mx2 == (newIndex > mx ? newIndex : mx) && mn2 == (newIndex < mn ? newIndex : mn));
+            assert(mn2 <= mx2 && range == mx2 - mn2 && range < uint256(1) << 128);
+            unchecked {
+                // No wrap: len2 * 1e18 < 2^189 and CHURN_BUDGET_WAD * range < 2^190.
+                assert(ok == (len2 * WAD <= SpectralPolicy.CHURN_BUDGET_WAD * range));
+            }
         } catch {
             assert(false);
         }
