@@ -59,6 +59,7 @@ library SpectrumDeploy {
         uint256 supplyCap;
         uint256 liquidityBufferBps;
         uint256 seedUsdc; // in USDC base units
+        uint256 seedCapitalUsdc; // protocol capital contributed at deployment, USDC base units (Phase 4, B8)
     }
 
     struct Deployment {
@@ -98,6 +99,10 @@ library SpectrumDeploy {
         c.supplyCap = vm.parseJsonUint(j, ".params.supplyCapSUSD") * 1e18;
         c.liquidityBufferBps = vm.parseJsonUint(j, ".params.liquidityBufferBps");
         c.seedUsdc = vm.parseJsonUint(j, ".params.seedUSDC") * 1e6; // USDC has 6 decimals
+        // Optional (default 0): first-loss protocol capital, see audit/parameters.md.
+        if (vm.keyExistsJson(j, ".params.seedCapitalUSDC")) {
+            c.seedCapitalUsdc = vm.parseJsonUint(j, ".params.seedCapitalUSDC") * 1e6;
+        }
     }
 
     // ------------------------------------------------------------------------ preflight
@@ -137,8 +142,11 @@ library SpectrumDeploy {
         require(v.maxDeposit(deployer) >= oneUsdc, "preflight: vault refuses deposits (paused, capped, or max*=0)");
         uint256 roundTrip = v.previewRedeem(v.previewDeposit(1_000 * oneUsdc));
         require(roundTrip * 1_000 >= 999 * 1_000 * oneUsdc, "preflight: vault deposit/redeem round trip loses > 0.1%");
-        if (c.seedUsdc > 0) {
-            require(IERC20(c.usdc).balanceOf(deployer) >= c.seedUsdc, "preflight: deployer lacks seed USDC");
+        if (c.seedUsdc + c.seedCapitalUsdc > 0) {
+            require(
+                IERC20(c.usdc).balanceOf(deployer) >= c.seedUsdc + c.seedCapitalUsdc,
+                "preflight: deployer lacks USDC for seedUSDC + seedCapitalUSDC"
+            );
         }
 
         console2.log("== preflight ==");
@@ -151,6 +159,7 @@ library SpectrumDeploy {
         console2.log("vault 1 share -> assets  ", v.convertToAssets(oneUsdc));
         console2.log("vault maxDeposit (USDC)  ", v.maxDeposit(deployer) / oneUsdc);
         console2.log("round trip 1,000 USDC -> ", roundTrip);
+        console2.log("protocol capital (USDC)  ", c.seedCapitalUsdc / oneUsdc);
     }
 
     // ------------------------------------------------------------------------ deploy
@@ -203,6 +212,11 @@ library SpectrumDeploy {
             d.stabilizer.mint(c.seedUsdc, deployer, 0);
             d.token.approve(address(d.wsusd), 1e18);
             d.wsusd.deposit(1e18, DEAD);
+        }
+        if (c.seedCapitalUsdc > 0) {
+            // First-loss protocol capital: never distributed, never withdrawable (B8).
+            IERC20(c.usdc).approve(address(d.stabilizer), c.seedCapitalUsdc);
+            d.stabilizer.contributeCapital(c.seedCapitalUsdc);
         }
     }
 
@@ -276,6 +290,11 @@ library SpectrumDeploy {
         }
         require(d.stabilizer.REBASE_STEP_MAX() < d.stabilizer.MINT_FEE_MIN() + d.stabilizer.REDEEM_FEE_MIN(), "check: fees");
 
+        // protocol capital only ever grows; vault rounding may shave a wei of USDC at deposit
+        if (c.seedCapitalUsdc > 0) {
+            require(d.stabilizer.protocolCapital() + 2e12 >= c.seedCapitalUsdc * 1e12, "check: protocol capital");
+        }
+
         // solvency
         require(d.stabilizer.reserveValue() >= d.token.totalSupply(), "check: reserve below supply");
     }
@@ -293,6 +312,8 @@ library SpectrumDeploy {
         console2.log("smoothed entropy (1e18)  ", d.oracle.smoothedEntropy());
         console2.log("oracle blocks filled     ", d.oracle.filled());
         console2.log("index (1e18)             ", d.token.index());
+        console2.log("protocol capital (wei)   ", d.stabilizer.protocolCapital());
+        console2.log("distributable now (wei)  ", d.lens.distributable());
     }
 
     // ------------------------------------------------------------------------ deployment JSON
@@ -327,6 +348,7 @@ library SpectrumDeploy {
         vm.serializeUint(o, "staleAfter", c.staleAfter);
         vm.serializeUint(o, "bootstrapCap", c.bootstrapCap);
         vm.serializeUint(o, "supplyCap", c.supplyCap);
+        vm.serializeUint(o, "seedCapitalUSDC", c.seedCapitalUsdc);
         string memory json = vm.serializeBytes32(o, "poolId", PoolId.unwrap(d.key.toId()));
         vm.writeJson(json, path);
     }

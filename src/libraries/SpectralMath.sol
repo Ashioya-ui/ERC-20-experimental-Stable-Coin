@@ -101,6 +101,9 @@ library SpectralMath {
         // forge-lint: disable-next-line(unsafe-typecast)
         int256 mi = int256(m);
         int256 sum;
+        // Fixed-point series: each term is truncated on purpose, and the total error is bounded
+        // and tested against 80-digit references (see above). Triaged in audit/slither.md.
+        // slither-disable-start divide-before-multiply
         unchecked {
             int256 z = ((mi - IWAD) * E36) / (mi + IWAD); // |z| <= 0.1716e36
             int256 z2 = (z * z) / E36;
@@ -135,6 +138,7 @@ library SpectralMath {
             sum += term / 25;
         }
         r = (k * LN2_E36 + 2 * sum) / IWAD;
+        // slither-disable-end divide-before-multiply
     }
 
     // ---------------------------------------------------------------------------------------
@@ -151,14 +155,15 @@ library SpectralMath {
     ///         recomputed in the second pass rather than kept in a memory array: eight
     ///         multiplications are cheaper than allocating and writing one.
     function spectralEntropy8(uint256[8] memory v) internal pure returns (uint256 h) {
-        uint256 vmax;
+        uint256 vmax = 0;
         for (uint256 i; i < 8; ++i) {
             if (v[i] > vmax) vmax = v[i];
         }
         if (vmax == 0) return 0;
 
         // Normalise to [0, 1e18]: exact scale invariance, and no int256 overflow.
-        int256[8] memory x;
+        // slither-disable-next-line uninitialized-local
+        int256[8] memory x; // zeroed memory, every slot written below
         for (uint256 i; i < 8; ++i) {
             // <= 1e18
             // forge-lint: disable-next-line(unsafe-typecast)
@@ -166,8 +171,8 @@ library SpectralMath {
         }
         fwht8(x);
 
-        uint256 total;
-        uint256 hRaw; // -sum P ln P, WAD nats
+        uint256 total = 0;
+        uint256 hRaw = 0; // -sum P ln P, WAD nats
         unchecked {
             // Bounds: |X_k| <= 8e18, so a square is <= 6.4e37 and the eight of them sum to at
             // most 5.2e38 < 2^129; hRaw is at most ln 8 * 1e18 < 2^61.
@@ -181,7 +186,10 @@ library SpectralMath {
                 // forge-lint: disable-next-line(unsafe-typecast)
                 uint256 a = uint256(x[k] < 0 ? -x[k] : x[k]);
                 if (a == 0) continue;
-                uint256 p = (a * a * WAD) / total; // P_k in WAD; a^2 * WAD <= 2^186
+                // P_k in WAD; a^2 * WAD <= 2^186. Truncating P_k, then multiplying by ln P_k, is
+                // the intended fixed-point order (triaged in audit/slither.md).
+                // slither-disable-next-line divide-before-multiply
+                uint256 p = (a * a * WAD) / total;
                 if (p == 0) continue; // below 1e-18: contribution < 4.2e-17
                 int256 lp = lnWad(p); // <= 0
                 // -lp >= 0 because p <= 1e18

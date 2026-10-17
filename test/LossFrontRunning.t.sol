@@ -50,7 +50,7 @@ contract LossFrontRunningTest is SpectrumFixture {
         } else if (which == 2) {
             _mintFor(bob, 1_000e6);
         } else {
-            vm.warp(block.timestamp + 1 hours);
+            vm.warp(vm.getBlockTimestamp() + 1 hours);
             try stabilizer.rebase() {} catch {} // may have nothing to distribute
         }
         assertGe(token.index(), indexBefore, "a loss inside the surplus never lowers the index");

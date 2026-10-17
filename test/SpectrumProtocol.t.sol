@@ -1046,8 +1046,8 @@ contract SpectralStabilizerTest is SpectrumFixture {
 
     function test_policyEndpoints() public view {
         assertEq(stabilizer.mintFeeRate(0), 0.0001e18);
-        assertEq(stabilizer.mintFeeRate(1e18), 0.005e18);
-        assertEq(stabilizer.mintFeeRate(0.5e18), 0.001325e18); // 1 bp + 49 bp / 4
+        assertEq(stabilizer.mintFeeRate(1e18), 0.0025e18); // 25 bp ceiling (D4; was 50 bp)
+        assertEq(stabilizer.mintFeeRate(0.5e18), 0.0007e18); // 1 bp + 24 bp / 4
         assertEq(stabilizer.redeemFeeRate(0), 0.0001e18);
         assertEq(stabilizer.redeemFeeRate(1e18), 0.001e18);
         assertEq(stabilizer.expansionCapRate(0), 0.2e18);
@@ -1096,7 +1096,7 @@ contract SpectralStabilizerTest is SpectrumFixture {
 
     function test_mint_feeRisesWithEntropy() public {
         oracle.setEntropy(1e18);
-        assertEq(_mintFor(alice, 1_000e6), 995e18);
+        assertEq(_mintFor(alice, 1_000e6), 997.5e18); // 25 bp at H = 1 (D4; 50 bp before)
     }
 
     function test_mint_guards() public {
@@ -1434,7 +1434,7 @@ contract SpectralStabilizerTest is SpectrumFixture {
         yieldBps = bound(yieldBps, 1, 1_000);
         vault.simulateYield((vault.totalAssets() * yieldBps) / 10_000);
         oracle.setEntropy(bound(h, 0, 1e18));
-        assets = bound(assets, 2e6, 800_000e6); // >= 1 sUSD left after a 50 bp fee
+        assets = bound(assets, 2e6, 800_000e6); // >= 1 sUSD left after a 25 bp fee
 
         address mev = makeAddr("mev");
         uint256 out = _mintFor(mev, assets);
@@ -1767,7 +1767,7 @@ contract SpectrumInvariantTest is SpectrumFixture {
         handler.mint(1, 20_000e6);
         handler.fundAttacker(100_000e6); // A10: its own capital, on top of any flash loan
 
-        bytes4[] memory selectors = new bytes4[](17);
+        bytes4[] memory selectors = new bytes4[](18);
         selectors[0] = StabilizerHandler.mint.selector;
         selectors[1] = StabilizerHandler.redeem.selector;
         selectors[2] = StabilizerHandler.transfer.selector;
@@ -1785,6 +1785,7 @@ contract SpectrumInvariantTest is SpectrumFixture {
         selectors[14] = StabilizerHandler.recoverLegacy.selector;
         selectors[15] = StabilizerHandler.attack.selector; // A10, weighted x2
         selectors[16] = StabilizerHandler.attack.selector;
+        selectors[17] = StabilizerHandler.contributeCapital.selector; // B8
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
         targetContract(address(handler));
     }
@@ -1843,6 +1844,13 @@ contract SpectrumInvariantTest is SpectrumFixture {
             handler.attackerStart() + handler.attackerEntitlement(),
             "attacker gained more than its pro-rata share of distributions"
         );
+    }
+
+    /// B8: protocol capital only ever grows, only through contributions, and no distribution
+    /// ever reaches into it.
+    function invariant_protocolCapitalNeverDistributed() public view {
+        assertEq(stabilizer.protocolCapital(), handler.ghostCapitalCredited(), "capital = sum of contributions");
+        assertEq(handler.ghostCapitalDistributed(), 0, "a distribution reached into the capital");
     }
 
     /// A10: an atomic strategy that starts and ends with no sUSD never ends above its start,

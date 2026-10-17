@@ -12,6 +12,7 @@ pragma solidity ^0.8.26;
 //    Runs when BASE_RPC_URL is set; skipped otherwise.
 // =====================================================================================
 
+import {LendingVaultMock} from "../mocks/LendingVaultMock.sol";
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
@@ -75,7 +76,7 @@ abstract contract MainnetScenarios is Test {
         cfg.guardian = guardian;
         cfg.allowEoaAdmin = true;
 
-        _fundUSDC(address(this), cfg.seedUsdc);
+        _fundUSDC(address(this), cfg.seedUsdc + cfg.seedCapitalUsdc);
         SpectrumDeploy.preflight(cfg, address(this));
         d = SpectrumDeploy.deploy(cfg, address(this));
         SpectrumDeploy.check(cfg, d, address(this));
@@ -168,7 +169,7 @@ abstract contract MainnetScenarios is Test {
 
     function test_deploymentMatchesConfig() public view {
         assertEq(d.oracle.smoothedEntropy(), 0.5e18, "neutral entropy at launch");
-        assertEq(d.stabilizer.mintFeeRate(0.5e18), 0.001325e18, "13.25 bp mint fee at neutral entropy");
+        assertEq(d.stabilizer.mintFeeRate(0.5e18), 0.0007e18, "7 bp mint fee at neutral entropy");
         assertEq(d.stabilizer.supplyCap(), 25_000e18);
         assertEq(d.treasury.liquidityBufferBps(), 1_500);
         assertEq(d.wsusd.balanceOf(SpectrumDeploy.DEAD), 1e18, "dead shares seeded");
@@ -176,11 +177,14 @@ abstract contract MainnetScenarios is Test {
         assertFalse(d.stabilizer.hasRole(d.stabilizer.DEFAULT_ADMIN_ROLE(), address(this)));
         assertEq(d.key.fee, 100);
         assertEq(address(d.treasury.vault()), cfg.vault);
+        // B8: 1,250 USDC of first-loss protocol capital, 5% of the 25,000 sUSD cap.
+        assertApproxEqAbs(d.stabilizer.protocolCapital(), 1_250e18, 2e12, "protocol capital seeded");
+        assertGe(d.stabilizer.reserveValue(), d.token.totalSupply() + 1_249e18, "the cushion is in the reserve");
     }
 
     function test_mintAndRedeemThroughVaultAndBuffer() public {
         uint256 out = _mintSUSD(payer, 1_000e6);
-        assertApproxEqRel(out, 998.675e18, 1e14, "1,000 USDC at 13.25 bp");
+        assertApproxEqRel(out, 999.3e18, 1e14, "1,000 USDC at 7 bp");
         uint256 reserve = d.treasury.reserveAssets();
         assertApproxEqRel(d.treasury.idleAssets(), (reserve * 15) / 100, 1e15, "15% idle");
         assertGt(IERC4626(cfg.vault).balanceOf(address(d.treasury)), 0, "rest in the vault");
@@ -243,14 +247,23 @@ abstract contract MainnetScenarios is Test {
         IPoolManager(cfg.poolManager).initialize(other, par);
     }
 
-    function test_yieldFlowsToHoldersAfterBuffer() public {
+    /// B8 (spec change): with protocol capital covering the buffer, fees and yield reach
+    /// holders from day one instead of after the buffer fills (about ten months at 4% APY).
+    function test_yieldFlowsToHoldersFromDayOne() public {
         _mintSUSD(payer, 5_000e6);
         uint256 index0 = d.token.index();
-        vm.expectRevert(SpectralStabilizer.NothingToDistribute.selector);
-        d.stabilizer.rebase();
+        assertGt(d.lens.distributable(), 0, "mint fees are distributable at once");
+        assertTrue(d.stabilizer.rebase(), "the first rebase distributes on launch day");
+        uint256 index1 = d.token.index();
+        assertGt(index1, index0);
         _accrueVaultYield();
-        assertTrue(d.stabilizer.rebase(), "surplus above the buffer is distributed");
-        assertGt(d.token.index(), index0);
+        assertTrue(d.stabilizer.rebase(), "and vault yield after it");
+        assertGt(d.token.index(), index1);
+        assertGe(
+            d.stabilizer.reserveValue(),
+            d.token.totalSupply() + d.stabilizer.protocolCapital(),
+            "distributions never reach the capital"
+        );
         _assertSolvent();
     }
 
@@ -318,6 +331,21 @@ contract LocalMainnetRehearsalTest is MainnetScenarios {
         uint256 assets = IERC4626(env.vault).totalAssets();
         IFiatToken(env.usdc).mint(env.vault, (assets * 6) / 100); // 6% on the vault position
         vm.warp(vm.getBlockTimestamp() + 1 hours);
+    }
+
+    /// A9 and B8: on launch day, a 4% vault loss lowers no balance, so exiting ahead of it
+    /// gains nothing; distributions then pause until yield rebuilds the capital.
+    function test_launchCapitalAbsorbsALoss() public {
+        _mintSUSD(payer, 5_000e6);
+        uint256 index0 = d.token.index();
+        uint256 loss = (d.token.totalSupply() * 4) / 100 / 1e12; // 4% of supply, in USDC
+        LendingVaultMock(env.vault).simulateLoss(loss);
+        d.stabilizer.sync();
+        assertEq(d.token.index(), index0, "the capital took the loss, not the holders");
+        _assertSolvent();
+        vm.warp(vm.getBlockTimestamp() + 1 hours);
+        vm.expectRevert(SpectralStabilizer.NothingToDistribute.selector);
+        d.stabilizer.rebase(); // capital is rebuilt from yield before anything is distributed
     }
 
     function test_localUsesRealFiatTokenBytecode() public view {

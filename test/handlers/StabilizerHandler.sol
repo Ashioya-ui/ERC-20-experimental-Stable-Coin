@@ -62,6 +62,10 @@ contract StabilizerHandler is Test {
     uint256 public ghostFlatRoundTrips; // atomic calls that started and ended with no sUSD
     uint256 public ghostFlatRoundTripProfits; // ... and ended above their start
 
+    // protocol capital (B8)
+    uint256 public ghostCapitalCredited; // sum of credited contributions, sUSD wei
+    uint256 public ghostCapitalDistributed; // distributions that reached into the capital
+
     constructor(
         SpectralToken token_,
         SpectralStabilizer stabilizer_,
@@ -169,7 +173,26 @@ contract StabilizerHandler is Test {
         uint256 indexAfter = token.index();
         if (indexAfter > indexBefore) {
             attackerEntitlement += Math.mulDiv(attackerShares, indexAfter - indexBefore, 1e18, Math.Rounding.Ceil);
+            // B8: a distribution never raises supply into the protocol capital.
+            if (token.totalSupply() + stabilizer.protocolCapital() > stabilizer.reserveValue()) ghostCapitalDistributed++;
         }
+    }
+
+    // ------------------------------------------------------------------ protocol capital (B8)
+
+    function contributeCapital(uint256 actorSeed, uint256 assets) external {
+        address a = _actor(actorSeed);
+        assets = bound(assets, 1e6, 5_000e6);
+        usdc.mint(a, assets);
+        vm.startPrank(a);
+        usdc.approve(address(stabilizer), assets);
+        try stabilizer.contributeCapital(assets) returns (uint256 credited) {
+            ghostCapitalCredited += credited;
+            ghostUsdcIn += assets;
+        } catch {
+            usdc.burn(a, assets);
+        }
+        vm.stopPrank();
     }
 
     // ------------------------------------------------------------------ attacker (A10)

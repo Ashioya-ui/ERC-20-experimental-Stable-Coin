@@ -28,6 +28,7 @@
     "bootstrapCapSUSD": 10000,
     "supplyCapSUSD": 25000,
     "liquidityBufferBps": 1500,
-    "seedUSDC": 2
+    "seedUSDC": 2,
+    "seedCapitalUSDC": 1250
   }
 }

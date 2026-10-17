@@ -53,6 +53,19 @@ contract SpectrumLens {
         return r > s ? r - s : 0;
     }
 
+    /// @notice How far a rebase could raise supply right now, ignoring the per-step limit, the
+    ///         hourly interval and the churn budget: min(reserve / (1 + buffer(H)),
+    ///         reserve - protocolCapital) - supply, or 0. In sUSD wei.
+    function distributable() external view returns (uint256) {
+        uint256 r = reserveValue();
+        uint256 s = token.totalSupply();
+        uint256 maxSupply = Math.mulDiv(r, WAD, WAD + stabilizer.bufferRate(oracle.smoothedEntropy()));
+        uint256 capital = stabilizer.protocolCapital();
+        uint256 uncommitted = r > capital ? r - capital : 0;
+        if (uncommitted < maxSupply) maxSupply = uncommitted;
+        return maxSupply > s ? maxSupply - s : 0;
+    }
+
     /// @notice Net expansion still available in the current epoch, in sUSD wei.
     function expansionRemaining() external view returns (uint256) {
         uint256 h = oracle.smoothedEntropy();

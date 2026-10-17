@@ -4,7 +4,7 @@ pragma solidity ^0.8.26;
 // =====================================================================================
 //  What does it cost to steer H?
 //
-//  H moves the mint fee (1-50 bp), the per-epoch expansion cap (20%-2% of supply) and the
+//  H moves the mint fee (1-25 bp after D4; 1-50 bp before), the per-epoch expansion cap (20%-2% of supply) and the
 //  surplus buffer. This file measures, against a real Uniswap v4 PoolManager, how many swaps,
 //  blocks, gas and LP fees an attacker needs to drive the smoothed signal to either extreme,
 //  and what that then changes. The numbers are reported in audit/oracle-manipulation.md.

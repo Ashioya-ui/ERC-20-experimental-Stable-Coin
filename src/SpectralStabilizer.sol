@@ -15,6 +15,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {SpectralToken} from "./SpectralToken.sol";
 import {AutonomousTreasury} from "./AutonomousTreasury.sol";
 import {ISpectralEntropyOracle} from "./interfaces/ISpectralEntropyOracle.sol";
+import {SpectralPolicy} from "./libraries/SpectralPolicy.sol";
 
 /// @title  SpectralStabilizer
 /// @notice Monetary controller of sUSD: 1:1 mint and redemption against the reserve, fees
@@ -94,37 +95,41 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
     ///         line a self-approaching path is simply monotone, so none of the planar theorems
     ///         applies and no stability property follows from the geometry. See
     ///         docs/paper-map.md.
-    uint256 public constant C_DIAM_WAD = 3_047_197_551_196_597_746;
+    uint256 public constant C_DIAM_WAD = SpectralPolicy.C_DIAM_WAD;
 
-    /// @notice Minting fee at h = 0 and at h = 1 (WAD rates): 1 bp to 50 bp, quadratic in h.
-    uint256 public constant MINT_FEE_MIN = 0.0001e18;
-    uint256 public constant MINT_FEE_MAX = 0.0050e18;
+    // The policy curves and their constants live in SpectralPolicy, so that the formal checks
+    // run on exactly this code (Phase 4, A11). The constants are re-exported here.
+
+    /// @notice Minting fee at h = 0 and at h = 1 (WAD rates): 1 bp to 25 bp, quadratic in h
+    ///         (50 bp before Phase 4, D4).
+    uint256 public constant MINT_FEE_MIN = SpectralPolicy.MINT_FEE_MIN;
+    uint256 public constant MINT_FEE_MAX = SpectralPolicy.MINT_FEE_MAX;
     /// @notice Redemption fee at h = 0 and at h = 1: 1 bp to 10 bp, quadratic in h.
     ///         Kept low on purpose: cheap exits are what make the peg credible.
-    uint256 public constant REDEEM_FEE_MIN = 0.0001e18;
-    uint256 public constant REDEEM_FEE_MAX = 0.0010e18;
+    uint256 public constant REDEEM_FEE_MIN = SpectralPolicy.REDEEM_FEE_MIN;
+    uint256 public constant REDEEM_FEE_MAX = SpectralPolicy.REDEEM_FEE_MAX;
 
     /// @notice Net minting allowed per epoch (sUSD minted minus sUSD redeemed in the epoch,
     ///         floored at zero), as a fraction of supply at the start of the epoch: 20% at
     ///         h = 0 down to 2% at h = 1. Counting net flow means a mint-and-redeem round trip
     ///         in one transaction cannot use up other users' capacity (Phase 4, A1).
     uint256 public constant EPOCH = 1 days;
-    uint256 public constant EXPANSION_CAP_LOW_H = 0.20e18;
-    uint256 public constant EXPANSION_CAP_HIGH_H = 0.02e18;
+    uint256 public constant EXPANSION_CAP_LOW_H = SpectralPolicy.EXPANSION_CAP_LOW_H;
+    uint256 public constant EXPANSION_CAP_HIGH_H = SpectralPolicy.EXPANSION_CAP_HIGH_H;
 
     /// @notice Micro-rebases: at most one per hour, each at most 1 bp of supply at h = 0
     ///         (0.5 bp at h = 1). The step stays below the 2 bp round-trip fee floor, so
     ///         minting just before a rebase and redeeming just after cannot profit.
     uint256 public constant REBASE_INTERVAL = 1 hours;
-    uint256 public constant REBASE_STEP_MAX = 0.0001e18;
+    uint256 public constant REBASE_STEP_MAX = SpectralPolicy.REBASE_STEP_MAX;
 
     /// @notice Surplus kept as a buffer before anything is distributed: 2.75% to 5% of supply.
     /// @dev    H may raise a safety margin but never lower it (Phase 4, D4), so the buffer is
     ///         floored at its neutral value, BUFFER_LOW_H + (BUFFER_HIGH_H - BUFFER_LOW_H)/2
     ///         with the pre-Phase-4 endpoints 0.5% and 5%. Steering H towards 0 can therefore
     ///         no longer drain the first-loss cushion; it can only fail to raise it.
-    uint256 public constant BUFFER_LOW_H = 0.0275e18;
-    uint256 public constant BUFFER_HIGH_H = 0.05e18;
+    uint256 public constant BUFFER_LOW_H = SpectralPolicy.BUFFER_LOW_H;
+    uint256 public constant BUFFER_HIGH_H = SpectralPolicy.BUFFER_HIGH_H;
 
     /// @notice Length of the churn-budget window.
     uint256 public constant CHURN_WINDOW = 7 days;
@@ -184,6 +189,11 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
     /// @notice Maximum total supply reachable by minting (guarded launch).
     uint256 public supplyCap;
 
+    /// @notice First-loss capital in sUSD wei: reserve value contributed through
+    ///         `contributeCapital`, without minting. It is never distributed and nobody can
+    ///         withdraw it; only the yield it earns is (Phase 4, B8).
+    uint256 public protocolCapital;
+
     /// @notice Vault proposed for migration.
     IERC4626 public pendingVault;
 
@@ -204,6 +214,8 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
     event RebaseDeferred(uint256 oldIndex, uint256 proposedIndex, uint256 churnLength, uint256 churnRange);
     event LossAbsorbed(uint256 oldIndex, uint256 newIndex, uint256 reserveValue, uint256 supplyBefore);
     event SupplyCapSet(uint256 supplyCap);
+    /// @param credited Reserve value added, in sUSD wei (the measured increase).
+    event CapitalContributed(address indexed from, uint256 assets, uint256 credited);
     event VaultProposed(address indexed vault, uint256 eta);
     event VaultProposalCanceled(address indexed vault);
     event VaultMigrationExecuted(address indexed oldVault, address indexed newVault);
@@ -253,7 +265,7 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         if (n == 0 || n > MAX_ALLOWED_VAULTS) revert BadVaultAllowlist();
         address reserveAsset = address(treasury_.asset());
         address current = address(treasury_.vault());
-        bool startingVaultListed;
+        bool startingVaultListed = false;
         for (uint256 i; i < n; ++i) {
             address v = allowedVaults_[i];
             if (v == address(0) || IERC4626(v).asset() != reserveAsset) revert BadVaultAllowlist();
@@ -283,7 +295,10 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
 
         epochStart = block.timestamp.toUint64();
         churnWindowStart = block.timestamp.toUint64();
+        // WAD = 1e18 < 2^128.
+        // forge-lint: disable-next-line(unsafe-typecast)
         churnMax = uint128(WAD);
+        // forge-lint: disable-next-line(unsafe-typecast)
         churnMin = uint128(WAD);
 
         _grantRole(GUARDIAN_ROLE, admin);
@@ -308,8 +323,11 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         _syncLossWith(reserveValue());
         uint256 h = oracle.smoothedEntropy();
 
+        // Only the reserve values are needed from sweep and depositReserve, not the shares.
+        // slither-disable-next-line unused-return
         (, uint256 before) = treasury.sweep(); // donations become surplus before measuring
         asset.safeTransferFrom(msg.sender, address(treasury), assets);
+        // slither-disable-next-line unused-return
         (, uint256 afterValue) = treasury.depositReserve();
         uint256 credited = afterValue > before ? (afterValue - before) * scale : 0;
         if (credited < minAmount()) revert AmountTooSmall();
@@ -321,7 +339,8 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         uint256 supply = token.totalSupply();
         if (supply + out > supplyCap) revert SupplyCapExceeded(supplyCap > supply ? supplyCap - supply : 0);
 
-        token.mint(receiver, out);
+        // slither-disable-next-line unused-return
+        token.mint(receiver, out); // returns the shares minted, which are not needed here
         _assertSolventWith(afterValue * scale); // minting does not move the reserve
         emit Minted(msg.sender, receiver, assets, out, fee, h);
     }
@@ -349,15 +368,45 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
 
         uint256 fee = Math.mulDiv(amount, redeemFeeRate(h), WAD, Math.Rounding.Ceil);
         assetsOut = (amount - fee) / scale;
-        if (assetsOut == 0) revert AmountTooSmall(); // nothing to pay out
+        // slither-disable-next-line incorrect-equality
+        if (assetsOut == 0) revert AmountTooSmall(); // nothing to pay out (a guard)
         if (assetsOut < minAssetsOut) revert Slippage();
 
-        token.burn(msg.sender, amount);
+        // slither-disable-next-line unused-return
+        token.burn(msg.sender, amount); // returns the shares burned, which are not needed here
         _releaseExpansion(amount);
         uint256 reserveAfter = treasury.withdrawReserve(assetsOut, receiver);
         _assertSolventWith(reserveAfter * scale);
         emit Redeemed(msg.sender, receiver, amount, assetsOut, fee, h);
     }
+
+    // Reentrancy: nonReentrant on every state-changing entry point (rebase reads the capital),
+    // and the calls go to the immutable treasury and reserve asset (audit/slither.md).
+    // slither-disable-start reentrancy-no-eth
+    /// @notice Add `assets` of collateral to the reserve as protocol capital. No sUSD is
+    ///         minted, and the amount can never be distributed or withdrawn: it is a first-loss
+    ///         cushion. A loss up to the capital plus the surplus lowers no balance, so exiting
+    ///         ahead of it gains nothing (Phase 4, A9). Rebases then distribute only what the
+    ///         reserve holds above supply plus capital, so after such a loss distributions
+    ///         pause until yield has rebuilt the capital. Anyone may contribute; nothing is
+    ///         returned.
+    /// @dev    Like a mint, the credited value is the measured increase of the conservative
+    ///         reserve valuation, and earlier donations are swept into surplus first, so they
+    ///         are not counted as capital. Not pausable: adding backing is always allowed.
+    function contributeCapital(uint256 assets) external nonReentrant returns (uint256 credited) {
+        _syncLossWith(reserveValue());
+        // slither-disable-next-line unused-return
+        (, uint256 before) = treasury.sweep();
+        asset.safeTransferFrom(msg.sender, address(treasury), assets);
+        // slither-disable-next-line unused-return
+        (, uint256 afterValue) = treasury.depositReserve();
+        credited = afterValue > before ? (afterValue - before) * scale : 0;
+        if (credited == 0) revert AmountTooSmall();
+        protocolCapital += credited;
+        _assertSolventWith(afterValue * scale);
+        emit CapitalContributed(msg.sender, assets, credited);
+    }
+    // slither-disable-end reentrancy-no-eth
 
     // ---------------------------------------------------------------------- keepers (permissionless)
 
@@ -374,7 +423,12 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         uint256 supply = token.totalSupply();
         uint256 h = oracle.smoothedEntropy();
 
+        // Supply may rise to the reserve less the buffer, and never into protocol capital
+        // (Phase 4, B8): min(reserve / (1 + buffer), reserve - capital).
         uint256 maxSupply = Math.mulDiv(reserveWad, WAD, WAD + bufferRate(h));
+        uint256 capital = protocolCapital;
+        uint256 uncommitted = reserveWad > capital ? reserveWad - capital : 0;
+        if (uncommitted < maxSupply) maxSupply = uncommitted;
         if (maxSupply <= supply) revert NothingToDistribute();
         uint256 step = Math.min(maxSupply - supply, Math.mulDiv(supply, rebaseStepRate(h), WAD));
 
@@ -389,8 +443,8 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
             return false;
         }
         _commitChurn(oldIndex, newIndex);
+        lastRebaseAt = block.timestamp.toUint64(); // effects before the call (checks-effects-interactions)
         token.setIndex(newIndex);
-        lastRebaseAt = block.timestamp.toUint64();
         _assertSolventWith(reserveWad);
         emit Distributed(oldIndex, newIndex, token.totalSupply() - supply, h);
         return true;
@@ -459,6 +513,9 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         emit VaultProposed(address(newVault), eta);
     }
 
+    // Reentrancy: nonReentrant on every state-changing entry point, and the calls go to the
+    // immutable token and treasury and, through it, to allowlisted vaults (audit/slither.md).
+    // slither-disable-start reentrancy-no-eth
     /// @notice Execute the pending migration. Unredeemable old shares are quarantined and the
     ///         resulting loss is absorbed pro rata.
     function executeVaultMigration() external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
@@ -473,39 +530,34 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         _syncLoss();
         emit VaultMigrationExecuted(old, address(v));
     }
+    // slither-disable-end reentrancy-no-eth
 
     // ---------------------------------------------------------------------- policy (pure)
 
     /// @notice Minting fee rate (WAD) for entropy `h`: MIN + (MAX - MIN) h^2.
     function mintFeeRate(uint256 h) public pure returns (uint256) {
-        h = _clamp(h);
-        return MINT_FEE_MIN + Math.mulDiv(MINT_FEE_MAX - MINT_FEE_MIN, h * h, WAD * WAD);
+        return SpectralPolicy.mintFeeRate(h);
     }
 
     /// @notice Redemption fee rate (WAD) for entropy `h`: MIN + (MAX - MIN) h^2.
     function redeemFeeRate(uint256 h) public pure returns (uint256) {
-        h = _clamp(h);
-        return REDEEM_FEE_MIN + Math.mulDiv(REDEEM_FEE_MAX - REDEEM_FEE_MIN, h * h, WAD * WAD);
+        return SpectralPolicy.redeemFeeRate(h);
     }
 
     /// @notice Per-epoch expansion cap as a fraction of epoch-start supply (WAD).
     function expansionCapRate(uint256 h) public pure returns (uint256) {
-        h = _clamp(h);
-        return EXPANSION_CAP_LOW_H - Math.mulDiv(EXPANSION_CAP_LOW_H - EXPANSION_CAP_HIGH_H, h, WAD);
+        return SpectralPolicy.expansionCapRate(h);
     }
 
     /// @notice Reserve buffer kept before distributing (WAD fraction of supply). Rises with H
     ///         from the neutral floor; never falls below it (Phase 4, D4).
     function bufferRate(uint256 h) public pure returns (uint256) {
-        h = _clamp(h);
-        if (h <= 0.5e18) return BUFFER_LOW_H;
-        return BUFFER_LOW_H + Math.mulDiv(BUFFER_HIGH_H - BUFFER_LOW_H, 2 * (h - 0.5e18), WAD);
+        return SpectralPolicy.bufferRate(h);
     }
 
     /// @notice Maximum rebase step (WAD fraction of supply): halves from h = 0 to h = 1.
     function rebaseStepRate(uint256 h) public pure returns (uint256) {
-        h = _clamp(h);
-        return REBASE_STEP_MAX - Math.mulDiv(REBASE_STEP_MAX, h, 2 * WAD);
+        return SpectralPolicy.rebaseStepRate(h);
     }
 
     // ---------------------------------------------------------------------- views
@@ -585,40 +637,31 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         cap = Math.max(bootstrapCap, Math.mulDiv(base, expansionCapRate(h), WAD));
     }
 
+    /// @dev The churn window's statistics before the next move: restarted at `oldIndex` once
+    ///      the window has expired.
+    function _churnState(uint256 oldIndex) internal view returns (bool expired, uint256 len, uint256 mx, uint256 mn) {
+        expired = block.timestamp >= uint256(churnWindowStart) + CHURN_WINDOW;
+        if (expired) return (true, 0, oldIndex, oldIndex);
+        return (false, churnLength, churnMax, churnMin);
+    }
+
     /// @dev Churn statistics after a hypothetical move oldIndex -> newIndex.
     function _churnAfter(uint256 oldIndex, uint256 newIndex)
         internal
         view
         returns (bool ok, uint256 len, uint256 range)
     {
-        uint256 mx;
-        uint256 mn;
-        if (block.timestamp >= uint256(churnWindowStart) + CHURN_WINDOW) {
-            len = 0;
-            mx = oldIndex;
-            mn = oldIndex;
-        } else {
-            len = churnLength;
-            mx = churnMax;
-            mn = churnMin;
-        }
-        len += newIndex > oldIndex ? newIndex - oldIndex : oldIndex - newIndex;
-        if (newIndex > mx) mx = newIndex;
-        if (newIndex < mn) mn = newIndex;
-        range = mx - mn;
-        ok = Math.mulDiv(len, WAD, 1) <= Math.mulDiv(C_DIAM_WAD, range, 1);
+        (, uint256 len0, uint256 mx, uint256 mn) = _churnState(oldIndex);
+        (len,,, range, ok) = SpectralPolicy.churnStep(len0, mx, mn, oldIndex, newIndex);
     }
 
     function _commitChurn(uint256 oldIndex, uint256 newIndex) internal {
-        if (block.timestamp >= uint256(churnWindowStart) + CHURN_WINDOW) {
-            churnWindowStart = block.timestamp.toUint64();
-            churnLength = 0;
-            churnMax = oldIndex.toUint128();
-            churnMin = oldIndex.toUint128();
-        }
-        churnLength += (newIndex > oldIndex ? newIndex - oldIndex : oldIndex - newIndex).toUint128();
-        if (newIndex > churnMax) churnMax = newIndex.toUint128();
-        if (newIndex < churnMin) churnMin = newIndex.toUint128();
+        (bool expired, uint256 len, uint256 mx, uint256 mn) = _churnState(oldIndex);
+        if (expired) churnWindowStart = block.timestamp.toUint64();
+        (len, mx, mn,,) = SpectralPolicy.churnStep(len, mx, mn, oldIndex, newIndex);
+        churnLength = len.toUint128();
+        churnMax = mx.toUint128();
+        churnMin = mn.toUint128();
     }
 
     /// @dev The floor check against an already-computed reserve value (sUSD wei).
@@ -627,7 +670,4 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         if (r < s) revert ReserveFloorBreached(r, s);
     }
 
-    function _clamp(uint256 h) private pure returns (uint256) {
-        return h > WAD ? WAD : h;
-    }
 }

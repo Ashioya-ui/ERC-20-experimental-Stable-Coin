@@ -100,6 +100,8 @@ contract SpectralEntropyOracle is ISpectralEntropyOracle {
             return;
         }
 
+        // Per-block aggregation: equality with the current block number is the point.
+        // slither-disable-next-line incorrect-equality
         if (filled != 0 && block.number == currentBlock) {
             _currentNet += amount;
         } else {

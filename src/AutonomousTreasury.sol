@@ -42,6 +42,12 @@ contract AutonomousTreasury is ReentrancyGuardTransient {
     uint256 public constant MAX_BPS = 10_000;
     /// @notice `rebalance` acts only when idle funds are this far (bps of reserve) off target.
     uint256 public constant REBALANCE_TOLERANCE_BPS = 100;
+    /// @notice Old-vault shares worth at most this many asset units (0.001 USDC) are dust: a
+    ///         migration leaves them behind instead of quarantining them, and they do not keep
+    ///         `legacyVault` set (Phase 4, A12). Vault rounding leaves such dust: MetaMorpho's
+    ///         `maxRedeem` can be a few hundred million shares (1e-12 USDC each) short of a
+    ///         balance, and every recovery would otherwise end one step from empty.
+    uint256 public constant LEGACY_DUST_ASSETS = 1_000;
 
     /// @notice Reserve asset (USDC). Every vault must use it.
     IERC20 public immutable asset;
@@ -97,6 +103,8 @@ contract AutonomousTreasury is ReentrancyGuardTransient {
 
     // ---------------------------------------------------------------------- permissionless
 
+    // Reentrancy: nonReentrant, and the legacy vault was an allowlisted vault (audit/slither.md).
+    // slither-disable-start reentrancy-no-eth
     /// @notice Redeem quarantined shares of the previous vault as its liquidity returns.
     ///         Only ever adds idle funds, so anyone may call it.
     function recoverLegacy() external nonReentrant returns (uint256 recovered) {
@@ -105,9 +113,12 @@ contract AutonomousTreasury is ReentrancyGuardTransient {
         uint256 shares = Math.min(legacy.balanceOf(address(this)), legacy.maxRedeem(address(this)));
         if (shares > 0) recovered = legacy.redeem(shares, address(this), address(this));
         uint256 left = legacy.balanceOf(address(this));
-        if (left == 0) legacyVault = IERC4626(address(0));
+        // Shares donated later only delay clearing until the next call, which redeems them.
+        // slither-disable-next-line incorrect-equality
+        if (left == 0 || legacy.previewRedeem(left) <= LEGACY_DUST_ASSETS) legacyVault = IERC4626(address(0));
         emit LegacyRecovered(address(legacy), recovered, left);
     }
+    // slither-disable-end reentrancy-no-eth
 
     // ---------------------------------------------------------------------- stabilizer only
     //
@@ -135,6 +146,8 @@ contract AutonomousTreasury is ReentrancyGuardTransient {
         } else if (idle + tol < target) {
             uint256 amount = Math.min(target - idle, vault.maxWithdraw(address(this)));
             if (amount > 0) {
+                // The shares burned are not needed: the reserve is valued again below.
+                // slither-disable-next-line unused-return
                 vault.withdraw(amount, address(this), address(this));
                 reserveAfter = reserveAssets();
             }
@@ -166,6 +179,8 @@ contract AutonomousTreasury is ReentrancyGuardTransient {
             uint256 available = vault.maxWithdraw(address(this));
             if (available < need) revert InsufficientLiquidity(idle + available);
             if (idle > 0) asset.safeTransfer(to, idle);
+            // The shares burned are not needed: the reserve is valued again below.
+            // slither-disable-next-line unused-return
             vault.withdraw(need, to, address(this));
         }
         emit ReserveWithdrawn(to, assets);
@@ -189,6 +204,9 @@ contract AutonomousTreasury is ReentrancyGuardTransient {
         emit VaultExited(address(vault), recovered, vault.balanceOf(address(this)));
     }
 
+    // Reentrancy: nonReentrant, stabilizer-only, and both vaults are on the stabilizer's
+    // immutable allowlist (audit/slither.md).
+    // slither-disable-start reentrancy-no-eth
     /// @notice Switch to `newVault`. Shares the old vault cannot redeem now are quarantined.
     function migrateVault(IERC4626 newVault) external onlyStabilizer nonReentrant {
         if (address(newVault) == address(0)) revert ZeroAddress();
@@ -199,9 +217,13 @@ contract AutonomousTreasury is ReentrancyGuardTransient {
 
         uint256 shares = old.balanceOf(address(this));
         uint256 redeemable = Math.min(shares, old.maxRedeem(address(this)));
+        // The assets received are not needed: what is left is measured below.
+        // slither-disable-next-line unused-return
         if (redeemable > 0) old.redeem(redeemable, address(this), address(this));
         uint256 left = old.balanceOf(address(this));
-        if (left > 0) {
+        // Dust that vault rounding leaves behind is abandoned, not quarantined: it is worth at
+        // most LEGACY_DUST_ASSETS and the stabilizer re-syncs right after.
+        if (left > 0 && old.previewRedeem(left) > LEGACY_DUST_ASSETS) {
             if (address(legacyVault) != address(0)) revert LegacyNotEmpty();
             legacyVault = old;
         }
@@ -210,6 +232,7 @@ contract AutonomousTreasury is ReentrancyGuardTransient {
         emit VaultMigrated(address(old), address(newVault), left);
         _depositExcess();
     }
+    // slither-disable-end reentrancy-no-eth
 
     // ---------------------------------------------------------------------- views
 
@@ -217,6 +240,8 @@ contract AutonomousTreasury is ReentrancyGuardTransient {
     ///         Quarantined legacy shares are excluded.
     function reserveAssets() public view returns (uint256) {
         uint256 shares = vault.balanceOf(address(this));
+        // A guard against valuing zero shares, not a balance check anyone can game.
+        // slither-disable-next-line incorrect-equality
         uint256 invested = shares == 0 ? 0 : vault.previewRedeem(shares);
         return invested + asset.balanceOf(address(this));
     }
@@ -247,6 +272,8 @@ contract AutonomousTreasury is ReentrancyGuardTransient {
         if (idle <= target) return (0, reserveAfter);
         IERC4626 v = vault;
         uint256 amount = Math.min(idle - target, v.maxDeposit(address(this)));
+        // A guard: nothing to deposit (vault full or paused).
+        // slither-disable-next-line incorrect-equality
         if (amount == 0) return (0, reserveAfter);
         asset.forceApprove(address(v), amount);
         try v.deposit(amount, address(this)) returns (uint256 s) {
