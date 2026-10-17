@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {SelfApproaching} from "./SelfApproaching.sol";
+
 /// @title  SpectralPolicy
 /// @notice The stabilizer's policy curves and churn-budget step, as pure functions.
 /// @dev    Kept in one library so that the formal checks in test/halmos run on exactly the code
@@ -30,8 +32,9 @@ library SpectralPolicy {
     /// @dev Surplus kept before distributing: 2.75% up to h = 0.5, rising to 5% at h = 1.
     uint256 internal constant BUFFER_LOW_H = 0.0275e18;
     uint256 internal constant BUFFER_HIGH_H = 0.05e18;
-    /// @dev 2 + pi/3 in WAD (see SpectralStabilizer.C_DIAM_WAD).
-    uint256 internal constant C_DIAM_WAD = 3_047_197_551_196_597_746;
+    /// @dev The churn budget's ratio: 5*pi/6 + 2 sin(pi/12) = 3.1356..., in WAD, rounded up.
+    ///      Theorem 4.3 of the paper (proven). See SpectralStabilizer.CHURN_BUDGET_WAD.
+    uint256 internal constant CHURN_BUDGET_WAD = SelfApproaching.C_SA_UPPER_WAD;
 
     function clamp(uint256 h) internal pure returns (uint256) {
         return h > WAD ? WAD : h;
@@ -70,7 +73,7 @@ library SpectralPolicy {
 
     /// @notice One step of the churn budget: the window's total variation `len`, maximum `mx`
     ///         and minimum `mn` after the index moves from `oldIndex` to `newIndex`, its range,
-    ///         and whether `len <= C_DIAM * range` afterwards.
+    ///         and whether `len <= CHURN_BUDGET * range` afterwards.
     /// @dev    All arithmetic is in uint256. With every input below 2^128, `len` stays below
     ///         2^129 and both products below 2^191, so nothing can overflow (checked by Halmos).
     function churnStep(uint256 len, uint256 mx, uint256 mn, uint256 oldIndex, uint256 newIndex)
@@ -82,6 +85,6 @@ library SpectralPolicy {
         mx2 = newIndex > mx ? newIndex : mx;
         mn2 = newIndex < mn ? newIndex : mn;
         range = mx2 - mn2;
-        ok = len2 * WAD <= C_DIAM_WAD * range;
+        ok = len2 * WAD <= CHURN_BUDGET_WAD * range;
     }
 }

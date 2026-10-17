@@ -79,16 +79,21 @@ forge script script/rehearsal/Scenario.s.sol --sig "payWithSUSD()" --rpc-url "$R
   | grep -E "x402|ONCHAIN|Error" || true
 echo "merchant sUSD:   $(cast call $TOKEN 'balanceOf(address)(uint256)' $REHEARSAL_MERCHANT --rpc-url $RPC)"
 
-step "7. Keeper: rebase before yield reverts; vault yield accrues; rebase distributes"
-expect_revert cast send "$STAB" "rebase()" --private-key "$PK_KEEPER" --rpc-url "$RPC"
+step "7. Keeper: protocol capital covers the buffer, so fees and yield are distributable from day one"
+echo "protocol capital: $(cast call $STAB 'protocolCapital()(uint256)' --rpc-url $RPC)"
+echo "distributable:    $(cast call $LENS 'distributable()(uint256)' --rpc-url $RPC)"
+warp 3601
+echo "index before:     $(cast call $TOKEN 'index()(uint256)' --rpc-url $RPC)"
+cast send "$STAB" "rebase()" --private-key "$PK_KEEPER" --rpc-url "$RPC" >/dev/null
+echo "index after fees: $(cast call $TOKEN 'index()(uint256)' --rpc-url $RPC)"
 VA=$(cast call "$VAULT" 'totalAssets()(uint256)' --rpc-url "$RPC" | awk '{print $1}')
 cast send "$USDC" "mint(address,uint256)" "$VAULT" $((VA * 6 / 100)) --private-key "$PK_DEPLOYER" --rpc-url "$RPC" >/dev/null
 warp 3601
-echo "index before:    $(cast call $TOKEN 'index()(uint256)' --rpc-url $RPC)"
 cast send "$STAB" "rebase()" --private-key "$PK_KEEPER" --rpc-url "$RPC" >/dev/null
-echo "index after:     $(cast call $TOKEN 'index()(uint256)' --rpc-url $RPC)"
+echo "index after yield: $(cast call $TOKEN 'index()(uint256)' --rpc-url $RPC)"
+expect_revert cast send "$STAB" "rebase()" --private-key "$PK_KEEPER" --rpc-url "$RPC"   # once an hour
 cast send "$STAB" "rebalanceReserve()" --private-key "$PK_KEEPER" --rpc-url "$RPC" >/dev/null
-echo "reserve ratio:   $(cast call $LENS 'reserveRatio()(uint256)' --rpc-url $RPC)"
+echo "reserve ratio:    $(cast call $LENS 'reserveRatio()(uint256)' --rpc-url $RPC)"
 
 step "8. Guardian: emergency exit from the vault (runbook E1)"
 cast send "$STAB" "emergencyExitVault()" --private-key "$PK_GUARDIAN" --rpc-url "$RPC" >/dev/null

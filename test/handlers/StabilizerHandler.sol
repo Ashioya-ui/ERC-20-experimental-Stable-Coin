@@ -38,7 +38,7 @@ contract StabilizerHandler is Test {
     uint256 public ghostLosses;
     uint256 public ghostUnexpectedRedeemFailures;
     uint256 public ghostUnexpectedSyncFailures;
-    uint256 public ghostChurnViolations; // accepted positive rebase with L > C_DIAM * D
+    uint256 public ghostChurnViolations; // accepted positive rebase with L > CHURN_BUDGET * D
     uint256 public ghostUsdcIn; // collateral deposited by actors
     uint256 public ghostUsdcOut; // collateral paid to actors
     uint256 public ghostMigrations;
@@ -165,7 +165,7 @@ contract StabilizerHandler is Test {
             if (distributed) {
                 ghostRebases++;
                 uint256 range = stabilizer.churnMax() - stabilizer.churnMin();
-                if (stabilizer.churnLength() * 1e18 > stabilizer.C_DIAM_WAD() * range) ghostChurnViolations++;
+                if (stabilizer.churnLength() * 1e18 > stabilizer.CHURN_BUDGET_WAD() * range) ghostChurnViolations++;
             } else {
                 ghostDeferred++;
             }

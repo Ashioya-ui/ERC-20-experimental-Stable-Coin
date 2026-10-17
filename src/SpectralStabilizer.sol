@@ -43,14 +43,14 @@ import {SpectralPolicy} from "./libraries/SpectralPolicy.sol";
 ///         Churn budget. Within a `CHURN_WINDOW` (a 7-day window that restarts at the first
 ///         index move after it expires), let L be the total variation of the index path and
 ///         D its range (max - min). A *positive* rebase is applied only if afterwards
-///         L <= C_DIAM * D; otherwise it is deferred. Monotone paths (pure yield
+///         L <= CHURN_BUDGET * D; otherwise it is deferred. Monotone paths (pure yield
 ///         distribution) always satisfy L = D. The budget binds only when gains and losses
 ///         alternate: with equal swings, the third upward leg in a window is deferred. Loss
 ///         absorption is never deferred.
-///         C_DIAM = 2 + pi/3 is attained by self-approaching plane curves and conjectured to
-///         be their sharp length-over-diameter ratio (proven: 3.0472 <= C_diam <= 3.1356).
-///         Here it is a design constant chosen by analogy, and no stability property follows
-///         from the geometry; see C_DIAM_WAD and docs/paper-map.md.
+///         CHURN_BUDGET = 5*pi/6 + 2 sin(pi/12) = 3.1356... is the proven upper bound on the
+///         length-over-diameter ratio of self-approaching plane curves (Theorem 4.3). Here it
+///         is a design constant in a one-dimensional rule, and no stability property follows
+///         from the geometry; see CHURN_BUDGET_WAD and docs/paper-map.md.
 ///
 ///         Guarded launch. `supplyCap` bounds total minting (rebases may exceed it); the admin
 ///         raises it as confidence grows. The daily expansion cap still applies under it.
@@ -83,19 +83,19 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
 
     uint256 internal constant WAD = 1e18;
 
-    /// @notice 2 + pi/3 in WAD (3.047197551196597746...), the churn budget's constant.
+    /// @notice The churn budget's ratio, 5*pi/6 + 2 sin(pi/12) = 3.135631968196535891 in WAD
+    ///         (rounded up).
     /// @dev    From E. Langetepe and W. A. Ashioya, "The length-over-diameter ratio of
-    ///         self-approaching curves", revised version 21 (October 2026). Ratios arbitrarily
-    ///         close to this value are attained by self-approaching plane curves (Theorem 5.4,
-    ///         proven); that none is larger is Conjecture 1.2, which is open. The proven upper
-    ///         bound is 5*pi/6 + 2 sin(pi/12) = 3.1356... (Theorem 4.3), available as
-    ///         SelfApproaching.C_SA_UPPER_WAD.
+    ///         self-approaching curves", revised version 21 (October 2026), Theorem 4.3
+    ///         (proven): a self-approaching plane curve is at most this many times as long as
+    ///         its diameter. Until Phase 4 the budget used 2 + pi/3 = 3.0472, which curves
+    ///         approach (Theorem 5.4) but which is only conjectured to be sharp (Conjecture
+    ///         1.2, open). Since then no code depends on an open result.
     ///
-    ///         Here it is a design constant, chosen by analogy, in a one-dimensional rule. On a
-    ///         line a self-approaching path is simply monotone, so none of the planar theorems
-    ///         applies and no stability property follows from the geometry. See
-    ///         docs/paper-map.md.
-    uint256 public constant C_DIAM_WAD = SpectralPolicy.C_DIAM_WAD;
+    ///         Here it is a design constant in a one-dimensional rule. On a line a
+    ///         self-approaching path is simply monotone, so none of the planar theorems applies
+    ///         and no stability property follows from the geometry. See docs/paper-map.md.
+    uint256 public constant CHURN_BUDGET_WAD = SpectralPolicy.CHURN_BUDGET_WAD;
 
     // The policy curves and their constants live in SpectralPolicy, so that the formal checks
     // run on exactly this code (Phase 4, A11). The constants are re-exported here.

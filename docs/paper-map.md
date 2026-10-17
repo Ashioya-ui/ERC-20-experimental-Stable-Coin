@@ -14,7 +14,7 @@ conjectures that the lower bound is sharp.
 |---|---|---|
 | **Lemma 7.1** — a polygon is self-approaching iff `(v_j − v_i)·(v_i − v_{i−1}) ≥ 0` for all `1 ≤ i < j ≤ N` | proven | `SelfApproaching.isSelfApproaching`, `canAppend`. Exact in integers, so no tolerance is needed — which matters, because Section 7.2 shows absolute tolerances let microscopic zig-zags through. |
 | **Lemma 2.1** — the diameter is the largest distance from the start | proven | `SelfApproaching.diameterSqFromStart` (one pass instead of all pairs), checked against a brute-force diameter in the tests. |
-| **Theorem 4.3** — `L ≤ (5π/6 + 2 sin(π/12)) · D` | proven | `SelfApproaching.C_SA_UPPER_WAD` and `lengthBound`, with the length rounded up and the diameter down so the check stays sound. |
+| **Theorem 4.3** — `L ≤ (5π/6 + 2 sin(π/12)) · D` | proven | `SelfApproaching.C_SA_UPPER_WAD` and `lengthBound`, with the length rounded up and the diameter down so the check stays sound. Since Phase 4 it is also the churn budget's ratio, `SpectralStabilizer.CHURN_BUDGET_WAD` (through `SpectralPolicy`), in place of the conjectured `2 + π/3`. |
 | **Lemma 2.2** — from any point, two later points subtend at most a right angle | proven | Test oracle: asserted for every accepted polygon. |
 | **Corollary 3.2** — `L ≤ perimeter(conv C)` | proven | Test oracle: asserted against a convex hull computed in the test. |
 | **Theorem 5.4** — ratios arbitrarily close to `2 + π/3` occur | proven | `test/paper/SelfApproaching.t.sol` builds the construction without its cascade: a spiral polygon of `π/3` about the end point, then the chord into it, whose limit is `1 + π/3`. The polygons are accepted, obey Theorem 4.3 and converge from below: L/D = 2.0114, 2.0384, 2.0450 at N = 24, 96, 384, with N × gap ≈ 0.84 (the inward-spiral cost of Section 7.6). |
@@ -23,7 +23,7 @@ conjectures that the lower bound is sharp.
 | **Section 7.5** — a sampled check is not enough | numerical | `test/paper/SampledConditions.t.sol` plus the 31-point fixture: it passes a vertex-only triple check, fails Lemma 7.1 in 68 places, and is longer than `per(K) = 1 + π/3`. |
 | **Section 7.1 code** — the paper's `sapoly.py` (`sa_residuals`, `length`) | reference implementation | `test/paper/Differential.t.sol`: on 1,000 integer polygons (walks, spirals, spirals exactly at their foot points, spirals past π, clouds, repeated and collinear vertices; 541 accepted, 459 rejected) the library and the paper's code agree on every verdict and every diameter, and on every length to within rounding. |
 | **Section 7.6** — a polygon approximating an arc about a later point must spiral inwards | numerical | The test generator spirals: an inscribed polygon is *not* self-approaching, because mid-chord it passes closer to the centre than it ends up. |
-| **Conjecture 1.2** — `C_diam = 2 + π/3` | **open** | `SpectralStabilizer.C_DIAM_WAD`, used as the churn budget's constant, with NatSpec saying it is attained (Theorem 5.4) but not proven sharp, and that no stability property follows. |
+| **Conjecture 1.2** — `C_diam = 2 + π/3` | **open** | **Not used by any code.** Until Phase 4 it was the churn budget's constant (`C_DIAM_WAD`); the budget now uses Theorem 4.3's proven bound, so nothing on-chain depends on an open result. `SelfApproaching.C_SA_LOWER_WAD` keeps the value as what it provably is, the ratio curves approach (Theorem 5.4). |
 
 ## Results with no engineering use
 
@@ -52,7 +52,8 @@ recommends a plain turnover cap first.
    number; the planar theorems constrain nothing about it.
 2. **No stability claims from the geometry.** The churn budget is a design rule that uses one
    constant from the paper. It does not inherit any property of self-approaching curves.
-3. **Never treat Conjecture 1.2 as a guarantee.** If a safety property ever needs a constant,
-   it must be `C_SA_UPPER_WAD` (Theorem 4.3, proven), never `C_DIAM_WAD`.
+3. **Never treat Conjecture 1.2 as a guarantee.** If a rule ever needs the constant, it must be
+   `C_SA_UPPER_WAD` (Theorem 4.3, proven). Since Phase 4 the churn budget follows this rule
+   too: no code depends on the conjecture.
 4. **Never check self-approach by sampling.** Section 7.5 is in the test suite precisely so
    this stays true: test the polygon with Lemma 7.1, in integers.

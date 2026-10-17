@@ -19,6 +19,11 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///         exhausted (lending vaults cap `maxWithdraw` by unborrowed cash). Only the excess
 ///         above the target is deposited, and never more than `maxDeposit` allows; a vault
 ///         that refuses a deposit (paused, capped) leaves the funds idle instead of reverting.
+///         Mints deposit in batches (Phase 4): nothing moves until idle funds exceed the
+///         target by REBALANCE_TOLERANCE_BPS of the reserve, then everything above the target
+///         goes in at once. Most mints therefore never touch the vault, which saves the
+///         vault's deposit gas and its rounding; the cost is at most 1% of the reserve idle
+///         for a while, about 0.04% a year of yield at 4%.
 ///         Withdrawals use idle funds first and check `maxWithdraw`, failing with
 ///         `InsufficientLiquidity(available)` rather than an opaque vault error.
 ///
@@ -130,7 +135,7 @@ contract AutonomousTreasury is ReentrancyGuardTransient {
     /// @return reserveAfter Reserve value afterwards, in asset units. Returned so the caller
     ///                      does not have to value the reserve again (Phase 4, B1).
     function sweep() external onlyStabilizer nonReentrant returns (uint256 shares, uint256 reserveAfter) {
-        (shares, reserveAfter) = _depositExcess();
+        (shares, reserveAfter) = _depositExcess(true);
     }
 
     /// @notice Move funds between idle and the vault toward the buffer target.
@@ -142,7 +147,7 @@ contract AutonomousTreasury is ReentrancyGuardTransient {
         uint256 tol = Math.mulDiv(reserve, REBALANCE_TOLERANCE_BPS, MAX_BPS);
         reserveAfter = reserve;
         if (idle > target + tol) {
-            (, reserveAfter) = _depositExcess();
+            (, reserveAfter) = _depositExcess(false);
         } else if (idle + tol < target) {
             uint256 amount = Math.min(target - idle, vault.maxWithdraw(address(this)));
             if (amount > 0) {
@@ -159,7 +164,7 @@ contract AutonomousTreasury is ReentrancyGuardTransient {
     /// @return shares       Vault shares received.
     /// @return reserveAfter Reserve value afterwards, in asset units.
     function depositReserve() external onlyStabilizer nonReentrant returns (uint256 shares, uint256 reserveAfter) {
-        (shares, reserveAfter) = _depositExcess();
+        (shares, reserveAfter) = _depositExcess(true);
     }
 
     /// @notice Send `assets` to `to`: idle funds first, then the vault within `maxWithdraw`.
@@ -230,7 +235,7 @@ contract AutonomousTreasury is ReentrancyGuardTransient {
         asset.forceApprove(address(old), 0);
         vault = newVault;
         emit VaultMigrated(address(old), address(newVault), left);
-        _depositExcess();
+        _depositExcess(false);
     }
     // slither-disable-end reentrancy-no-eth
 
@@ -265,11 +270,14 @@ contract AutonomousTreasury is ReentrancyGuardTransient {
 
     /// @dev Deposits idle funds above the buffer target and returns the reserve value
     ///      afterwards, so callers in the same transaction do not have to value it again.
-    function _depositExcess() private returns (uint256 shares, uint256 reserveAfter) {
+    ///      `batched`: deposit only once idle funds exceed the target by the rebalance
+    ///      tolerance, then everything above the target (the mint path).
+    function _depositExcess(bool batched) private returns (uint256 shares, uint256 reserveAfter) {
         uint256 idle = asset.balanceOf(address(this));
         reserveAfter = reserveAssets();
         uint256 target = Math.mulDiv(reserveAfter, liquidityBufferBps, MAX_BPS);
-        if (idle <= target) return (0, reserveAfter);
+        uint256 threshold = batched ? target + Math.mulDiv(reserveAfter, REBALANCE_TOLERANCE_BPS, MAX_BPS) : target;
+        if (idle <= threshold) return (0, reserveAfter);
         IERC4626 v = vault;
         uint256 amount = Math.min(idle - target, v.maxDeposit(address(this)));
         // A guard: nothing to deposit (vault full or paused).

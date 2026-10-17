@@ -8,7 +8,8 @@ yet.
 
 The protocol's monetary state is one number: the sUSD index. A self-approaching path on a line
 is simply a monotone one, so `L = D` always and the planar theorems say nothing. The churn
-budget borrows the constant `2 + π/3` by analogy and nothing more; `C_DIAM_WAD`'s NatSpec and
+budget borrows a constant from the paper (Theorem 4.3's proven bound, since Phase 4) by analogy
+and nothing more; `CHURN_BUDGET_WAD`'s NatSpec and
 `docs/paper-map.md` say so.
 
 ## Where it would become real

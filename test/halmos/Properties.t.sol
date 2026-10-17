@@ -112,9 +112,13 @@ contract ChurnHarness {
 }
 
 /// @notice The stabilizer's policy curves and churn step (SpectralPolicy), for every input.
-/// @dev    On [0, 1e18] the curves are checked with 64-bit inputs (1e18 < 2^64, so the whole
-///         domain is covered), and `check_curvesClampAboveOne` shows that every h > 1e18 gives
-///         the value at 1e18. Together they cover every uint256.
+/// @dev    Each property is split so that every query has one symbolic input:
+///         - monotonicity is checked locally, f(h) against f(h + 1) for every h < 1e18, which
+///           on the integers is equivalent to f(h1) <= f(h2) for all h1 <= h2 <= 1e18;
+///         - bounds are checked for every h <= 1e18;
+///         - `check_curvesClampAboveOne` shows every h > 1e18 gives the value at 1e18.
+///         Together they cover every uint256 input. (A two-input monotonicity query timed out
+///         at 10 minutes; see audit/formal.md.)
 contract HalmosPolicy is Test {
     uint256 internal constant WAD = 1e18;
     ChurnHarness internal harness;
@@ -132,46 +136,60 @@ contract HalmosPolicy is Test {
         assert(SpectralPolicy.rebaseStepRate(h) == SpectralPolicy.rebaseStepRate(WAD));
     }
 
-    function check_mintFeeMonotoneAndBounded(uint64 h1, uint64 h2) public pure {
-        vm.assume(h1 <= h2 && h2 <= WAD);
-        uint256 a = SpectralPolicy.mintFeeRate(h1);
-        uint256 b = SpectralPolicy.mintFeeRate(h2);
-        assert(a <= b);
-        assert(a >= SpectralPolicy.MINT_FEE_MIN && b <= SpectralPolicy.MINT_FEE_MAX);
+    function check_mintFeeLocallyMonotone(uint64 h) public pure {
+        vm.assume(h < WAD);
+        assert(SpectralPolicy.mintFeeRate(h) <= SpectralPolicy.mintFeeRate(uint256(h) + 1));
     }
 
-    function check_redeemFeeMonotoneAndBounded(uint64 h1, uint64 h2) public pure {
-        vm.assume(h1 <= h2 && h2 <= WAD);
-        uint256 a = SpectralPolicy.redeemFeeRate(h1);
-        uint256 b = SpectralPolicy.redeemFeeRate(h2);
-        assert(a <= b);
-        assert(a >= SpectralPolicy.REDEEM_FEE_MIN && b <= SpectralPolicy.REDEEM_FEE_MAX);
+    function check_mintFeeBounded(uint64 h) public pure {
+        vm.assume(h <= WAD);
+        uint256 f = SpectralPolicy.mintFeeRate(h);
+        assert(f >= SpectralPolicy.MINT_FEE_MIN && f <= SpectralPolicy.MINT_FEE_MAX);
     }
 
-    function check_expansionCapMonotoneAndBounded(uint64 h1, uint64 h2) public pure {
-        vm.assume(h1 <= h2 && h2 <= WAD);
-        uint256 a = SpectralPolicy.expansionCapRate(h1);
-        uint256 b = SpectralPolicy.expansionCapRate(h2);
-        assert(a >= b);
-        assert(a <= SpectralPolicy.EXPANSION_CAP_LOW_H && b >= SpectralPolicy.EXPANSION_CAP_HIGH_H);
+    function check_redeemFeeLocallyMonotone(uint64 h) public pure {
+        vm.assume(h < WAD);
+        assert(SpectralPolicy.redeemFeeRate(h) <= SpectralPolicy.redeemFeeRate(uint256(h) + 1));
     }
 
-    /// Monotone, bounded, and D4: the buffer never falls below its neutral value, whatever H.
-    function check_bufferMonotoneBoundedAndFloored(uint64 h1, uint64 h2) public pure {
-        vm.assume(h1 <= h2 && h2 <= WAD);
-        uint256 a = SpectralPolicy.bufferRate(h1);
-        uint256 b = SpectralPolicy.bufferRate(h2);
-        assert(a <= b);
-        assert(a >= SpectralPolicy.bufferRate(0.5e18));
-        assert(a >= SpectralPolicy.BUFFER_LOW_H && b <= SpectralPolicy.BUFFER_HIGH_H);
+    function check_redeemFeeBounded(uint64 h) public pure {
+        vm.assume(h <= WAD);
+        uint256 f = SpectralPolicy.redeemFeeRate(h);
+        assert(f >= SpectralPolicy.REDEEM_FEE_MIN && f <= SpectralPolicy.REDEEM_FEE_MAX);
     }
 
-    function check_rebaseStepMonotoneAndBounded(uint64 h1, uint64 h2) public pure {
-        vm.assume(h1 <= h2 && h2 <= WAD);
-        uint256 a = SpectralPolicy.rebaseStepRate(h1);
-        uint256 b = SpectralPolicy.rebaseStepRate(h2);
-        assert(a >= b);
-        assert(a <= SpectralPolicy.REBASE_STEP_MAX && b >= SpectralPolicy.REBASE_STEP_MAX / 2);
+    function check_expansionCapLocallyMonotone(uint64 h) public pure {
+        vm.assume(h < WAD);
+        assert(SpectralPolicy.expansionCapRate(h) >= SpectralPolicy.expansionCapRate(uint256(h) + 1));
+    }
+
+    function check_expansionCapBounded(uint64 h) public pure {
+        vm.assume(h <= WAD);
+        uint256 f = SpectralPolicy.expansionCapRate(h);
+        assert(f <= SpectralPolicy.EXPANSION_CAP_LOW_H && f >= SpectralPolicy.EXPANSION_CAP_HIGH_H);
+    }
+
+    function check_bufferLocallyMonotone(uint64 h) public pure {
+        vm.assume(h < WAD);
+        assert(SpectralPolicy.bufferRate(h) <= SpectralPolicy.bufferRate(uint256(h) + 1));
+    }
+
+    /// Bounded, and D4: the buffer never falls below its neutral value, whatever H.
+    function check_bufferBoundedAndFloored(uint256 h) public pure {
+        uint256 f = SpectralPolicy.bufferRate(h);
+        assert(f >= SpectralPolicy.bufferRate(0.5e18));
+        assert(f >= SpectralPolicy.BUFFER_LOW_H && f <= SpectralPolicy.BUFFER_HIGH_H);
+    }
+
+    function check_rebaseStepLocallyMonotone(uint64 h) public pure {
+        vm.assume(h < WAD);
+        assert(SpectralPolicy.rebaseStepRate(h) >= SpectralPolicy.rebaseStepRate(uint256(h) + 1));
+    }
+
+    function check_rebaseStepBounded(uint64 h) public pure {
+        vm.assume(h <= WAD);
+        uint256 f = SpectralPolicy.rebaseStepRate(h);
+        assert(f <= SpectralPolicy.REBASE_STEP_MAX && f >= SpectralPolicy.REBASE_STEP_MAX / 2);
     }
 
     /// Anti-sandwich: at every H, one rebase step is worth less than a mint-and-redeem round
@@ -183,7 +201,7 @@ contract HalmosPolicy is Test {
 
     /// For every index path below 2^128 the churn step cannot overflow or revert, its results
     /// fit the uint128 slots they are stored in whenever the window's length does, and `ok`
-    /// is exactly L <= C_DIAM * D. (uint128 inputs cover exactly the domain claimed.)
+    /// is exactly L <= CHURN_BUDGET * D. (uint128 inputs cover exactly the domain claimed.)
     function check_churnStepCannotOverflow(uint128 len, uint128 mx, uint128 mn, uint128 oldIndex, uint128 newIndex)
         public
         view
@@ -194,7 +212,7 @@ contract HalmosPolicy is Test {
         ) {
             assert(len2 < uint256(1) << 129);
             assert(mx2 < uint256(1) << 128 && mn2 <= mx2 && range == mx2 - mn2);
-            assert(ok == (len2 * WAD <= SpectralPolicy.C_DIAM_WAD * range));
+            assert(ok == (len2 * WAD <= SpectralPolicy.CHURN_BUDGET_WAD * range));
         } catch {
             assert(false);
         }

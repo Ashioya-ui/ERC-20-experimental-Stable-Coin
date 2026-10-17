@@ -10,8 +10,8 @@ pragma solidity ^0.8.26;
 //  4. AutonomousTreasuryTest    adapter accounting around an ERC-4626 vault
 //  5. WrappedSUSDTest           non-rebasing wrapper used by AMM pools
 //  6. SpectralStabilizerTest    fees, caps, rebases, buffer, loss absorption, pause, MEV
-//  7. ChurnBudgetTest           exact C_DIAM churn-budget arithmetic
-//  8. SpectralHookTest          Uniswap v4 integration (real PoolManager)
+//  7. ChurnBudgetTest           exact churn-budget arithmetic (CHURN_BUDGET = Theorem 4.3)
+//  8. SpectralHookTest          Uniswap v4 integration: now test/SpectralHook.t.sol
 //  9. SpectrumInvariantTest     100% reserve floor and accounting invariants
 // =====================================================================================
 
@@ -22,7 +22,6 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
-import {Deployers} from "v4-core/test/utils/Deployers.sol";
 import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
@@ -358,11 +357,12 @@ contract SpectralEntropyOracleTest is Test {
     }
 
     function test_record_ignoresDust() public {
-        vm.expectEmit(address(oracle));
-        emit SpectralEntropyOracle.DustIgnored(int256(DUST) - 1);
+        vm.recordLogs();
         vm.prank(hook);
         oracle.record(int256(DUST) - 1);
-        assertEq(oracle.filled(), 0);
+        assertEq(oracle.filled(), 0, "dust leaves no trace");
+        assertEq(oracle.lastObservationTime(), 0, "and does not count as activity");
+        assertEq(vm.getRecordedLogs().length, 0, "no per-swap event (B4)");
     }
 
     function test_record_aggregatesPerBlock() public {
@@ -868,15 +868,20 @@ contract AutonomousTreasuryTest is Test {
         assertEq(usdc.balanceOf(address(treasury)), 0);
     }
 
-    function test_sweepDepositsDonationsAndIsStabilizerOnly() public {
-        usdc.mint(address(treasury), 5e6); // donation
+    /// Batched deposits (spec change in Phase 4): a donation inside the 1% tolerance band stays
+    /// idle, and still counts at once; past the band, everything above the target goes in.
+    function test_sweepDepositsDonationsInBatchesAndIsStabilizerOnly() public {
+        usdc.mint(address(treasury), 5e6); // 0.5% of the reserve: inside the band
         assertEq(treasury.reserveAssets(), 1_005e6, "idle donations count at once");
         vm.prank(bob);
         vm.expectRevert(AutonomousTreasury.NotStabilizer.selector);
         treasury.sweep();
         treasury.sweep(); // this test contract is the stabilizer
-        assertEq(usdc.balanceOf(address(treasury)), 0);
-        assertEq(treasury.reserveAssets(), 1_005e6);
+        assertEq(usdc.balanceOf(address(treasury)), 5e6, "inside the band: nothing moves");
+        usdc.mint(address(treasury), 10e6); // 15 idle: 1.5% of 1,015
+        treasury.sweep();
+        assertEq(usdc.balanceOf(address(treasury)), 0, "past the band: everything above the 0% target");
+        assertEq(treasury.reserveAssets(), 1_015e6);
         vm.prank(bob);
         vm.expectRevert(AutonomousTreasury.NotStabilizer.selector);
         treasury.rebalance();
@@ -1404,7 +1409,7 @@ contract SpectralStabilizerTest is SpectrumFixture {
         _assertSolvent();
     }
 
-    // ------------------------------------------------------------------ churn budget (C_DIAM)
+    // ------------------------------------------------------------------ churn budget
 
     function test_churn_defersThirdUpLegWhenWhipsawing() public {
         _mintFor(alice, 10_000e6);
@@ -1412,14 +1417,14 @@ contract SpectralStabilizerTest is SpectrumFixture {
         assertTrue(_rebaseAfter(1 hours), "up 1");
         _whipsawLoss(); // down 1
         vault.simulateYield(vault.totalAssets() / 25); // > 2.75% buffer after the whipsaw loss
-        assertTrue(_rebaseAfter(1 hours), "up 2: L = 3D <= C_DIAM D");
+        assertTrue(_rebaseAfter(1 hours), "up 2: L = 3D <= 3.1356 D");
         _whipsawLoss(); // down 2
         vault.simulateYield(vault.totalAssets() / 25); // > 2.75% buffer after the whipsaw loss
 
         uint256 idx = token.index();
         vm.expectEmit(false, false, false, false, address(stabilizer));
         emit SpectralStabilizer.RebaseDeferred(0, 0, 0, 0);
-        assertFalse(_rebaseAfter(1 hours), "up 3: L = 5D > C_DIAM D");
+        assertFalse(_rebaseAfter(1 hours), "up 3: L = 5D > 3.1356 D");
         assertEq(token.index(), idx, "deferred, not applied");
 
         assertTrue(_rebaseAfter(7 days), "a fresh window resumes distribution");
@@ -1479,10 +1484,11 @@ contract ChurnBudgetTest is SpectrumFixture {
         h.exposedCommitChurn(i0, i0 + a); // up
         h.exposedCommitChurn(i0 + a, i0); // down
         h.exposedCommitChurn(i0, i0 + a); // up    L = 3a, D = a
-        uint256 d = 4e14;
+        uint256 d = 1e15;
         h.exposedCommitChurn(i0 + a, i0 + a - d); // small down
-        // L <= C_DIAM * D  <=>  3a + d + u <= floor(3.047197551196597746 * 1e16)
-        uint256 u = 71_975_511_965_977;
+        // L <= CHURN_BUDGET * D  <=>  3a + d + u <= floor(3.135631968196535891 * 1e16), and
+        // u < d keeps the new index below the maximum, so D stays a.
+        uint256 u = 356_319_681_965_358;
         (bool ok, uint256 len, uint256 range) = h.exposedChurnAfter(i0 + a - d, i0 + a - d + u);
         assertTrue(ok, "at the boundary");
         assertEq(len, 3 * a + d + u);
@@ -1519,233 +1525,11 @@ contract ChurnBudgetTest is SpectrumFixture {
                 assertEq(h.churnLength(), len);
                 assertEq(h.churnMax() - h.churnMin(), range);
                 if (ups[i]) {
-                    assertLe(len * 1e18, h.C_DIAM_WAD() * range, "accepted up-moves respect the budget");
+                    assertLe(len * 1e18, h.CHURN_BUDGET_WAD() * range, "accepted up-moves respect the budget");
                 }
                 idx = next;
             }
         }
-    }
-}
-
-// =====================================================================================
-// 8. SpectralHook on a real Uniswap v4 PoolManager
-// =====================================================================================
-
-contract SpectralHookTest is Deployers {
-    uint160 internal constant FLAGS = uint160(Hooks.BEFORE_INITIALIZE_FLAG | Hooks.AFTER_SWAP_FLAG);
-
-    MockUSDC internal usdc;
-    MockVault internal vault;
-    AutonomousTreasury internal treasury;
-    SpectralToken internal token;
-    SpectralEntropyOracle internal oracle;
-    SpectralStabilizer internal stabilizer;
-    WrappedSUSD internal wsusd;
-    SpectrumLens internal lens;
-    SpectralHook internal hook;
-    Currency internal ws;
-    Currency internal other;
-
-    function setUp() public {
-        vm.warp(1_700_000_000);
-        vm.roll(1_000);
-        deployFreshManagerAndRouters();
-
-        // Monetary system with the real oracle.
-        usdc = new MockUSDC();
-        vault = new MockVault(usdc);
-        address hookAt = address(FLAGS ^ (uint160(0x4444) << 144));
-        address stabilizerAt = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 3);
-        treasury = new AutonomousTreasury(IERC4626(address(vault)), 0, stabilizerAt);
-        token = new SpectralToken(stabilizerAt);
-        oracle = new SpectralEntropyOracle(hookAt, 1e18, 0.25e18, 1 hours, 1 hours);
-        address[] memory vaults = new address[](1);
-        vaults[0] = address(vault);
-        stabilizer = new SpectralStabilizer(
-            token, treasury, oracle, address(this), address(0), 10_000_000e18, type(uint256).max, vaults
-        );
-        wsusd = new WrappedSUSD(token);
-        lens = new SpectrumLens(stabilizer);
-
-        // Liquidity: wrap minted sUSD into wsUSD; pair it with an 18-decimal test token.
-        usdc.mint(address(this), 1_000_000e6);
-        usdc.approve(address(stabilizer), type(uint256).max);
-        stabilizer.mint(1_000_000e6, address(this), 0);
-        token.approve(address(wsusd), type(uint256).max);
-        wsusd.deposit(token.balanceOf(address(this)), address(this));
-        wsusd.approve(address(swapRouter), type(uint256).max);
-        wsusd.approve(address(modifyLiquidityRouter), type(uint256).max);
-        ws = Currency.wrap(address(wsusd));
-        other = deployMintAndApproveCurrency();
-
-        hook = _deployHook(oracle, address(FLAGS ^ (uint160(0x4444) << 144)));
-        key = _initPool(hook);
-    }
-
-    function _deployHook(ISpectralEntropyOracle o, address at) internal returns (SpectralHook) {
-        deployCodeTo(
-            "SpectralHook.sol:SpectralHook", abi.encode(manager, o, ws, other, uint24(3000), int24(60)), at
-        );
-        return SpectralHook(at);
-    }
-
-    function _initPool(SpectralHook h) internal returns (PoolKey memory k) {
-        (Currency c0, Currency c1) =
-            Currency.unwrap(ws) < Currency.unwrap(other) ? (ws, other) : (other, ws);
-        k = PoolKey(c0, c1, 3000, 60, IHooks(address(h)));
-        manager.initialize(k, SQRT_PRICE_1_1);
-        modifyLiquidityRouter.modifyLiquidity(
-            k, ModifyLiquidityParams({tickLower: -600, tickUpper: 600, liquidityDelta: 1e24, salt: 0}), ZERO_BYTES
-        );
-    }
-
-    /// Exact-input sale of `amount` wsUSD: the measured leg equals `amount` exactly.
-    function _sellWs(PoolKey memory k, uint256 amount) internal returns (BalanceDelta) {
-        bool zeroForOne = Currency.unwrap(k.currency0) == Currency.unwrap(ws);
-        return swap(k, zeroForOne, -int256(amount), ZERO_BYTES);
-    }
-
-    function _nextBlock() internal {
-        vm.roll(vm.getBlockNumber() + 1);
-        vm.warp(vm.getBlockTimestamp() + 2);
-    }
-
-    // ------------------------------------------------------------------ deployment checks
-
-    function test_permissionsAndAddressFlags() public view {
-        Hooks.Permissions memory p = hook.getHookPermissions();
-        assertTrue(p.beforeInitialize && p.afterSwap);
-        assertFalse(p.beforeSwap || p.afterInitialize || p.beforeAddLiquidity || p.afterSwapReturnDelta);
-        assertEq(uint160(address(hook)) & Hooks.ALL_HOOK_MASK, FLAGS);
-        assertEq(Currency.unwrap(hook.measuredCurrency()), address(wsusd));
-    }
-
-    function test_constructorRejectsBadSetups() public {
-        vm.expectRevert(SpectralHook.SameCurrency.selector);
-        new SpectralHook(manager, oracle, ws, ws, 3000, 60);
-        vm.expectRevert(); // ordinary CREATE address lacks the flag bits
-        new SpectralHook(manager, oracle, ws, other, 3000, 60);
-    }
-
-    function test_onlyDesignatedPoolCanUseHook() public {
-        PoolKey memory bad = key;
-        bad.fee = 500;
-        bad.tickSpacing = 10;
-        vm.expectRevert();
-        manager.initialize(bad, SQRT_PRICE_1_1);
-    }
-
-    /// A2: the one allowed pool can only start near wsUSD's redemption value, in either token
-    /// order, so nobody can front-run the deployment with an off-peg initialisation.
-    function test_initialisationPriceMustBeNearPar() public {
-        address[2] memory places = [address(0x10000), address(0xFFFfFFfFfFFffFFfFFFffffFfFfFffFFfFFFFF00)];
-        for (uint256 i; i < 2; ++i) {
-            deployCodeTo("MockUSDC.sol:MockUSDC", "", places[i]);
-            Currency usd = Currency.wrap(places[i]);
-            address at = address(FLAGS ^ (uint160(0x6000 + i) << 144));
-            deployCodeTo("SpectralHook.sol:SpectralHook", abi.encode(manager, oracle, ws, usd, uint24(100), int24(1)), at);
-            (Currency c0, Currency c1) = Currency.unwrap(ws) < Currency.unwrap(usd) ? (ws, usd) : (usd, ws);
-            PoolKey memory k = PoolKey(c0, c1, 100, 1, IHooks(at));
-            uint160 par = SpectrumDeploy.parSqrtPriceX96(k);
-            assertTrue(SpectralHook(at).priceWithinBand(par), "par is inside the band");
-            assertFalse(SpectralHook(at).priceWithinBand(uint160((uint256(par) * 1003) / 1000)), "0.6% is outside");
-            vm.expectRevert(); // a quarter of par: far outside the 50 bp band
-            manager.initialize(k, par / 2);
-            vm.expectRevert(); // 1% above par
-            manager.initialize(k, uint160((uint256(par) * 1005) / 1000));
-            manager.initialize(k, uint160((uint256(par) * 10_012) / 10_000)); // +0.24%: allowed
-        }
-    }
-
-    function test_onlyPoolManagerCanCall() public {
-        vm.expectRevert(SpectralHook.NotPoolManager.selector);
-        hook.beforeInitialize(address(this), key, SQRT_PRICE_1_1);
-        SwapParams memory sp = SwapParams({zeroForOne: true, amountSpecified: -1e18, sqrtPriceLimitX96: 0});
-        vm.expectRevert(SpectralHook.NotPoolManager.selector);
-        hook.afterSwap(address(this), key, sp, toBalanceDelta(-1e18, 1e18), ZERO_BYTES);
-        vm.expectRevert(SpectralHook.HookNotImplemented.selector);
-        hook.beforeSwap(address(this), key, sp, ZERO_BYTES);
-    }
-
-    /// A swapper cannot opt out of being recorded by starving the oracle call of gas.
-    function test_starvingTheOracleRevertsTheSwap() public {
-        SwapParams memory sp = SwapParams({zeroForOne: true, amountSpecified: -100e18, sqrtPriceLimitX96: 0});
-        vm.prank(address(manager));
-        vm.expectRevert(SpectralHook.OracleOutOfGas.selector);
-        hook.afterSwap{gas: 30_000}(address(this), key, sp, toBalanceDelta(-100e18, 99e18), ZERO_BYTES);
-
-        vm.prank(address(manager));
-        (bytes4 sel,) =
-            hook.afterSwap{gas: 300_000}(address(this), key, sp, toBalanceDelta(-100e18, 99e18), ZERO_BYTES);
-        assertEq(sel, IHooks.afterSwap.selector);
-        // The measured leg is whichever currency wsUSD happens to be in this deployment.
-        uint256 measured = Currency.unwrap(key.currency0) == address(wsusd) ? 100e18 : 99e18;
-        assertEq(oracle.window()[7], measured);
-    }
-
-    // ------------------------------------------------------------------ data flow
-
-    function test_swapsFeedOneSlotPerBlock() public {
-        uint256[9] memory amounts = [uint256(100e18), 250e18, 75e18, 300e18, 120e18, 90e18, 60e18, 410e18, 33e18];
-        for (uint256 i; i < 9; ++i) {
-            _nextBlock();
-            BalanceDelta d = _sellWs(key, amounts[i]);
-            int128 leg = Currency.unwrap(key.currency0) == address(wsusd) ? d.amount0() : d.amount1();
-            assertEq(uint256(int256(-leg)), amounts[i], "measured leg = exact input");
-        }
-        uint256[8] memory w = oracle.window();
-        for (uint256 i; i < 8; ++i) {
-            assertEq(w[i], amounts[i + 1], "window = last 8 blocks");
-        }
-        assertTrue(oracle.rawEma() != 0.5e18, "a closed window was folded");
-    }
-
-    function test_sameBlockSwapsAggregate() public {
-        _nextBlock();
-        _sellWs(key, 100e18);
-        _sellWs(key, 200e18);
-        assertEq(oracle.filled(), 1);
-        assertEq(oracle.window()[7], 300e18);
-    }
-
-    function test_calmFlowThenWhale_endToEndFees() public {
-        for (uint256 i; i < 9; ++i) {
-            _nextBlock();
-            _sellWs(key, 100e18);
-        }
-        assertEq(oracle.instantEntropy(), 0, "homogeneous flow");
-        assertLt(oracle.smoothedEntropy(), 0.5e18, "the EMA has started to fall");
-        for (uint256 i; i < 7; ++i) {
-            _nextBlock();
-            _sellWs(key, 100e18);
-        }
-        (, uint256 calmFee) = lens.quoteMint(1_000e6);
-        _nextBlock();
-        _sellWs(key, 5_000e18); // whale
-        assertGt(oracle.instantEntropy(), 0.99e18, "concentrated flow");
-        uint256 before = oracle.rawEma();
-        // A6: the fold weight grows with time, so the whale window only moves the smoothed
-        // signal materially once the pool has been quiet for a while (50 minutes here, which
-        // is still inside the 1-hour staleness horizon).
-        vm.warp(vm.getBlockTimestamp() + 50 minutes);
-        _nextBlock();
-        _sellWs(key, 100e18); // closes the whale window
-        // One fold moves the EMA by at most emaAlphaMax (0.25) of the gap, whatever the wait.
-        assertGt(oracle.rawEma(), before + 0.1e18);
-        assertLt(oracle.rawEma(), before + 0.25e18, "one fold is capped at alphaMax");
-        (, uint256 whaleFee) = lens.quoteMint(1_000e6);
-        assertGt(whaleFee, calmFee, "minting gets more expensive after spiky flow");
-    }
-
-    function test_oracleFailureNeverBricksSwaps() public {
-        MockOracle broken = new MockOracle();
-        broken.setRevert(true);
-        SpectralHook h2 = _deployHook(broken, address(FLAGS ^ (uint160(0x5555) << 144)));
-        PoolKey memory k2 = _initPool(h2);
-        _nextBlock();
-        vm.expectEmit(false, false, false, false, address(h2));
-        emit SpectralHook.OracleRecordFailed("");
-        _sellWs(k2, 100e18);
     }
 }
 

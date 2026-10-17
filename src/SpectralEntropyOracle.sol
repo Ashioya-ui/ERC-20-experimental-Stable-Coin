@@ -53,18 +53,23 @@ contract SpectralEntropyOracle is ISpectralEntropyOracle {
     address public immutable hook;
 
     uint128[8] private _volumes; // |net flow| per block, ring buffer
+
+    // One slot for everything a window close reads and writes besides the ring buffer
+    // (Phase 4): 8 + 8 + 40 + 40 + 40 + 64 = 200 bits. 40 bits hold block numbers and
+    // timestamps for tens of thousands of years, and the EMA never exceeds 1e18 < 2^64.
     uint8 public head; // slot of the newest block
     uint8 public filled; // number of slots holding data (<= 8)
-    uint64 public currentBlock; // block number of _volumes[head]
-    uint64 public lastObservationTime; // timestamp of the latest recorded swap
-    uint64 public lastFoldTime; // timestamp of the latest EMA fold
-    int256 private _currentNet; // signed net flow of the open block
-    uint256 private _ema; // smoothed entropy, WAD
+    uint40 public currentBlock; // block number of _volumes[head]
+    uint40 public lastObservationTime; // timestamp of the latest recorded swap
+    uint40 public lastFoldTime; // timestamp of the latest EMA fold
+    uint64 private _ema; // smoothed entropy, WAD
 
+    int256 private _currentNet; // signed net flow of the open block
+
+    // Per-swap events were dropped in Phase 4 (B4): the PoolManager's Swap event already
+    // carries every amount, and the window closes are what the signal is made of.
     event HookSet(address indexed hook);
-    event Observed(int256 amount, uint256 indexed blockNumber, uint8 slot);
     event WindowClosed(uint256 indexed blockNumber, uint256 entropy, uint256 weight, uint256 ema);
-    event DustIgnored(int256 amount);
 
     error NotHook();
     error ZeroAddress();
@@ -83,9 +88,10 @@ contract SpectralEntropyOracle is ISpectralEntropyOracle {
         emaAlphaMax = emaAlphaMax_;
         tau = tau_;
         staleAfter = staleAfter_;
-        _ema = NEUTRAL_ENTROPY;
         // forge-lint: disable-next-line(unsafe-typecast)
-        lastFoldTime = uint64(block.timestamp);
+        _ema = uint64(NEUTRAL_ENTROPY); // 0.5e18 < 2^64
+        // forge-lint: disable-next-line(unsafe-typecast)
+        lastFoldTime = uint40(block.timestamp);
         emit HookSet(hook_);
     }
 
@@ -95,10 +101,7 @@ contract SpectralEntropyOracle is ISpectralEntropyOracle {
     function record(int256 amount) external override {
         if (msg.sender != hook) revert NotHook();
         uint256 size = _abs(amount);
-        if (size < minObservation || size == 0) {
-            emit DustIgnored(amount);
-            return;
-        }
+        if (size < minObservation || size == 0) return; // dust: ignored per swap
 
         // Per-block aggregation: equality with the current block number is the point.
         // slither-disable-next-line incorrect-equality
@@ -112,24 +115,25 @@ contract SpectralEntropyOracle is ISpectralEntropyOracle {
             head = next;
             if (filled < WINDOW) filled += 1;
             // forge-lint: disable-next-line(unsafe-typecast)
-            currentBlock = uint64(block.number);
+            currentBlock = uint40(block.number);
             _currentNet = amount;
         }
         _volumes[head] = _saturate(_currentNet);
         // forge-lint: disable-next-line(unsafe-typecast)
-        lastObservationTime = uint64(block.timestamp);
-        emit Observed(amount, block.number, head);
+        lastObservationTime = uint40(block.timestamp);
     }
 
     function _foldWindowIntoEma() private {
         uint256 h = SpectralMath.spectralEntropy8(_chronological());
         uint256 w = foldWeight();
         uint256 e = _ema;
-        // e += w * (h - e), written without signed arithmetic
+        // e += w * (h - e), written without signed arithmetic. A convex combination of two
+        // values in [0, 1e18] stays in [0, 1e18], so it fits in 64 bits.
         e = h >= e ? e + ((h - e) * w) / 1e18 : e - ((e - h) * w) / 1e18;
-        _ema = e;
         // forge-lint: disable-next-line(unsafe-typecast)
-        lastFoldTime = uint64(block.timestamp);
+        _ema = uint64(e);
+        // forge-lint: disable-next-line(unsafe-typecast)
+        lastFoldTime = uint40(block.timestamp);
         emit WindowClosed(currentBlock, h, w, e);
     }
 

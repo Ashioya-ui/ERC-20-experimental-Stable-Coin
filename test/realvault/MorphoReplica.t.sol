@@ -210,19 +210,24 @@ contract MorphoReplicaTest is Test {
     }
 
     /// Gas of the user paths against the real vault, measured around each external call.
+    /// Mints deposit in batches: a mint that leaves idle funds inside the 1% tolerance band
+    /// never calls the vault, and the one that crosses it deposits everything above target.
     function test_gasAgainstRealMetaMorpho() public {
-        _fund(holder, 2_000e6);
+        _fund(holder, 10_000e6);
         vm.startPrank(holder);
         IERC20(env.usdc).approve(address(d.stabilizer), type(uint256).max);
-        d.stabilizer.mint(1_000e6, holder, 0); // warm-up: first deposit into the market position
+        d.stabilizer.mint(9_000e6, holder, 0); // warm-up: opens the market position
         uint256 g = gasleft();
-        d.stabilizer.mint(1_000e6, holder, 0);
-        uint256 mintGas = g - gasleft();
+        d.stabilizer.mint(50e6, holder, 0); // 0.5% of the reserve: stays idle
+        uint256 smallMintGas = g - gasleft();
+        g = gasleft();
+        d.stabilizer.mint(500e6, holder, 0); // crosses the band: one batched deposit
+        uint256 batchMintGas = g - gasleft();
         g = gasleft();
         d.stabilizer.redeem(400e18, holder, 0); // paid from the idle buffer
         uint256 redeemIdleGas = g - gasleft();
         g = gasleft();
-        d.stabilizer.redeem(1_000e18, holder, 0); // needs the vault: MetaMorpho -> Morpho Blue
+        d.stabilizer.redeem(2_500e18, holder, 0); // needs the vault: MetaMorpho -> Morpho Blue
         uint256 redeemVaultGas = g - gasleft();
         vm.stopPrank();
         _borrow(500e6);
@@ -230,12 +235,17 @@ contract MorphoReplicaTest is Test {
         g = gasleft();
         d.stabilizer.rebase();
         uint256 rebaseGas = g - gasleft();
-        emit log_named_uint("mint, 1,000 USDC (MetaMorpho deposit)", mintGas);
+        emit log_named_uint("mint, 50 USDC (inside the band, no vault call)", smallMintGas);
+        emit log_named_uint("mint, 500 USDC (batched MetaMorpho deposit)", batchMintGas);
         emit log_named_uint("redeem from the idle buffer", redeemIdleGas);
         emit log_named_uint("redeem through MetaMorpho", redeemVaultGas);
         emit log_named_uint("rebase (interest accrued)", rebaseGas);
-        assertLt(mintGas, 400_000);
-        assertLt(redeemVaultGas, 300_000);
+        // Generous ceilings that hold in both normal and --isolate runs (isolated calls start
+        // with cold storage and pay intrinsic gas); the normal-mode figures are in audit/gas.md.
+        assertLt(smallMintGas + 50_000, batchMintGas, "a mint inside the band skips the vault call");
+        assertLt(smallMintGas, 250_000);
+        assertLt(batchMintGas, 500_000);
+        assertLt(redeemVaultGas, 400_000);
         _assertSolvent();
     }
 

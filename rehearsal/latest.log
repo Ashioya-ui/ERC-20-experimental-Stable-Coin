@@ -19,17 +19,20 @@ ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
   vault 1 share -> assets   1000000
   vault maxDeposit (USDC)   115792089237316195423570985008687907853269984665640564039457584007913129
   round trip 1,000 USDC ->  1000000000
+  protocol capital (USDC)   1250
   == Spectrum state ==
-  sUSD supply (wei)         1997350000000000000
-  reserve value (wei)       2000000000000000000
-  reserve ratio (1e18 = 1)  1001326757954289433
-  idle USDC                 300000
-  liquid USDC               2000000
+  sUSD supply (wei)         1998600000000000000
+  reserve value (wei)       1252000000000000000000
+  reserve ratio (1e18 = 1)  626438506954868407885
+  idle USDC                 187800000
+  liquid USDC               1252000000
   liquidity buffer (bps)    1500
   supply cap (wei)          25000000000000000000000
   smoothed entropy (1e18)   500000000000000000
   oracle blocks filled      0
   index (1e18)              1000000000000000000
+  protocol capital (wei)    1250000000000000000000
+  distributable now (wei)   1400000000000000
   == deployed ==
   AutonomousTreasury  0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1
   SpectralToken sUSD  0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE
@@ -44,8 +47,8 @@ ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
 ==========================
 Chain 31337
 Estimated gas price: 0.319603701 gwei
-Estimated total gas used for script: 19355131
-Estimated amount required: 0.006185971500939831 ETH
+Estimated total gas used for script: 19897356
+Estimated amount required: 0.006359268617714556 ETH
 ==========================
 ==========================
 ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
@@ -55,16 +58,18 @@ Sensitive values saved to: /home/claude/spectrum/cache/DeployBaseMainnet.s.sol/3
 ==== 3. Post-deploy check (read-only, same script as mainnet) ====
 == Logs ==
   == Spectrum state ==
-  sUSD supply (wei)         1997350000000000000
-  reserve value (wei)       2000000000000000000
-  reserve ratio (1e18 = 1)  1001326757954289433
-  idle USDC                 300000
-  liquid USDC               2000000
+  sUSD supply (wei)         1998600000000000000
+  reserve value (wei)       1252000000000000000000
+  reserve ratio (1e18 = 1)  626438506954868407885
+  idle USDC                 187800000
+  liquid USDC               1252000000
   liquidity buffer (bps)    1500
   supply cap (wei)          25000000000000000000000
   smoothed entropy (1e18)   500000000000000000
   oracle blocks filled      0
   index (1e18)              1000000000000000000
+  protocol capital (wei)    1250000000000000000000
+  distributable now (wei)   1400000000000000
   POST-DEPLOY CHECK PASSED
 
 ==== 4. Hook address carries exactly beforeInitialize|afterSwap (0x2040) ====
@@ -81,21 +86,24 @@ smoothed H:      499947417960014229 [4.999e17]
 ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
 merchant sUSD:   5000000000000000 [5e15]
 
-==== 7. Keeper: rebase before yield reverts; vault yield accrues; rebase distributes ====
+==== 7. Keeper: protocol capital covers the buffer, so fees and yield are distributable from day one ====
+protocol capital: 1250000000000000000000 [1.25e21]
+distributable:    2801273809739724000 [2.801e18]
+index before:     1000000000000000000 [1e18]
+index after fees: 1000074999999999999 [1e18]
+index after yield: 1000150005624999998 [1e18]
 reverted as expected
-index before:    1000000000000000000 [1e18]
-index after:     1000074999999999999 [1e18]
-reserve ratio:   1052315430862111676 [1.052e18]
+reserve ratio:    1380032474554197299 [1.38e18]
 
 ==== 8. Guardian: emergency exit from the vault (runbook E1) ====
 vault shares:    0
-idle USDC:       4206101999 [4.206e9]
+idle USDC:       5519851999 [5.519e9]
 buffer bps:      10000 [1e4]
 
 ==== 9. Admin (Safe): timelocked migration to the fallback vault (runbook E2) ====
 reverted as expected
 treasury vault:  0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e  (fallback: 0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e)
-fallback shares: 3575186700 [3.575e9]
+fallback shares: 4691874200 [4.691e9]
 
 ==== 10. Guardian cannot use admin powers; nobody can pause redemptions ====
 reverted as expected
@@ -105,16 +113,18 @@ redeem while paused: ok
 == Logs ==
   note: treasury vault was migrated
   == Spectrum state ==
-  sUSD supply (wei)         3896997359959020942607
-  reserve value (wei)       4106134499000000000000
-  reserve ratio (1e18 = 1)  1053666225486788179
-  idle USDC                 530947799
-  liquid USDC               4106134499
+  sUSD supply (wei)         3899798628494681641863
+  reserve value (wei)       5419884499000000000000
+  reserve ratio (1e18 = 1)  1389785733909053139
+  idle USDC                 728010299
+  liquid USDC               5419884499
   liquidity buffer (bps)    1500
   supply cap (wei)          25000000000000000000000
   smoothed entropy (1e18)   500000000000000000
   oracle blocks filled      8
-  index (1e18)              1000074999999999999
+  index (1e18)              1000150005624999998
+  protocol capital (wei)    1250000000000000000000
+  distributable now (wei)   270085870505318358137
   POST-DEPLOY CHECK PASSED
 
 ==== REHEARSAL PASSED ====
