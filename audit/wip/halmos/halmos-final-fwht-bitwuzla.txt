@@ -1,0 +1,6 @@
+No files changed, compilation skipped
+
+Running 2 tests for test/halmos/Properties.t.sol:HalmosFwht
+[PASS] check_fwhtIsAnInvolutionUpTo8(int256[8]) (paths: 17, time: 0.39s, bounds: [])
+[PASS] check_fwhtIsLinear(int256[8],int256[8]) (paths: 17, time: 0.80s, bounds: [])
+Symbolic test result: 2 passed; 0 failed; time: 1.22s
