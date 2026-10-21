@@ -3,26 +3,31 @@ name: deploy-base-mainnet
 # Deploys Spectrum from GitHub's runners: to Base Sepolia for the dress rehearsal, then to
 # Base mainnet. Same script, same checks; only the config file, RPC and environment differ.
 #
-# One-time setup (repository Settings):
-#   Variables -> Actions:
-#     DEPLOYER                 address of the deploying account (not a secret)
-#   Secrets -> Actions:
-#     BASE_RPC_URL             Base mainnet RPC (provider endpoint recommended)
-#     BASE_SEPOLIA_RPC_URL     Base Sepolia RPC (for the dress rehearsal)
-#     ETHERSCAN_API_KEY        Etherscan API V2 key (covers Basescan and Base Sepolia)
-#     DEPLOYER_PRIVATE_KEY     key of the DEPLOYER address. Mainnet: ~0.003 ETH and
-#                              1,252 USDC (seedUSDC 2 + seedCapitalUSDC 1,250) on Base.
-#                              Sepolia: test ETH and 7 test USDC from Circle's faucet.
-#                              It ends with NO roles: all power goes to the admin Safe given
-#                              below. Use a fresh key and fund it just before the run.
-#   Environments: base-mainnet (add yourself as a required reviewer) and base-sepolia.
+# One-time setup (repository Settings -> Environments). Create two environments,
+# `base-sepolia` and `base-mainnet`. On each:
+#   - Deployment protection: yourself as required reviewer; deployment branches limited to the
+#     branch you release from.
+#   - Environment secrets (NOT repository secrets, which any workflow on any branch can read),
+#     with a different deployer key for each network:
+#       RPC_URL                that network's RPC (Base Sepolia: https://sepolia.base.org works)
+#       ETHERSCAN_API_KEY      Etherscan API V2 key (covers Basescan and Base Sepolia)
+#       DEPLOYER_PRIVATE_KEY   key of a fresh account. Mainnet: ~0.003 ETH and 1,252 USDC
+#                              (seedUSDC 2 + seedCapitalUSDC 1,250). Sepolia: test ETH and
+#                              7 test USDC from faucet.circle.com. It ends with NO roles. Fund
+#                              it just before the run.
+#   - Environment variable:
+#       DEPLOYER               that key's address (not a secret)
 #
-# The private key is passed to the broadcast step only (Phase 4, A4): every other step,
-# `forge test` included, runs dependency code that must never see it. Every action is pinned
-# to a commit.
+# Isolation (Phase 4, A4 and review S-02). The `test` job has no environment and no secrets,
+# and checks the dependency pins before it builds anything. The `deploy` job starts only after
+# it. There the RPC URL reaches only the steps that talk to the chain, and the private key
+# only the broadcast step, which removes it from the environment before forge starts and passes
+# it on the command line: Solidity code, dependencies included, can read environment variables
+# (vm.envString) but not forge's arguments. Every action is pinned to a commit.
 #
 # Run: Actions -> deploy-base-mainnet -> Run workflow. Network base-sepolia first (dry-run,
-# then broadcast), then base (dry-run, then broadcast).
+# then broadcast), then base (dry-run, then broadcast). If a broadcast stops part-way, read
+# RUNBOOK_MAINNET.md §2 ("If a broadcast stops part-way") before running anything again.
 
 on:
   workflow_dispatch:
@@ -34,7 +39,7 @@ on:
         type: choice
         options: [base-sepolia, base]
       admin:
-        description: "Admin Safe on that network (gets DEFAULT_ADMIN_ROLE + GUARDIAN_ROLE)"
+        description: "Admin on that network: a Safe (an EOA is accepted on Sepolia only if config/84532.json sets allowEoaAdmin)"
         required: true
         type: string
       guardian:
@@ -61,21 +66,47 @@ concurrency:
 permissions: {}
 
 jobs:
+  test:
+    name: Pins and tests (no secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
+
+      - name: Dependency pins (A13)
+        run: script/check-deps.sh
+
+      - name: Tests
+        run: forge test
+
+      - name: Tests in isolated mode (per-call gas budgets)
+        run: forge test --isolate
+
   deploy:
+    name: Deploy (${{ inputs.network }}, ${{ inputs.mode }})
+    needs: test
     runs-on: ubuntu-latest
     environment: ${{ inputs.network == 'base' && 'base-mainnet' || 'base-sepolia' }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     permissions:
       contents: read
     env:
       NETWORK: ${{ inputs.network }}
       CHAIN_ID: ${{ inputs.network == 'base' && '8453' || '84532' }}
-      RPC_URL: ${{ inputs.network == 'base' && secrets.BASE_RPC_URL || secrets.BASE_SEPOLIA_RPC_URL }}
       ADMIN: ${{ inputs.admin }}
       GUARDIAN: ${{ inputs.guardian }}
       MODE: ${{ inputs.mode }}
       CONFIRM: ${{ inputs.confirm }}
-      # Not a secret: the address only. The key itself reaches the broadcast step alone.
+      # Not a secret: the address only.
       DEPLOYER_ADDRESS: ${{ vars.DEPLOYER }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -87,15 +118,19 @@ jobs:
         with:
           version: v1.5.1
 
+      - name: Dependency pins (this job builds from its own checkout)
+        run: script/check-deps.sh
+
       - name: Check inputs, secrets and chain
         env:
-          # Whether the secrets are set, without putting their values into this step (A4).
+          RPC_URL: ${{ secrets.RPC_URL }}
+          # Whether the secrets are set, without putting their values into this step.
           HAS_DEPLOYER_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY != '' }}
           HAS_ETHERSCAN_KEY: ${{ secrets.ETHERSCAN_API_KEY != '' }}
         run: |
           set -euo pipefail
           CONFIG="config/$CHAIN_ID.json"
-          [[ -n "$RPC_URL" ]] || { echo "::error::set the RPC secret for $NETWORK (BASE_RPC_URL or BASE_SEPOLIA_RPC_URL)"; exit 1; }
+          [[ -n "$RPC_URL" ]] || { echo "::error::set the RPC_URL secret in the $NETWORK environment"; exit 1; }
           [[ "$(cast chain-id --rpc-url "$RPC_URL")" == "$CHAIN_ID" ]] || { echo "::error::the RPC is not chain $CHAIN_ID"; exit 1; }
           ADMIN=$(cast to-check-sum-address "$ADMIN")
           if [[ "$NETWORK" == "base" || "$(jq -r .roles.allowEoaAdmin "$CONFIG")" != "true" ]]; then
@@ -104,9 +139,9 @@ jobs:
           GUARDIAN=$(cast to-check-sum-address "$GUARDIAN")
           if [[ "$MODE" == "broadcast" ]]; then
             [[ "$CONFIRM" == "DEPLOY" ]] || { echo "::error::type DEPLOY in 'confirm' to broadcast"; exit 1; }
-            [[ -n "$DEPLOYER_ADDRESS" ]] || { echo "::error::set the DEPLOYER repository variable to the deployer's address"; exit 1; }
-            [[ "$HAS_DEPLOYER_KEY" == "true" ]] || { echo "::error::set the DEPLOYER_PRIVATE_KEY secret"; exit 1; }
-            [[ "$HAS_ETHERSCAN_KEY" == "true" ]] || { echo "::error::set the ETHERSCAN_API_KEY secret"; exit 1; }
+            [[ -n "$DEPLOYER_ADDRESS" ]] || { echo "::error::set the DEPLOYER variable in the $NETWORK environment"; exit 1; }
+            [[ "$HAS_DEPLOYER_KEY" == "true" ]] || { echo "::error::set the DEPLOYER_PRIVATE_KEY secret in the $NETWORK environment"; exit 1; }
+            [[ "$HAS_ETHERSCAN_KEY" == "true" ]] || { echo "::error::set the ETHERSCAN_API_KEY secret in the $NETWORK environment"; exit 1; }
             DEPLOYER=$(cast to-check-sum-address "$DEPLOYER_ADDRESS")
           else
             DEPLOYER=0x000000000000000000000000000000000000bEEF   # unfunded dry-run sender
@@ -121,13 +156,11 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "deployer $DEPLOYER on $NETWORK: $(cast balance "$DEPLOYER" --ether --rpc-url "$RPC_URL") ETH, $(cast call "$USDC" 'balanceOf(address)(uint256)' "$DEPLOYER" --rpc-url "$RPC_URL") USDC wei"
 
-      - name: Tests (the Base mainnet fork scenarios run when deploying to mainnet)
+      - name: Base mainnet fork scenarios (mainnet only)
+        if: inputs.network == 'base'
         env:
-          BASE_RPC_URL: ${{ inputs.network == 'base' && secrets.BASE_RPC_URL || '' }}
-        run: forge test
-
-      - name: Tests in isolated mode (per-call gas budgets)
-        run: forge test --isolate
+          BASE_RPC_URL: ${{ secrets.RPC_URL }}
+        run: forge test --match-contract BaseMainnetForkTest -vv
 
       - name: Write roles into the config
         run: |
@@ -142,25 +175,34 @@ jobs:
           jq '.roles, .params' "$CONFIG"
 
       - name: Preflight - simulate the whole deployment against live chain state
+        env:
+          RPC_URL: ${{ secrets.RPC_URL }}
         run: forge script script/DeployBaseMainnet.s.sol --rpc-url "$RPC_URL" --sender "$DEPLOYER"
 
       - name: Broadcast and verify on the explorer
         if: inputs.mode == 'broadcast'
         env:
-          # The only step that sees the key. It must match the DEPLOYER variable.
+          RPC_URL: ${{ secrets.RPC_URL }}
           DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
           ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
         run: |
           set -euo pipefail
-          KEY_ADDRESS=$(cast wallet address --private-key "$DEPLOYER_PRIVATE_KEY")
+          # Out of the environment before forge starts: dependency code can read environment
+          # variables, not command-line arguments (review S-02).
+          KEY="$DEPLOYER_PRIVATE_KEY"; unset DEPLOYER_PRIVATE_KEY
+          SCAN="$ETHERSCAN_API_KEY"; unset ETHERSCAN_API_KEY
+          RPC="$RPC_URL"; unset RPC_URL
+          KEY_ADDRESS=$(cast wallet address --private-key "$KEY")
           [[ "$(cast to-check-sum-address "$KEY_ADDRESS")" == "$DEPLOYER" ]] || {
             echo "::error::DEPLOYER_PRIVATE_KEY does not match the DEPLOYER variable"; exit 1; }
-          forge script script/DeployBaseMainnet.s.sol --rpc-url "$RPC_URL" \
-            --private-key "$DEPLOYER_PRIVATE_KEY" --sender "$DEPLOYER" \
-            --broadcast --slow --verify --etherscan-api-key "$ETHERSCAN_API_KEY"
+          forge script script/DeployBaseMainnet.s.sol --rpc-url "$RPC" \
+            --private-key "$KEY" --sender "$DEPLOYER" \
+            --broadcast --slow --verify --etherscan-api-key "$SCAN"
 
       - name: Post-deploy check (read-only, live chain)
         if: inputs.mode == 'broadcast'
+        env:
+          RPC_URL: ${{ secrets.RPC_URL }}
         run: forge script script/PostDeployCheck.s.sol --rpc-url "$RPC_URL"
 
       - name: Summary
@@ -175,7 +217,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
-        if: inputs.mode == 'broadcast'
+        if: always() && inputs.mode == 'broadcast'
         with:
           name: deployment-${{ inputs.network }}
           path: |

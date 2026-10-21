@@ -19,8 +19,16 @@ import {SpectrumDeploy} from "../../script/lib/SpectrumDeploy.sol";
 import {LocalEnv} from "../../script/lib/LocalEnv.sol";
 import {IFiatToken} from "../../script/lib/IFiatToken.sol";
 import {TestnetVault} from "../../script/lib/TestnetVault.sol";
+import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
+import {PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
+import {PoolKey} from "v4-core/src/types/PoolKey.sol";
+import {SwapParams} from "v4-core/src/types/PoolOperation.sol";
+import {PoolSwapTest} from "v4-core/src/test/PoolSwapTest.sol";
 
 contract TestnetRehearsalTest is Test {
+    using StateLibrary for IPoolManager;
+    using PoolIdLibrary for PoolKey;
     LocalEnv.Env internal env;
     SpectrumDeploy.Config internal cfg;
     SpectrumDeploy.Deployment internal d;
@@ -77,6 +85,30 @@ contract TestnetRehearsalTest is Test {
         new TestnetVault(IERC20(env.usdc), "x", "x");
         vm.expectRevert(bytes("deployTestVaults: never on Base mainnet"));
         this.callDeployTestVaults();
+    }
+
+    /// Review S-01 (c): right after the deployment the pool has no liquidity, so anyone can walk
+    /// its price anywhere with a zero-delta swap, for free and unrecorded. The post-deploy check
+    /// must report that, not fail on it.
+    function test_S01_checkSurvivesAnEmptyPoolWalkedOffPar() public {
+        IPoolManager pm = IPoolManager(cfg.poolManager);
+        (uint160 start,,,) = pm.getSlot0(d.key.toId());
+        assertTrue(d.hook.priceWithinBand(start), "the deployment started the pool at par");
+        assertEq(pm.getLiquidity(d.key.toId()), 0, "and nobody has added liquidity yet");
+
+        PoolSwapTest router = new PoolSwapTest(pm);
+        uint160 limit = uint160((uint256(start) * 90) / 100);
+        vm.prank(makeAddr("griefer")); // holds no tokens
+        router.swap(
+            d.key,
+            SwapParams({zeroForOne: true, amountSpecified: -1, sqrtPriceLimitX96: limit}),
+            PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
+            ""
+        );
+        (uint160 moved,,,) = pm.getSlot0(d.key.toId());
+        assertEq(moved, limit, "price walked for free");
+        assertFalse(d.hook.priceWithinBand(moved));
+        SpectrumDeploy.check(cfg, d, address(this)); // reports, does not revert
     }
 
     function callDeployTestVaults() external {

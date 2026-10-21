@@ -1076,6 +1076,17 @@ contract SpectralStabilizerTest is SpectrumFixture {
         assertGe(stabilizer.rebaseStepRate(h1), stabilizer.rebaseStepRate(h2));
     }
 
+    /// Neighbouring inputs, where a flooring error would show first. Halmos proves this for
+    /// the linear curves; for the two quadratic fees its query times out (audit/formal.md).
+    function testFuzz_feeCurvesMonotoneOnAdjacentInputs(uint256 h) public view {
+        h = bound(h, 0, 1e18 - 1);
+        assertLe(stabilizer.mintFeeRate(h), stabilizer.mintFeeRate(h + 1));
+        assertLe(stabilizer.redeemFeeRate(h), stabilizer.redeemFeeRate(h + 1));
+        assertLe(stabilizer.bufferRate(h), stabilizer.bufferRate(h + 1));
+        assertGe(stabilizer.expansionCapRate(h), stabilizer.expansionCapRate(h + 1));
+        assertGe(stabilizer.rebaseStepRate(h), stabilizer.rebaseStepRate(h + 1));
+    }
+
     /// Anti-sandwich: one rebase step is always worth less than a mint + redeem round trip.
     function testFuzz_rebaseStepBelowRoundTripFees(uint256 h) public view {
         assertLt(

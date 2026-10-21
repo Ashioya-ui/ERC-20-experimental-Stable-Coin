@@ -10,6 +10,7 @@ import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
+import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta} from "v4-core/src/types/BeforeSwapDelta.sol";
 import {ModifyLiquidityParams, SwapParams} from "v4-core/src/types/PoolOperation.sol";
@@ -41,6 +42,12 @@ import {ISpectralEntropyOracle} from "./interfaces/ISpectralEntropyOracle.sol";
 ///         (`convertToAssets` of the measured wrapper, with the paired asset at par with sUSD).
 ///         Once the hook is deployed its pool key is public, so without this check anyone
 ///         could initialise the pool off-peg before the deployer does (Phase 4, A2).
+///         `initializePool` starts the pool at exactly that value, read on-chain in the same
+///         call, and does nothing if the pool has started already. The deployment uses it, so
+///         neither a front-running initialisation nor a donation that moves wsUSD's share
+///         price can make it fail (Phase 4 review, S-01). The band binds the start only: an
+///         empty pool's price can be moved for free, and the first liquidity provider is
+///         protected by the position's own price range and slippage limits, not by the hook.
 ///
 ///         Oracle failures. The oracle call is wrapped in try/catch. A failure that carries
 ///         revert data (a bug or a guard in the oracle) is logged and skipped, so it never
@@ -48,13 +55,14 @@ import {ISpectralEntropyOracle} from "./interfaces/ISpectralEntropyOracle.sol";
 ///         then the whole swap reverts (`OracleOutOfGas`). Otherwise a swapper could pick a
 ///         gas limit that starves the call and so choose not to be recorded. The oracle never
 ///         reverts without data: it uses custom errors and checked arithmetic (Panic data).
-///         Gas: a window close with cold storage costs about 50k gas (see the tests); wallets
+///         Gas: a window close with cold storage costs about 37k gas (see the tests); wallets
 ///         that size gas with eth_estimateGas include it automatically.
 ///
 ///         Implemented directly against `IHooks`. BaseHook is no longer part of
 ///         v4-periphery; it lives in OpenZeppelin's uniswap-hooks.
 contract SpectralHook is IHooks {
     using PoolIdLibrary for PoolKey;
+    using StateLibrary for IPoolManager;
 
     /// @notice Largest allowed distance, in bp of price, between the pool's starting price and
     ///         wsUSD's redemption value.
@@ -72,6 +80,10 @@ contract SpectralHook is IHooks {
     /// @dev 10^decimals of the measured and of the paired currency.
     uint256 internal immutable measuredUnit;
     uint256 internal immutable otherUnit;
+    /// @dev The rest of the allowed pool's key, for `initializePool`.
+    Currency internal immutable otherCurrency;
+    uint24 internal immutable poolFee;
+    int24 internal immutable poolTickSpacing;
 
     event OracleRecordFailed(bytes reason);
 
@@ -108,11 +120,34 @@ contract SpectralHook is IHooks {
         measuredIsCurrency0 = Currency.unwrap(measured) < Currency.unwrap(other);
         measuredUnit = 10 ** IERC20Metadata(Currency.unwrap(measured)).decimals();
         otherUnit = 10 ** IERC20Metadata(Currency.unwrap(other)).decimals();
-        (Currency c0, Currency c1) = measuredIsCurrency0 ? (measured, other) : (other, measured);
-        PoolKey memory key =
-            PoolKey({currency0: c0, currency1: c1, fee: fee, tickSpacing: tickSpacing, hooks: IHooks(address(this))});
-        allowedPoolId = key.toId();
+        otherCurrency = other;
+        poolFee = fee;
+        poolTickSpacing = tickSpacing;
+        allowedPoolId = _poolKey(measured, other, fee, tickSpacing).toId();
         Hooks.validateHookPermissions(IHooks(address(this)), getHookPermissions());
+    }
+
+    /// @notice Start the allowed pool at wsUSD's redemption value (`parSqrtPriceX96`), unless
+    ///         it has started already. Anyone may call it: the price is read on-chain in this
+    ///         call, so it is always inside the band, and a deployment that finds the pool
+    ///         started (by anyone, necessarily inside the band) carries on (review S-01).
+    /// @return started True if this call initialised the pool.
+    function initializePool() external returns (bool started) {
+        PoolKey memory key = _poolKey(measuredCurrency, otherCurrency, poolFee, poolTickSpacing);
+        (uint160 current,,,) = poolManager.getSlot0(allowedPoolId);
+        if (current != 0) return false;
+        poolManager.initialize(key, parSqrtPriceX96());
+        return true;
+    }
+
+    function _poolKey(Currency measured, Currency other, uint24 fee, int24 tickSpacing)
+        private
+        view
+        returns (PoolKey memory)
+    {
+        (Currency c0, Currency c1) =
+            Currency.unwrap(measured) < Currency.unwrap(other) ? (measured, other) : (other, measured);
+        return PoolKey({currency0: c0, currency1: c1, fee: fee, tickSpacing: tickSpacing, hooks: IHooks(address(this))});
     }
 
     /// @notice Hook permissions: beforeInitialize (pool allow-list) and afterSwap (feed).
@@ -161,6 +196,13 @@ contract SpectralHook is IHooks {
         // one raw unit of wsUSD is worth a * otherUnit / (measuredUnit * 1e18) raw units of the pair
         if (measuredIsCurrency0) return Math.mulDiv(a * otherUnit, Q96, measuredUnit * 1e18);
         return Math.mulDiv(measuredUnit * 1e18, Q96, a * otherUnit);
+    }
+
+    /// @notice `parPriceX96()` as a Q64.96 square root: the price `initializePool` starts at.
+    function parSqrtPriceX96() public view returns (uint160) {
+        // Checked multiplication (not a shift) so that an absurd par reverts instead of wrapping.
+        // forge-lint: disable-next-line(unsafe-typecast)
+        return uint160(Math.sqrt(parPriceX96() * Q96)); // a square root of a uint256 fits in 128 bits
     }
 
     /// @notice True if `sqrtPriceX96` is within INIT_PRICE_TOLERANCE_BPS of `parPriceX96()`.

@@ -9,9 +9,14 @@ import {ISpectralEntropyOracle} from "./interfaces/ISpectralEntropyOracle.sol";
 ///
 /// @dev    Window. A ring buffer of the last 8 *blocks* of activity. Each slot holds the
 ///         absolute **net** flow of its block: the hook passes the signed delta of the measured
-///         currency, and the slot keeps |sum of signed deltas| for that block. A round trip in
-///         one block therefore records close to nothing, which is what makes wash trading an
-///         expensive way to shape the signal (Phase 4, A6). The dust filter applies per swap.
+///         currency, and the slot keeps |sum of signed deltas| for that block (Phase 4, A6).
+///         The dust filter applies twice: a swap below `minObservation` is ignored, and so is a
+///         closed block whose *net* flow is below it. Such a block (a same-block round trip,
+///         or a whale trade that arbitrage reverses in the same block) carries no signal, so it
+///         takes no slot: the next block reuses its slot. Without this, eight round trips of
+///         dust size read as a perfectly calm window, H = 0, and one small one-way block among
+///         them as a spike, H = 1 (Phase 4 review, S-04). Net flow does not make steering H
+///         expensive; it makes it slow (see Smoothing and audit/oracle-manipulation.md).
 ///
 ///         Signal. H_WHT in [0, 1e18] is the normalised Shannon entropy of the Walsh power
 ///         spectrum of the window, oldest block first (see SpectralMath). A homogeneous flow
@@ -28,7 +33,10 @@ import {ISpectralEntropyOracle} from "./interfaces/ISpectralEntropyOracle.sol";
 ///         time, which cannot be bought, instead of a few blocks of gas.
 ///
 ///         Fallbacks. `NEUTRAL_ENTROPY` (0.5) is returned until 8 blocks have been seen, and
-///         whenever no swap has been recorded for `staleAfter` seconds.
+///         whenever no block with net flow at or above the dust threshold has entered the
+///         window for `staleAfter` seconds. A stale signal starts over at its next record:
+///         the window empties and the average returns to neutral, so nothing recorded before
+///         the gap can come back in one swap (Phase 4 review, S-04).
 ///
 ///         Trust. Only the hook may write, and the hook is fixed at construction: the
 ///         deployment predicts its CREATE2 address (Phase 4, A3). There is no owner, so nobody
@@ -60,7 +68,7 @@ contract SpectralEntropyOracle is ISpectralEntropyOracle {
     uint8 public head; // slot of the newest block
     uint8 public filled; // number of slots holding data (<= 8)
     uint40 public currentBlock; // block number of _volumes[head]
-    uint40 public lastObservationTime; // timestamp of the latest recorded swap
+    uint40 public lastObservationTime; // when the latest non-dust block entered the window (or it restarted)
     uint40 public lastFoldTime; // timestamp of the latest EMA fold
     uint64 private _ema; // smoothed entropy, WAD
 
@@ -109,18 +117,36 @@ contract SpectralEntropyOracle is ISpectralEntropyOracle {
             _currentNet += amount;
         } else {
             // A new block starts: the previous block is now closed.
-            if (filled == WINDOW) _foldWindowIntoEma();
-            // forge-lint: disable-next-line(unsafe-typecast)
-            uint8 next = filled == 0 ? 0 : uint8((uint256(head) + 1) % WINDOW); // < 8
-            head = next;
-            if (filled < WINDOW) filled += 1;
+            if (filled != 0 && block.timestamp > uint256(lastObservationTime) + staleAfter) {
+                // The signal went stale: start over, as at deployment (review S-04).
+                filled = 0;
+                // forge-lint: disable-next-line(unsafe-typecast)
+                _ema = uint64(NEUTRAL_ENTROPY); // 0.5e18 < 2^64
+                // forge-lint: disable-next-line(unsafe-typecast)
+                lastFoldTime = uint40(block.timestamp);
+            }
+            if (filled == 0) {
+                // The first block of a (re)started window.
+                head = 0;
+                filled = 1;
+                // forge-lint: disable-next-line(unsafe-typecast)
+                lastObservationTime = uint40(block.timestamp);
+            } else if (_abs(_currentNet) >= minObservation && _currentNet != 0) {
+                // The closed block enters the window, and the window moves on.
+                if (filled == WINDOW) _foldWindowIntoEma();
+                // forge-lint: disable-next-line(unsafe-typecast)
+                head = uint8((uint256(head) + 1) % WINDOW); // < 8
+                if (filled < WINDOW) filled += 1;
+                // forge-lint: disable-next-line(unsafe-typecast)
+                lastObservationTime = uint40(block.timestamp);
+            }
+            // Otherwise the closed block netted out below the dust threshold: this block
+            // reuses its slot, and nothing about the signal changes.
             // forge-lint: disable-next-line(unsafe-typecast)
             currentBlock = uint40(block.number);
             _currentNet = amount;
         }
         _volumes[head] = _saturate(_currentNet);
-        // forge-lint: disable-next-line(unsafe-typecast)
-        lastObservationTime = uint40(block.timestamp);
     }
 
     function _foldWindowIntoEma() private {
@@ -182,12 +208,14 @@ contract SpectralEntropyOracle is ISpectralEntropyOracle {
         return _currentNet;
     }
 
-    /// @notice True if no swap has been recorded for `staleAfter` seconds.
+    /// @notice True if no block with net flow at or above the dust threshold has entered the
+    ///         window for `staleAfter` seconds.
     function isStale() public view returns (bool) {
         return block.timestamp > uint256(lastObservationTime) + staleAfter;
     }
 
-    /// @notice The window, oldest block first. Unfilled slots are zero.
+    /// @notice The window, oldest block first, including the open block (which may still net
+    ///         out below the dust threshold and be replaced). Unfilled slots are zero.
     function window() external view returns (uint256[8] memory) {
         return _chronological();
     }

@@ -190,20 +190,29 @@ contract OracleManipulationTest is Deployers {
 
     /// The patient attacker: wait long enough between folds that each carries the full
     /// emaAlphaMax. This is the residual cost after the A6 fixes, and it is wall time.
+    /// The cheapest pacing (Phase 4 review, S-04): fill the window once, then one dust-sized
+    /// one-way block every 20 minutes. dt / (dt + tau) = 0.25 at 20 minutes, so each fold already
+    /// carries the full alphaMax, and the gap stays under the 1-hour staleness horizon, beyond
+    /// which the signal would start over. (A 3-hour pacing, measured before the review, now
+    /// restarts the signal every time and gets nowhere.)
     function test_measureCostOfThePatientAttacker() public {
         uint256 folds;
         uint256 start = vm.getBlockTimestamp();
         uint256 volume;
+        for (uint256 i; i < 8; ++i) {
+            _nextBlock();
+            _tradeWs(DUST);
+            volume += DUST;
+        }
         for (uint256 f; f < 40; ++f) {
-            for (uint256 i; i < 9; ++i) {
-                _nextBlock();
-                _tradeWs(DUST);
-                volume += DUST;
-            }
+            vm.warp(vm.getBlockTimestamp() + 20 minutes);
+            _nextBlock();
+            _tradeWs(DUST);
+            volume += DUST;
             ++folds;
             if (oracle.smoothedEntropy() <= 0.05e18) break;
-            vm.warp(vm.getBlockTimestamp() + 3 hours); // let the next fold weigh alphaMax
         }
+        emit log_named_uint("patient: minutes", (vm.getBlockTimestamp() - start) / 1 minutes);
         emit log_named_uint("patient: folds", folds);
         emit log_named_uint("patient: hours", (vm.getBlockTimestamp() - start) / 1 hours);
         emit log_named_uint("patient: wsUSD traded (wei)", volume);

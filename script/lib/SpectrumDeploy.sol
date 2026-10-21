@@ -222,15 +222,20 @@ library SpectrumDeploy {
         d.hookSalt = salt;
 
         d.key = poolKey(c, address(d.wsusd), hookAddr);
-        IPoolManager(c.poolManager).initialize(d.key, parSqrtPriceX96(d.key));
 
         if (c.seedUsdc > 0) {
-            // Dead shares in wsUSD against first-depositor inflation games.
+            // Dead shares in wsUSD against first-depositor inflation games, before the pool
+            // starts, so that the starting price is read from a wrapper that is not empty.
             IERC20(c.usdc).approve(address(d.stabilizer), c.seedUsdc);
             d.stabilizer.mint(c.seedUsdc, deployer, 0);
             d.token.approve(address(d.wsusd), 1e18);
             d.wsusd.deposit(1e18, DEAD);
         }
+        // The hook starts its pool at wsUSD's redemption value, read on-chain in the same call,
+        // and does nothing if someone has started it already (necessarily inside the band). A
+        // front-running initialisation or a donation to the wrapper cannot stop the
+        // deployment (Phase 4 review, S-01).
+        d.hook.initializePool();
         if (c.seedCapitalUsdc > 0) {
             // First-loss protocol capital: never distributed, never withdrawable (B8).
             IERC20(c.usdc).approve(address(d.stabilizer), c.seedCapitalUsdc);
@@ -268,12 +273,14 @@ library SpectrumDeploy {
         require(PoolId.unwrap(d.hook.allowedPoolId()) == PoolId.unwrap(d.key.toId()), "check: hook pool id");
         (uint160 sqrtP,,,) = IPoolManager(c.poolManager).getSlot0(d.key.toId());
         require(sqrtP != 0, "check: pool not initialized");
-        // Before the first recorded swap the pool must sit at its starting price, inside the
-        // hook's band; afterwards trading legitimately moves it, so a deviation is reported.
-        if (d.oracle.filled() == 0) {
-            require(d.hook.priceWithinBand(sqrtP), "check: pool price is more than 50 bp from wsUSD's redemption value");
-        } else if (!d.hook.priceWithinBand(sqrtP)) {
+        // The hook's band binds the starting price. After that an empty pool's price can be
+        // moved for free (a zero-delta swap records nothing) and trading moves a live one, so
+        // a deviation is reported rather than failing the check (Phase 4 review, S-01).
+        if (!d.hook.priceWithinBand(sqrtP)) {
             console2.log("warning: pool price is more than 50 bp from wsUSD's redemption value");
+            if (IPoolManager(c.poolManager).getLiquidity(d.key.toId()) == 0) {
+                console2.log("  the pool has no liquidity yet, so its price means nothing until a position is added");
+            }
         }
 
         // roles
@@ -368,6 +375,8 @@ library SpectrumDeploy {
         vm.serializeUint(o, "bootstrapCap", c.bootstrapCap);
         vm.serializeUint(o, "supplyCap", c.supplyCap);
         vm.serializeUint(o, "seedCapitalUSDC", c.seedCapitalUsdc);
+        vm.serializeAddress(o, "allowedVaults", allowedVaults(c)); // the stabilizer's 8th argument
+        vm.serializeBool(o, "testVaults", c.deployTestVaults);
         string memory json = vm.serializeBytes32(o, "poolId", PoolId.unwrap(d.key.toId()));
         vm.writeJson(json, path);
     }

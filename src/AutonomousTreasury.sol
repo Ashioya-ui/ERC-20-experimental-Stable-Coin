@@ -228,13 +228,16 @@ contract AutonomousTreasury is ReentrancyGuardTransient {
         uint256 left = old.balanceOf(address(this));
         // Dust that vault rounding leaves behind is abandoned, not quarantined: it is worth at
         // most LEGACY_DUST_ASSETS and the stabilizer re-syncs right after.
+        uint256 quarantined;
         if (left > 0 && old.previewRedeem(left) > LEGACY_DUST_ASSETS) {
             if (address(legacyVault) != address(0)) revert LegacyNotEmpty();
             legacyVault = old;
+            quarantined = left;
         }
         asset.forceApprove(address(old), 0);
         vault = newVault;
-        emit VaultMigrated(address(old), address(newVault), left);
+        // Abandoned dust is not quarantined, so the event reports 0 for it (review S-05.1).
+        emit VaultMigrated(address(old), address(newVault), quarantined);
         _depositExcess(false);
     }
     // slither-disable-end reentrancy-no-eth
