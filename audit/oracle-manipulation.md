@@ -10,7 +10,7 @@ Reproduce: `forge test --match-contract OracleManipulationTest -vv`.
 
 | Setting | At H = 0 | At H = 0.5 (neutral) | At H = 1 |
 |---|---|---|---|
-| Mint fee | 1 bp | 13.25 bp | 50 bp |
+| Mint fee | 1 bp | 7 bp | 25 bp (50 bp before D4) |
 | Redemption fee | 1 bp | 3.25 bp | 10 bp |
 | Expansion cap (fraction of supply per epoch) | 20% | 11% | 2% |
 | Surplus buffer | **2.75%** (was 0.5%) | 2.75% | 5% |
@@ -48,11 +48,35 @@ Packing no longer works. The loop gives up after 150 blocks (it is bounded so th
 runs under `--isolate`); an earlier 400-block run reached only 0.401 towards 0 and 0.463
 towards 1, because every extra fold inside the hour is worth almost nothing.
 
+## After the independent review (S-04)
+
+The review found a cheaper route that the net-flow change itself opened: a same-block round
+trip of dust size nets to a zero slot, so eight of them read as a perfectly calm window
+(H = 0) and one small one-way block among them as a spike (H = 1). With one such block every 20
+minutes, each fold carried the full 0.25 weight, and H reached 0.03 or 0.97 in 3h20m for about
+0.002 USDC per block. After an idle hour, one swap brought the steered value back. Its proof of
+concept reproduced all of this on the reviewed code (`audit/logs/review-red-run-6c4bf58.log`).
+
+The fix (`SpectralEntropyOracle.record`):
+1. **Dust per block, not only per swap.** A closed block whose *net* flow is below the dust
+   threshold takes no slot. Round trips no longer enter the window at all.
+2. **Only such blocks keep the signal live.** Round trips cannot hold off staleness.
+3. **A stale signal starts over:** an empty window and a neutral average, so nothing recorded
+   before an idle hour can return in one swap.
+
+`OracleSteeringTest` pins these: each test failed on the reviewed code and passes now.
+
 ## The residual: the patient attacker
 
-Wall time cannot be bought. An attacker who waits about 3 hours between folds still reaches
-H ≤ 0.05 in **24 hours** and 810 wsUSD of volume. What that buys:
-- the mint fee falls from 13.25 bp to 1.1 bp, which is a discount on their own minting and
+Wall time cannot be bought, but it is cheaper than this report first said. Before the review it
+measured an attacker who waited 3 hours between folds: 24 hours and 810 wsUSD to reach H ≤ 0.05.
+A fold already carries the full 0.25 weight after 20 minutes, so the cheapest pacing is one
+dust-sized one-way block every 20 minutes, under the 1-hour staleness horizon. Measured now with
+that pacing: H ≤ 0.05 after 25 folds, 501 minutes (8.4 hours) and 330 wsUSD of volume (smoothed H
+0.0375). The test alternates buys and sells of 10 wsUSD, so the window is not perfectly
+flat and it takes more than the nine folds a flat window would need. A 3-hour pacing now restarts the signal every time and gets nowhere. What steering
+H to 0 buys:
+- the mint fee falls from 7 bp to about 1.1 bp, a discount on the attacker's own minting that
   costs the protocol fee income, not backing;
 - the expansion cap rises from 11% to 20% of supply per epoch, which is bounded by the
   25,000 sUSD supply cap at launch anyway;
@@ -61,8 +85,11 @@ H ≤ 0.05 in **24 hours** and 810 wsUSD of volume. What that buys:
   floor, so the mint → rebase → redeem sandwich stays unprofitable
   (`testFuzz_rebaseSandwichIsUnprofitable`).
 
-A day of visible, continuous trading to save 12 bp on minting is not a profitable attack at
-the launch cap, and every effect is bounded. H remains a heuristic, not a security boundary;
+Eight hours of visible, paced trading to save about 6 bp on minting is not a profitable attack
+at the launch cap, and every effect is bounded. Steering H towards 1 instead needs one large
+one-way block among small ones in every window; it raises everyone's fees (redemption to at most
+10 bp, minting to at most 25 bp) and halves the daily cap, which is griefing, not theft: the
+fees go to holders as surplus. H remains a heuristic, not a security boundary;
 that is why it only prices access and rate-limits growth.
 
 ## Monitoring

@@ -13,8 +13,10 @@ export W=$(jq -r .wsUSD      deployments/8453.json)   # wsUSD
 export L=$(jq -r .lens       deployments/8453.json)   # SpectrumLens (read-only views)
 ```
 
-Status: unaudited code, guarded launch (25,000 sUSD supply cap). Launch and describe sUSD as an
-**experimental token, not a stablecoin**. Section 7 explains why.
+Status: not externally audited. Phase 4 hardened the code and an independent review checked it
+(`REPORT_PHASE4.md`, frozen at tag `audit-freeze-1`). Guarded launch: 25,000 sUSD supply cap and
+1,250 USDC of protocol capital. Launch and describe sUSD as an **experimental token, not a
+stablecoin**. Section 7 explains why.
 
 ---
 
@@ -28,9 +30,12 @@ Status: unaudited code, guarded launch (25,000 sUSD supply cap). Launch and desc
 2. **Guardian.** A second, faster Safe (1-of-2) or a monitored hardware-wallet address. Put it in
    `roles.guardian`. The guardian can pause minting and rebasing, pull funds out of the vault,
    and cancel a pending vault migration. Nothing else.
-3. **Deployer.** A fresh Ledger account with about 0.002 ETH and **2 USDC** on Base. The USDC
-   seeds wsUSD's dead shares. The deployer ends with **no roles**. Use it for nothing else while
-   the deployment runs, because the hook salt is mined for its current nonce.
+3. **Deployer.** A fresh Ledger account with about 0.003 ETH and **1,252 USDC** on Base: 2 USDC
+   seed wsUSD's dead shares (`params.seedUSDC`) and 1,250 USDC become protocol capital
+   (`params.seedCapitalUSDC`). Protocol capital is never paid out: it covers the largest surplus
+   buffer (5% of the 25,000 cap), so yield is distributable from day one, and it absorbs the first
+   losses (`audit/parameters.md`). The deployer ends with **no roles**. Use it for nothing else
+   while the deployment runs, because the hook salt is mined for its current nonce.
 4. **Keys and services.** `cp .env.example .env`, then fill in `BASE_RPC_URL` (provider endpoint),
    `ETHERSCAN_API_KEY` (an Etherscan API V2 key, which covers Basescan) and `DEPLOYER`.
 5. **Toolchain.** Foundry 1.5.x, then `git submodule update --init --recursive`.
@@ -39,9 +44,10 @@ Status: unaudited code, guarded launch (25,000 sUSD supply cap). Launch and desc
 
 | Command | What it proves |
 |---|---|
-| `make test` | 126 unit, fuzz and invariant tests, plus 9 mainnet scenarios on a Base-shaped local chain |
+| `make test` | Unit, fuzz, invariant, attacker and paper-oracle tests, plus the mainnet scenarios on a Base-shaped local chain (counts in the README) |
+| `make test-isolate` | The same suite with every call in its own transaction, as on-chain |
 | `make rehearsal` | The **exact** mainnet script deployed on anvil, with Circle FiatToken v2.2 as USDC and a real v4 PoolManager. Then the post-deploy check, swaps, an x402 payment, keeper rebase, emergency exit and 7-day migration. Output goes to `rehearsal/latest.log` |
-| `make fork-test` | The same 8 scenarios on a fork of Base mainnet: real USDC, PoolManager, Aave waBasUSDC and Gauntlet USDC Prime |
+| `make fork-test` | The same scenarios on a fork of Base mainnet: real USDC, PoolManager, Aave waBasUSDC and Gauntlet USDC Prime |
 | `make preflight` | The whole deployment simulated against live Base state from your deployer address. It prints live vault data |
 
 Re-check the vault on deploy day (the report's advice): `make preflight` prints `totalAssets`,
@@ -54,6 +60,25 @@ cast call $V "maxDeposit(address)(uint256)" $DEPLOYER --rpc-url $RPC
 cast call $V "convertToAssets(uint256)(uint256)" 1000000 --rpc-url $RPC
 ```
 
+## 1A. Dress rehearsal on Base Sepolia (do this first)
+
+The same script and checks, on Base Sepolia, with Circle's test USDC. Sepolia has no USDC
+lending vault worth testing against, so `config/84532.json` sets `deployTestVaults`: the script
+first deploys two plain OpenZeppelin ERC-4626 vaults labelled "Spectrum TEST vault (no yield,
+testnet)". They pay no yield, and both they and the script refuse to run on chain 8453.
+
+1. An admin address on Base Sepolia. `config/84532.json` sets `allowEoaAdmin`, so a plain
+   wallet you control works; use a Safe (app.safe.global supports Base Sepolia) if you want to
+   rehearse the Safe flows too. Mainnet always requires a Safe.
+2. A fresh deployer with test ETH (any Base Sepolia faucet) and **7 test USDC** (faucet.circle.com:
+   2 for the seed, 5 of protocol capital).
+3. Either `make deploy-base-sepolia` (needs `BASE_SEPOLIA_RPC_URL` in `.env`), or the workflow
+   below with `network=base-sepolia`: first `mode=dry-run`, then `mode=broadcast`.
+4. Then `make post-deploy-check-sepolia`, mint and redeem a few test USDC through the stabilizer,
+   and keep `deployments/84532.json`.
+
+You will confirm 16 transactions: the two test vaults plus the 14 of the mainnet deployment.
+
 ## 2. Deploy
 
 Use one of two routes. The steps are the same either way.
@@ -65,30 +90,47 @@ make deploy-base-mainnet      # type 'deploy'; confirm each transaction on the L
 ```
 
 **B. From GitHub Actions** (`.github/workflows/deploy-base-mainnet.yml`):
-1. Add three repository secrets: `BASE_RPC_URL`, `ETHERSCAN_API_KEY` and `DEPLOYER_PRIVATE_KEY`,
-   and one repository **variable**, `DEPLOYER`, holding that key's address. Use a fresh key with
-   about 0.002 ETH and 2 USDC; it ends with no roles. The key is given to the broadcast step
-   alone, which first checks that it matches the `DEPLOYER` variable; no other step, `forge
-   test` included, can read it.
-2. Create the `base-mainnet` environment with yourself as required reviewer.
-3. Go to Actions → deploy-base-mainnet → Run workflow, then:
-   - first with `mode=dry-run` and `admin=<your Safe>`;
+1. Settings → Environments: create `base-sepolia` and `base-mainnet`. On each, add yourself as
+   required reviewer and limit deployment branches to the branch you release from.
+2. In **each** environment (not as repository secrets, which every workflow on every branch can
+   read), add the secrets `RPC_URL`, `ETHERSCAN_API_KEY` and `DEPLOYER_PRIVATE_KEY`, and the
+   variable `DEPLOYER` holding that key's address. Use a different fresh key per network, funded
+   just before the run (0.003 ETH and 1,252 USDC on Base; test ETH and 7 test USDC on Sepolia);
+   it ends with no roles. Only the broadcast step receives the key: it checks the key against
+   `DEPLOYER`, removes it from the environment and passes it to forge as an argument, so no
+   dependency code can read it. A Ledger (route A) keeps the key out of GitHub altogether.
+3. Go to Actions → deploy-base-mainnet → Run workflow, then, for `network=base-sepolia` first
+   and `network=base` after it:
+   - first with `mode=dry-run` and `admin=<your Safe on that network>`;
    - then with `mode=broadcast` and `confirm=DEPLOY`.
 
 The workflow:
-- rejects a non-Base RPC and an admin that is not a deployed contract;
-- runs every test, including the Base fork scenarios;
+- runs the dependency-pin check and the tests in a job that holds no secrets, first;
+- rejects an RPC for the wrong chain, and an admin that is not a deployed contract (a plain
+  wallet is accepted on Sepolia, where `config/84532.json` allows it);
+- runs every test, and the Base fork scenarios when the network is `base`;
 - simulates the deployment against live Base state;
 - broadcasts, verifies on Basescan, runs the post-deploy check;
-- uploads `deployments/8453.json` as an artifact.
+- uploads `deployments/<chain id>.json` as an artifact.
 
-You will confirm 11 transactions: treasury, token, oracle, stabilizer, wsUSD, the hook (through
-the CREATE2 proxy), pool `initialize`, and the seed (USDC approve, mint, sUSD approve, wsUSD
-deposit to `0xdead`). There are no wiring transactions: each contract receives the addresses it
-trusts in its constructor, predicted from the deployer's nonce and the hook's mined salt. The
-script aborts if a prediction is wrong, and the stabilizer's constructor refuses a token or
-treasury that names another stabilizer. Send nothing else from the deployer key while the
-script runs.
+You will confirm 14 transactions: treasury, token, oracle, stabilizer, wsUSD, lens, the hook
+(through the CREATE2 proxy), the seed (USDC approve, mint, sUSD approve, wsUSD deposit to
+`0xdead`), the pool's start (`hook.initializePool()`, which reads wsUSD's redemption value
+on-chain and does nothing if someone started the pool already) and the protocol capital (USDC
+approve, `contributeCapital`). There are no wiring transactions: each contract receives the
+addresses it trusts in its constructor, predicted from the deployer's nonce and the hook's mined
+salt. The script aborts if a prediction is wrong, and the stabilizer's constructor refuses a
+token or treasury that names another stabilizer. Send nothing else from the deployer key while
+the script runs.
+
+**If a broadcast stops part-way.** Look at why before you run anything again:
+- It stopped on a timeout or an RPC error, and the deployer's nonce is exactly where the
+  broadcast left it (`cast nonce $DEPLOYER` equals the last sent nonce + 1): re-run the same
+  command with `--resume`. It sends only the remaining transactions.
+- It stopped on a nonce error, or anything else was sent from the deployer key in between:
+  discard every address that key produced and deploy again from a new key. Do not resume. The
+  constructors' cross-checks catch honest mismatches, not someone holding the key who placed
+  look-alike contracts at the predicted addresses.
 
 When it finishes:
 - `deployments/8453.json` holds the addresses, the hook salt and the constructor arguments.
@@ -99,13 +141,19 @@ When it finishes:
   `make verify-blockscout`.
 - `make post-deploy-check` runs automatically. Re-run it any time. It checks every link, every
   role, the hook flags, that the hook address equals CREATE2(salt, init code), that the pool is
-  initialised, neutral entropy (0.5e18) during warm-up, the parameters, and reserve ≥ supply.
+  initialised (and warns if its price is more than 50 bp from par), neutral entropy (0.5e18)
+  during warm-up, the parameters, and reserve ≥ supply.
 
 ## 3. Day 0
 
 1. **Seed liquidity.** Open `https://app.uniswap.org/positions/create/v4?hook=$H`, then:
    - pick wsUSD/USDC, fee 0.01% (100 pips), tick spacing 1, a tight range around 1.00;
    - sign from the deployer or the Safe (WalletConnect).
+
+   An empty pool's price can be moved by anyone for free, so check it first. The post-deploy
+   check prints a warning if it is more than 50 bp from par. Your range and the interface's
+   slippage limits protect the position, but if the price is off, a 1-wei swap back to par
+   (free while the pool is empty) makes the interface's numbers sensible again.
 
    To get wsUSD: mint sUSD (`mint(uint256,address,uint256)` on `$S`), then call `deposit` on `$W`.
    Never put raw sUSD in any pool.
@@ -126,10 +174,13 @@ When it finishes:
    cast call $T "idleAssets()(uint256)"          --rpc-url $RPC
    cast call $L "supplyCapRemaining()(uint256)"  --rpc-url $RPC
    cast call $S "pendingVault()(address)"        --rpc-url $RPC   # alert if != 0x0
+   cast call $S "protocolCapital()(uint256)"     --rpc-url $RPC   # first-loss capital, sUSD wei
+   cast call $L "distributable()(uint256)"       --rpc-url $RPC   # what the next rebases can pay
    cast call $O "isStale()(bool)"                --rpc-url $RPC
    cast call $O "smoothedEntropy()(uint256)"     --rpc-url $RPC   # alert outside [0.1e18, 0.9e18] for an hour
    cast logs --rpc-url $RPC --address $S "VaultProposed(address,uint256)"
    cast logs --rpc-url $RPC --address $S "LossAbsorbed(uint256,uint256,uint256,uint256)"
+   cast logs --rpc-url $RPC --address $S "CapitalContributed(address,uint256,uint256)"
    cast logs --rpc-url $RPC --address $H "OracleRecordFailed(bytes)"
    ```
 
@@ -152,8 +203,16 @@ When it finishes:
 - **Supply cap**, initially 25,000 sUSD. Raise it from the Safe:
   `script/safe-tx.sh set-supply-cap 100000`, then upload the generated JSON in the Safe app
   (Apps → Transaction Builder) and execute.
+- **Protocol capital moves with the cap.** Keep it at 5% of the cap or more, so the largest
+  buffer stays covered and small losses never lower a balance. Before raising the cap to
+  100,000, add 3,750 USDC (5,000 in total): approve the stabilizer, then
+  `cast send $S "contributeCapital(uint256)" <assets in USDC units>` from the Safe or any
+  account. Capital can never be withdrawn or distributed; holders earn the yield on it.
 - **Daily expansion cap**: 10,000 sUSD per day, or 2–20% of supply once that is larger. It is
   immutable; redeploy if you need a different bootstrap value.
+- **Someone may fill the cap.** Anyone with about 25,000 USDC can mint up to the cap and hold
+  it, paying only the mint fee (the daily cap spreads that over a few days). Nobody loses
+  money, but new users cannot mint until you raise the cap.
 - Suggested gates before each raise:
   - 2+ weeks without incidents;
   - `reserveRatio` ≥ 1;
@@ -179,7 +238,12 @@ can send directly: `cast send $S "<fn>" --ledger --rpc-url $RPC`.
   (Gauntlet USDC Prime, the report's fallback). Only vaults on the allowlist fixed at deployment
   can be proposed: Aave waBasUSDC and Gauntlet USDC Prime. `cast call $S "allowedVaults()(address[])"`
   shows them, and nothing can add to the list afterwards, so moving to a third venue needs a new
-  deployment. Announce the migration; holders have **7 days** to redeem if they disagree. Then:
+  deployment. Announce the migration; holders have **7 days** to redeem if they disagree. That
+  protection assumes the old vault is liquid: redemptions beyond the idle buffer need it. Execute
+  a migration only when `cast call <old vault> "maxWithdraw(address)(uint256)" $T` covers the
+  position, or as an emergency you have announced; otherwise the shares the old vault cannot pay
+  are quarantined and holders who could not leave take the loss. The guardian cancels a
+  migration that does not meet this (E6). Then:
   1. `script/safe-tx.sh execute-migration`
   2. `script/safe-tx.sh set-buffer 1500`
   3. `cast send $S "rebalanceReserve()"`
@@ -222,15 +286,15 @@ can send directly: `cast send $S "<fn>" --ledger --rpc-url $RPC`.
 |---|---|
 | Aave Base USDC supply APY | 3.74% 30-day average, 3.31% 6-month, 4.16% spot |
 | Reserve yield after the 15% idle buffer | about 2.8–3.6% gross |
-| Surplus kept before the first rebase | 2.75% of supply at neutral H |
-| Time to the first distribution | about **10 months**, less if mint and redeem fees are high |
+| Surplus kept before the first rebase | 2.75% of supply at neutral H (5% at H = 1), covered by protocol capital |
+| Time to the first distribution | **day one** with 1,250 USDC of capital; about 10 months without it |
 | LP fee income on wsUSD/USDC | about 0% until the hook is routed (report: 0–0.7%) |
 | Gemini's "3.98–9.05% APY" | Not supported: 9% needs Noon, which is not an instantly redeemable USDC vault |
 | Gemini's "8 bp dynamic fee, 5.8% LP APR" | Not applicable: our fee is static, stable pools on Base charge 0.05–0.2 bp, and the volume assumes routing |
 
-The surplus buffer and rebase step are contract constants. If a 10-month wait before the first
-yield is unacceptable, change `BUFFER_LOW_H` / `BUFFER_HIGH_H` **before** deploying, and re-run
-`make test rehearsal`.
+The surplus buffer and rebase step are contract constants. Protocol capital is what lets yield
+flow from day one without lowering the buffer; `audit/parameters.md` has the simulation (12-month
+returns with and without capital, and after losses).
 
 ## 7. Legal (read before opening to the public)
 

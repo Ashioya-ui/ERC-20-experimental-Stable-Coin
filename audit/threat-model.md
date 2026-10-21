@@ -1,7 +1,8 @@
 # Threat model
 
 Scope: `src/` (SpectralStabilizer, SpectralToken, AutonomousTreasury, SpectralEntropyOracle,
-SpectralHook, WrappedSUSD, SpectralMath, SelfApproaching), the deployment library and scripts
+SpectralHook, WrappedSUSD, SpectrumLens, SpectralMath, SpectralPolicy, SelfApproaching), the
+deployment library and scripts
 in `script/`, and the GitHub Actions workflows. Baseline: commit 522881c (2026-10-16); the
 Phase 4 changes are listed in `audit/findings.md`, and this file describes the system after
 them.
@@ -26,7 +27,7 @@ cap and the surplus buffer within fixed ranges. H never touches backing.
 | Swapper / LP | trade in the one wsUSD/USDC pool, which feeds H | nothing: H is treated as attacker-chosen |
 | Keeper (anyone) | `rebase`, `sync`, `rebalanceReserve`, `recoverLegacy` | liveness only; every call is permissionless and bounded |
 | x402 facilitator | submit someone's EIP-3009 authorisation and pay its gas | nothing: it can only execute exactly what was signed |
-| Admin Safe (`DEFAULT_ADMIN_ROLE`) | set the supply cap and the liquidity buffer; propose a vault (from the allowlist, after Phase 4) and execute it after 7 days; grant and revoke roles (two-step, 3-day delay after Phase 4) | not to take funds: no admin path sends reserve funds to an address it chooses |
+| Admin Safe (`DEFAULT_ADMIN_ROLE`) | set the supply cap and the liquidity buffer; propose a vault (from the allowlist, after Phase 4) and execute it after 7 days; grant and revoke roles (two-step, 3-day delay after Phase 4) | not to take funds: no admin path sends reserve funds to an address it chooses Executing a migration while the old vault is illiquid quarantines shares and cuts the index for holders who could not leave first (review S-05.4): the runbook allows it only as an announced emergency, and the guardian cancels otherwise. |
 | Guardian (`GUARDIAN_ROLE`, also held by the admin) | pause and unpause minting and rebasing; emergency exit from the vault to idle funds; cancel a pending migration | bounded: cannot pause redemption or loss absorption, cannot move funds out |
 | ERC-4626 vault | holds about 85% of the reserve | solvency, an honest `previewRedeem`, and liquidity through `maxWithdraw` |
 | Uniswap v4 PoolManager | calls the hook | correct v4 semantics (audited deployment) |
@@ -50,7 +51,7 @@ cap and the surplus buffer within fixed ranges. H never touches backing.
 | Contract.function | Caller | Checks | Notes |
 |---|---|---|---|
 | Stabilizer.mint | anyone | not paused; `nonReentrant`; loss synced first; credited value is the measured increase in reserve value; minimum amount; slippage; net daily cap; supply cap; floor at the end | rounding and vault entry fees fall on the minter |
-| Stabilizer.redeem | holder | `nonReentrant`; never paused; loss synced first; minimum (or whole balance from idle funds); slippage; floor at the end | idle funds first, then the vault within `maxWithdraw` |
+| Stabilizer.redeem | holder | `nonReentrant`; never paused; loss synced first; minimum, or a whole balance of any size (paid from idle funds or the vault alike; a balance under one wei of USDC, 1e12 sUSD wei, pays out nothing and reverts, and right after a loss sync a dust redemption the vault serves can revert on the floor check by a wei or two of vault rounding, review S-05.2); slippage; floor at the end | idle funds first, then the vault within `maxWithdraw` |
 | Stabilizer.rebase | anyone | not paused; once per hour; loss synced first; step ≤ min(surplus above the buffer and protocol capital, supply × stepRate(H)); churn budget; floor | |
 | Stabilizer.sync | anyone | never paused | lowers the index so supply = reserve |
 | Stabilizer.rebalanceReserve | anyone | treasury acts only outside a 1% tolerance band | then re-syncs |
@@ -62,7 +63,7 @@ cap and the surplus buffer within fixed ranges. H never touches backing.
 | Token.mint / burn / setIndex | stabilizer only | immutable stabilizer address | |
 | Treasury.recoverLegacy | anyone | only redeems quarantined shares into idle funds | |
 | Treasury fund-moving functions | stabilizer only | immutable stabilizer address; `nonReentrant` | |
-| Oracle.record | hook only | immutable hook address; dust filter | |
+| Oracle.record | hook only | immutable hook address; dust filter per swap and per block's net flow; a stale signal starts over (review S-04) | |
 | Hook.beforeInitialize | PoolManager | only the one allowed PoolKey; starting price within 50 bp of wsUSD's redemption value (Phase 4, A2) | |
 | Hook.afterSwap | PoolManager | records the signed delta of wsUSD; an oracle failure with revert data is logged, out of gas reverts the swap | |
 | WrappedSUSD (ERC-4626) | anyone | OpenZeppelin virtual shares, dead-share seed at deployment | |
@@ -83,7 +84,11 @@ cap and the surplus buffer within fixed ranges. H never touches backing.
 | Donations and inflation attacks | donations become surplus; measured-increase crediting; wsUSD virtual shares plus dead shares |
 | Reentrancy, including read-only | `nonReentrant` on every state-changing path; the index changes only inside stabilizer calls; the only callbacks are to the vault and PoolManager, both trusted |
 | Rounding | mint rounds shares down, burns and transfers round up; minimum amounts keep the fee above worst-case vault rounding (A7) |
-| Oracle gas griefing | the worst-case `record()` cost is measured and bounded (A8, B4); a deliberate gas starvation reverts the swap |
+| Oracle gas griefing | the worst-case `record()` cost is measured and bounded (A8, B4: 37,261 gas for a cold window close since the state packing); a deliberate gas starvation reverts the swap |
+| Batched deposits leave funds idle | mints deposit only once idle funds exceed the target by 1% of the reserve; idle USDC still counts in the reserve, so nothing is mis-valued; the cost is at most 1% of the reserve earning nothing for a while; rebalance and migration still deposit everything above the target |
+| Dust shares in an old vault block later migrations | shares worth at most `LEGACY_DUST_ASSETS` (0.001 USDC) are not quarantined and do not keep `legacyVault` set (A12) |
+| The churn budget relying on an unproven constant | since Phase 4 it uses Theorem 4.3's proven bound; it is a design rule in any case, and no safety property depends on it. The step itself is proven never to revert, so it cannot block loss absorption (Halmos, `audit/formal.md`) |
+| Protocol capital drained or distributed | it only grows (`contributeCapital`), has no withdrawal path, and rebases stop at reserve − capital (B8) |
 | USDC blacklisting or pause | out of the protocol's control; documented in the runbook |
 | Base sequencer downtime | no transactions while it is down; the oracle reads neutral after `staleAfter` |
 
@@ -91,7 +96,11 @@ cap and the surplus buffer within fixed ranges. H never touches backing.
 
 A holder who learns of a vault loss before it is realised on-chain can redeem at par first.
 Once the loss is visible in the vault's share price, `sync` runs first in every mint, redeem and
-rebase, so nobody can exit at the old price after that. On Base the sequencer keeps no public
+rebase, so nobody can exit through the stabilizer at the old price after that. The wsUSD pool is
+the exception until someone calls `sync`: wsUSD's share price still reflects the old index, so
+selling wsUSD into the pool exits at the pre-loss price and the pool's liquidity providers carry
+the difference (review S-05.3). `sync` is permissionless and the runbook's keeper calls it as
+soon as a loss is visible (E4). On Base the sequencer keeps no public
 mempool, so the realistic case is not a mempool race but information that arrives before the
 loss lands: an exploit in progress, disclosed bad debt, a governance decision.
 
@@ -151,7 +160,9 @@ to idle USDC when a loss is anticipated but not yet realised.
 | An atomic strategy from no sUSD back to no sUSD never ends above its start, distributions caught included | `invariant_flatRoundTripsNeverProfit` (A10) |
 | Protocol capital is never distributed | `invariant_protocolCapitalNeverDistributed` (B8) |
 | H stays in [0, 1e18]; warm-up and stale periods read neutral | `SpectralEntropyOracleTest` |
-| A rebase step is below the minimum round-trip fee | `testFuzz_rebaseStepBelowRoundTripFees`; Halmos |
+| A rebase step is below the minimum round-trip fee | `testFuzz_rebaseStepBelowRoundTripFees`; Halmos `check_rebaseStepBelowRoundTripFees` (proven for every H) |
+| Policy curves stay in their bounds and move monotonically with H; the buffer never falls below 2.75% | Halmos (proven for every input, except the monotonicity of the two quadratic fees, which times out); `testFuzz_policyIsMonotoneInEntropy`, `testFuzz_feeCurvesMonotoneOnAdjacentInputs` |
+| The churn step never reverts and its results are exact, for every uint128 input with the old index in the window's range | Halmos `check_churnStepNeverRevertsAndIsExact` (proven) |
 
 ## 7. Out of scope
 

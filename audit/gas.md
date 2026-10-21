@@ -11,22 +11,35 @@ isolate the Track B work. `.gas-snapshot` is committed and CI fails on drift.
 
 ## Hot paths
 
+Final numbers are for the frozen code (after the review fixes); "before" is the start of
+Track B.
+
 | Call | Before | After | Change | Target |
 |---|---:|---:|---:|---|
-| `mint` (1,000 USDC) | 180,565 | 153,108 | −15.2% | −25% (not met, see below) |
-| `redeem` (1,000 sUSD) | 96,799 | 86,119 | −11.0% | −10% ✓ |
-| `rebase` | 99,496 | 60,076 | −39.6% | −15% ✓ |
-| `sync` (absorb a loss) | 54,533 | 30,560 | −44.0% | — |
-| `rebalanceReserve` | 79,205 | 68,600 | −13.4% | — |
+| `mint` (1,000 USDC) | 180,565 | 97,620 | −45.9% | −25% ✓ (batched deposits) |
+| `redeem` (1,000 sUSD) | 96,799 | 85,974 | −11.2% | −10% ✓ |
+| `rebase` | 99,496 | 63,032 | −36.6% | −15% ✓ |
+| `sync` (absorb a loss) | 54,533 | 31,255 | −42.7% | — |
+| `rebalanceReserve` | 79,205 | 68,622 | −13.4% | — |
 | `transfer` | 37,325 | 37,158 | −0.4% | −10% (not met, see below) |
-| `reserveAssets` (view) | 22,667 | 22,666 | 0% | — |
+| `reserveAssets` (view) | 22,667 | 22,688 | +0.1% | — |
 
 | Library call | Before | After | Change | Target |
 |---|---:|---:|---:|---|
 | `spectralEntropy8` | 32,945 | 19,023 | −42.3% | ≤ 20,000 ✓ (stretch 15,000 not met) |
 | `lnWad` | 2,297 | 1,105 | −51.9% | — |
 | `fwht8` | 563 | 563 | — | — |
-| `oracle.record` closing a window, cold storage | 50,352 | 41,121 | −18.3% | ≤ 38,000 (not met) |
+| `oracle.record` closing a window, cold storage | 50,352 | 37,638 | −25.3% | ≤ 38,000 ✓ |
+
+Against real MetaMorpho v1.0 bytecode (`test/realvault/MorphoReplica.t.sol`, normal mode):
+
+| Call | Gas |
+|---|---:|
+| mint 50 USDC, inside the deposit band (no vault call) | 72,373 |
+| mint 500 USDC, crossing the band (batched MetaMorpho deposit) | 193,370 |
+| redeem from the idle buffer | 55,649 |
+| redeem through MetaMorpho | 151,084 |
+| rebase with interest accrued | 54,678 |
 
 ## What changed
 
@@ -58,20 +71,19 @@ isolate the Track B work. `.gas-snapshot` is committed and CI fails on drift.
 
 ## Targets not met, and why
 
-- **`mint` −15.2% against a −25% target.** What is left is irreducible without changing what
-  minting does: a USDC `transferFrom`, a vault `deposit`, an sUSD mint, and three reserve
-  valuations that each have to read the vault after a state change. Dropping to two would mean
-  reusing a valuation across the deposit, which is exactly the thing B1 forbids, since the
-  vault's own rounding can move it.
+- **`mint`: met after Track B.** Track B alone reached −15.2%; the batched deposits that came
+  with the limitation fixes skip the vault call on most mints (only a mint that takes idle funds
+  more than 1% of the reserve above the target deposits, and then everything above the target
+  at once), which brings the benchmark to −45.9%. A mint that crosses the band still pays the
+  vault deposit: 193,370 gas against real MetaMorpho.
 - **`transfer` −0.4% against a −10% target.** The scenario sends to an address with no shares,
   so a 22,100-gas cold `SSTORE` (zero to non-zero) dominates and no arithmetic change can move
   it. The second `mulDiv` that B5 removed is about 150 gas. A transfer to an existing holder
   costs about 20,000 less, and that part did improve.
-- **`record` closing a window at 41,121 against a 38,000 target.** The remaining cost is one
-  cold `SSTORE` to the ring-buffer slot, the EMA slot, `lastFoldTime`, and the entropy
-  computation itself at 19,023. Reaching 38,000 would mean a shorter logarithm series, which
-  would break the 1-wei accuracy the reference tests pin. The budget the hook must carry is
-  now asserted at 56,000 (41,121 normal, 54,821 isolated), down from 70,000.
+- **`record`: met after the state packing.** Block number, timestamps and the average now
+  share one slot, and the per-swap events are gone: 37,638 gas for a cold window close,
+  including the review's block-level dust check (S-04). The hook's budget assertion stays at
+  56,000 so that it also holds under `--isolate`.
 - **`spectralEntropy8` 19,023 against a 15,000 stretch.** Eight `lnWad` calls at 1,105 each
   are 8,840 of it; the rest is the normalisation `mulDiv` (which must stay, because the
   library accepts any `uint256` input) and the two passes over the spectrum.
@@ -82,14 +94,14 @@ Limit 24,576 bytes; every contract keeps at least 1,024 bytes free (B6).
 
 | Contract | Runtime | Free |
 |---|---:|---:|
-| SpectralStabilizer | 21,990 | 2,586 |
-| AutonomousTreasury | 9,249 | 15,327 |
+| SpectralStabilizer | 21,486 | 3,090 |
+| AutonomousTreasury | 9,899 | 14,677 |
 | SpectralToken | 9,194 | 15,382 |
-| SpectralEntropyOracle | 5,329 | 19,247 |
+| SpectralHook | 6,610 | 17,966 |
+| SpectrumLens | 5,992 | 18,584 |
+| SpectralEntropyOracle | 5,570 | 19,006 |
 | WrappedSUSD | 5,352 | 19,224 |
-| SpectrumLens | 5,208 | 19,368 |
-| SpectralHook | 5,184 | 19,392 |
 
 The stabilizer grew during Track A (the vault allowlist, `AccessControlDefaultAdminRules`) and
-came back down when the views moved to the lens. 2,586 bytes is the tightest margin; anything
+came back down when the views moved to the lens. 3,090 bytes is the tightest margin; anything
 substantial added to it should go to the lens or a new contract instead.

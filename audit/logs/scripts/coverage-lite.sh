@@ -11,7 +11,7 @@ cp -r src foundry.toml remappings.txt $R/
 mkdir -p $R/script/lib && cp script/lib/SpectrumDeploy.sol script/lib/TestnetVault.sol $R/script/lib/
 cp -r test/utils test/mocks test/handlers test/reference test/paper test/artifacts $R/test/
 cp test/SpectrumProtocol.t.sol test/LossFrontRunning.t.sol test/ProtocolCapital.t.sol test/ReviewFindings.t.sol $R/test/
-ln -s /home/claude/spectrum/lib $R/lib
+ln -sfn /home/claude/spectrum/lib $R/lib
 cd $R
 export PATH=/home/claude/tools/bin:$PATH FOUNDRY_SOLC=/home/claude/tools/bin/solc-0.8.26 FOUNDRY_OFFLINE=true
 forge coverage --ir-minimum --report summary --no-match-coverage "test|script|lib" > $SP/coverage-lite.log 2>&1

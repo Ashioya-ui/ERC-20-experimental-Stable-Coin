@@ -1,8 +1,10 @@
 # Spectrum Protocol
 
-> **Status: Base mainnet deployment kit ready, not yet deployed.** The code is unaudited, so it
-> launches guarded: a 25,000 sUSD supply cap, a Safe as admin, and a 7-day timelock on moving
-> the reserve. Treat sUSD as an **experimental token, not a stablecoin**; see
+> **Status: hardened (Phase 4), not yet deployed, not externally audited.** The code is frozen
+> for review at tag `audit-freeze-1`; [`REPORT_PHASE4.md`](REPORT_PHASE4.md) has the findings,
+> the measurements and a go/no-go checklist. It launches guarded: a 25,000 sUSD supply cap,
+> 1,250 USDC of protocol capital, a Safe as admin, and a 7-day timelock on moving the reserve.
+> Treat sUSD as an **experimental token, not a stablecoin**; see
 > [`RUNBOOK_MAINNET.md`](RUNBOOK_MAINNET.md) §7.
 
 Spectrum Agentic USD (**sUSD**) is a reserve-backed, redeemable, rebasing ERC-20 built for
@@ -16,24 +18,32 @@ within fixed bounds.
 
 The previous SPCM v2 files are kept unchanged in [`legacy/spcm-v2/`](legacy/spcm-v2/).
 [`PROMPTS.md`](PROMPTS.md) holds the engineering prompts for Phases 1–4 and explains what
-changed and why. Phase 4 (optimization, security, and the paper's proven results) is next: run
-it before the mainnet broadcast. [`RUNBOOK_MAINNET.md`](RUNBOOK_MAINNET.md) is the deployment
-and operations runbook for Base.
+changed and why. Phase 4 (security, optimization, and the paper's proven results) is done:
+[`REPORT_PHASE4.md`](REPORT_PHASE4.md) summarises it and [`audit/`](audit/) holds the evidence.
+[`RUNBOOK_MAINNET.md`](RUNBOOK_MAINNET.md) is the deployment and operations runbook for Base, and
+[`SECURITY.md`](SECURITY.md) says how to report a vulnerability.
 
 ## Deploying to Base mainnet
 
+**First time? Start with [`DEPLOY_AND_TEST.md`](DEPLOY_AND_TEST.md):** run the tests, deploy to
+Base Sepolia and try it, in that order, from a computer or from GitHub.
+
 ```bash
-cp .env.example .env            # BASE_RPC_URL, ETHERSCAN_API_KEY, DEPLOYER (Ledger account)
+cp .env.example .env            # BASE_RPC_URL, BASE_SEPOLIA_RPC_URL, ETHERSCAN_API_KEY, DEPLOYER
 # set roles.admin (your Safe) and roles.guardian in config/8453.json
-make test rehearsal             # 135 tests, then the exact mainnet script on a Base-shaped anvil
+make test rehearsal             # 219 tests, then the exact mainnet script on a Base-shaped anvil
+make deploy-base-sepolia        # dress rehearsal on Base Sepolia, with labelled test vaults
 make fork-test                  # the same scenarios on a fork of Base mainnet
 make preflight                  # the whole deployment simulated against live Base state
 make deploy-base-mainnet        # broadcast + Basescan verification + post-deploy check
 ```
 
-You can also deploy without a local setup. Run **Actions → deploy-base-mainnet** in GitHub,
-first as a dry-run, then as a broadcast; it takes three secrets (see RUNBOOK_MAINNET.md §2B).
-On every push, CI runs the full suite, the anvil rehearsal and the Base fork scenarios.
+The deployer needs about 0.003 ETH and 1,252 USDC on Base: 2 USDC seed wsUSD's dead shares and
+1,250 USDC become protocol capital (7 test USDC on Sepolia). You can also deploy without a local
+setup: run **Actions → deploy-base-mainnet** in GitHub with `network=base-sepolia` first and
+`network=base` after, each as a dry-run and then a broadcast (RUNBOOK_MAINNET.md §1A and §2B).
+On every push, CI runs the full suite (also in isolated mode), Slither, the gas-snapshot check,
+the dependency pins, the anvil rehearsal and the Base fork scenarios.
 
 The reserve vault is Aave v3 waBasUSDC (StataTokenV2), with Gauntlet USDC Prime as the
 fallback. That choice and every address in `config/8453.json` come from the October 2026
@@ -47,7 +57,7 @@ research report; the runbook lists the sources.
 git submodule update --init --recursive   # forge-std v1.17.0, OpenZeppelin v5.4.0, v4-periphery (+ v4-core);
                                           # re-run it if a nested fetch times out
 forge build                               # first build takes about 2 min (via-IR, v4-core PoolManager)
-forge test                                # 135 tests (Base fork scenarios skip without BASE_RPC_URL)
+forge test                                # 219 tests (the Base fork suite skips without BASE_RPC_URL)
 FOUNDRY_PROFILE=ci forge test             # 10k fuzz runs; invariants 1,024 runs x 256 calls
 script/rehearsal/run.sh                   # mainnet rehearsal on anvil -> rehearsal/latest.log
 
@@ -66,30 +76,41 @@ stack-too-deep in `PoolManager` under via-IR.
 | Path | What |
 |---|---|
 | `src/libraries/SpectralMath.sol` | FWHT-8 (Yul butterflies), `lnWad`, `spectralEntropy8` |
+| `src/libraries/SpectralPolicy.sol` | The policy curves and the churn-budget step as pure functions, formally checked (`audit/formal.md`) |
+| `src/libraries/SelfApproaching.sol` | The paper's proven results in exact integer arithmetic (a library; nothing on-chain calls it yet) |
 | `src/SpectralEntropyOracle.sol` | 8-block ring buffer, dust filter, EMA, warm-up and staleness fallbacks |
 | `src/SpectralToken.sol` | sUSD: share-based rebasing ERC-20, EIP-2612, EIP-3009, ERC-1271 |
 | `src/AutonomousTreasury.sol` | Reserve adapter: idle USDC buffer in front of one ERC-4626 vault, emergency exit, migration with legacy-share quarantine |
 | `src/SpectralStabilizer.sol` | Mint/redeem, fees, caps (daily and total), buffer, micro-rebases, loss absorption, churn budget, vault governance |
 | `src/WrappedSUSD.sol` | wsUSD: non-rebasing ERC-4626 wrapper. Pools must use it, never raw sUSD |
 | `src/SpectralHook.sol` | Uniswap v4 hook (`beforeInitialize` + `afterSwap`) that feeds the oracle |
-| `test/SpectrumProtocol.t.sol` | The main suite (12 test contracts, including the invariants) |
+| `src/SpectrumLens.sol` | Read-only views: quotes, surplus, distributable, remaining caps, liquid assets |
+| `test/SpectrumProtocol.t.sol` | The main suite, including the invariants and the attacker actor |
+| `test/SpectralHook.t.sol`, `test/OracleManipulation.t.sol` | The hook on a real v4 PoolManager; measured cost of steering H |
+| `test/LossFrontRunning.t.sol`, `test/ProtocolCapital.t.sol`, `test/Benchmarks.t.sol` | Loss front-running (A9), protocol capital (B8), gas benchmarks |
+| `test/paper/`, `test/halmos/` | The paper's theorems as test oracles; symbolic properties for Halmos |
+| `test/realvault/` | The same flows against real MetaMorpho v1.1 bytecode |
 | `test/mainnet/MainnetScenarios.t.sol` | Day-one scenarios run through the real deploy procedure: locally on a Base-shaped chain, and on a Base fork |
 | `test/handlers/`, `test/mocks/`, `test/utils/` | Invariant handler, mocks, shared fixture |
 | `test/reference/` | 80-digit Python reference values for `lnWad` and the entropy, plus their generator |
 | `test/artifacts/` | Circle FiatToken v2.2 bytecode (real USDC code for local rehearsals), with provenance |
-| `config/8453.json` | Base mainnet addresses and launch parameters |
+| `config/8453.json`, `config/84532.json` | Base mainnet and Base Sepolia addresses and launch parameters |
 | `script/lib/SpectrumDeploy.sol` | The single deploy, check and record procedure used by every script and test |
 | `script/DeployBaseMainnet.s.sol`, `script/PostDeployCheck.s.sol` | Mainnet deployment and read-only verification |
 | `script/rehearsal/` | Base-shaped anvil environment, scenario transactions, `run.sh` |
 | `script/verify.sh`, `script/safe-tx.sh` | Explorer verification with explicit constructor arguments; Safe Transaction Builder batches |
 | `Makefile`, `.env.example`, `RUNBOOK_MAINNET.md` | Operator interface |
+| `script/lib/TestnetVault.sol` | The labelled no-yield test vault for Base Sepolia; it refuses chain 8453 |
 | `script/DeployLocal.s.sol` | Quick local playground (anvil only) |
+| `audit/`, `docs/`, `sim/` | Threat model, findings, tool reports, gas, formal checks; the paper map and design notes; the parameter simulation |
 | `legacy/spcm-v2/` | Previous design, unchanged |
 
 ## How it works
 
-1. **Backing.** `mint` takes collateral (e.g. USDC) into the treasury, which deposits it in the
-   ERC-4626 vault. The minter receives the *measured* increase in reserve value minus a fee.
+1. **Backing.** `mint` takes collateral (e.g. USDC) into the treasury, which keeps a liquidity
+   buffer idle and deposits the rest in the ERC-4626 vault in batches, once idle funds exceed the
+   target by 1% of the reserve. The minter receives the *measured* increase in reserve value
+   minus a fee.
    `redeem` burns sUSD and pays collateral 1:1 minus a fee. Redemption cannot be paused.
 2. **Reserve floor.** Every state-changing entry point ends with
    `reserveValue() >= totalSupply()` and reverts if it fails. The reserve is valued
@@ -100,7 +121,8 @@ stack-too-deep in `PoolManager` under via-IR.
    can exit at the old price.
 4. **Distributing surplus.** Fees and vault yield create surplus. `rebase()` is permissionless
    and allowed at most once an hour. It raises every balance by at most 1 bp of supply (0.5 bp at
-   H = 1), and only out of surplus above an H-dependent buffer. A rebase step is always smaller
+   H = 1), and only out of surplus above an H-dependent buffer and the protocol capital: supply
+   may rise to at most min(reserve / (1 + buffer), reserve − capital). A rebase step is always smaller
    than the minimum mint fee plus redeem fee, so a mint → rebase → redeem sandwich always loses
    money (fuzz-tested).
 5. **Entropy H.** The oracle keeps one slot per *block*: all swaps in a block are summed, and
@@ -118,17 +140,18 @@ stack-too-deep in `PoolManager` under via-IR.
 
    | | H = 0 (calm) | H = 0.5 | H = 1 (spiky) |
    |---|---|---|---|
-   | Mint fee | 1 bp | 13.25 bp | 50 bp |
+   | Mint fee | 1 bp | 7 bp | 25 bp |
    | Redeem fee | 1 bp | 3.25 bp | 10 bp |
    | Daily mint cap (share of supply, or the bootstrap cap if larger) | 20% | 11% | 2% |
    | Surplus buffer kept before distributing | 2.75% | 2.75% | 5% |
    | Max rebase step | 1 bp | 0.75 bp | 0.5 bp |
 
-7. **Churn budget (`C_DIAM`).** Within a 7-day window, let L be the index's total variation
-   (sum of all moves) and D its range (max minus min). A positive rebase is deferred if afterwards
-   L > C_DIAM × D. Monotone yield distribution always has L = D, so it is never blocked. With
-   equal-sized gains and losses alternating, the third upward step in a window is deferred. Loss
-   absorption is never deferred.
+7. **Churn budget (`CHURN_BUDGET_WAD`).** Within a 7-day window, let L be the index's total
+   variation (sum of all moves) and D its range (max minus min). A positive rebase is deferred if
+   afterwards L > 3.1356 × D. Monotone yield distribution always has L = D, so it is never
+   blocked. With equal-sized gains and losses alternating, the third upward step in a window is
+   deferred. Loss absorption is never deferred, and the step can never revert (proven with
+   Halmos).
 8. **Hook.** The hook is restricted to one pool, fixed at construction (`beforeInitialize`
    rejects every other pool). It records the absolute wsUSD leg of each swap.
    - If the oracle call fails with revert data, the hook logs it and the swap proceeds, so the
@@ -140,7 +163,9 @@ stack-too-deep in `PoolManager` under via-IR.
    - redemptions are paid from idle funds first, then from the vault within its `maxWithdraw`;
    - if both fall short, the redemption fails with `InsufficientLiquidity(available)`;
    - deposits respect `maxDeposit`, and a vault that refuses a deposit leaves the funds idle
-     instead of blocking mints.
+     instead of blocking mints;
+   - mints deposit in batches: most mints never touch the vault, which saves its deposit gas and
+     rounding, at the cost of up to 1% of the reserve sitting idle for a while.
 
    The guardian can pull everything out of the vault at once (`emergencyExitVault`). The admin
    can move the reserve to another vault after a 7-day timelock. Shares the old vault cannot pay
@@ -154,6 +179,11 @@ stack-too-deep in `PoolManager` under via-IR.
    - negative rebases would leave the last LPs short.
 
    Pools pair wsUSD, an ERC-4626 wrapper over sUSD (the stETH/wstETH pattern), with USDC.
+12. **Protocol capital.** `contributeCapital` adds collateral that is never paid out: the
+    deployment contributes 1,250 USDC, enough to cover the largest surplus buffer (5%) at the
+    25,000 sUSD cap. Fees and yield are therefore distributable from day one instead of after
+    about ten months, small vault losses lower no balance, and redeeming ahead of a known loss
+    gains nothing while the loss fits in the cushion (A9). Holders earn the yield on it.
 
 ## The paper
 
@@ -168,8 +198,9 @@ lists every result, its status (proven, numerical, or open) and where the code u
 - `test/paper/` uses the proven results as test oracles, keeps the paper's Section 7.5
   counterexample (sampled checks are not enough) as a regression test, and checks the library
   against the paper's own Python on 1,000 polygons: every verdict, diameter and length agrees.
-- `C_DIAM_WAD = 2 + π/3` in the stabilizer is **Conjecture 1.2, which is open**. It is used only
-  as the churn budget's design constant; no safety property depends on it.
+- The churn budget's constant is Theorem 4.3's **proven** bound, 3.1356… Until Phase 4 it was
+  2 + π/3, whose sharpness is Conjecture 1.2 (open). No code depends on an open result now. It
+  is a design constant in a one-dimensional rule: no safety property depends on it.
 - Nothing on-chain calls `SelfApproaching` yet. [`docs/design/reserve-allocation.md`](docs/design/reserve-allocation.md)
   describes where the proven bound would become load-bearing (a reserve split across two vaults)
   and why a plain turnover cap should come first.
@@ -185,8 +216,8 @@ lists every result, its status (proven, numerical, or open) and where the code u
    inputs. It is exactly invariant under scaling and under dyadic (XOR) time shifts, and it grows
    with whale size. It is within 38 wei of the 80-digit reference.
 4. Oracle: per-block aggregation, ring buffer order, dust, saturation, warm-up, staleness and the
-   EMA update are each checked. The worst-case write (window close, cold storage) costs about
-   50k gas.
+   EMA update are each checked. The worst-case write (window close, cold storage) costs 37,261
+   gas.
 5. Token: rebasing accounting, rounding in the reserve's favour, and EIP-2612 permit and EIP-3009
    transfer/receive/cancel from both EOAs and an ERC-1271 smart account. Also checked: replay,
    validity windows, forged or tampered signatures, and value surviving a rebase.
@@ -200,6 +231,8 @@ lists every result, its status (proven, numerical, or open) and where the code u
    - calm flow followed by a whale raises the mint fee;
    - a broken oracle does not brick swaps, and starving the oracle of gas reverts the swap.
 8. Invariants (256 x 128 by default; CI 1,024 x 256, 262,144 calls each):
+   - no free lunch: an attacker that flash-borrows, mints, redeems, gifts, donates, rebases and
+     sets H at will never ends above its start plus its share of distributed surplus (A10);
    - reserve ≥ supply;
    - share accounting is consistent;
    - balances never exceed supply;
@@ -237,49 +270,76 @@ lists every result, its status (proven, numerical, or open) and where the code u
     `BASE_RPC_URL` set, they run against Base mainnet itself.
 11. Rehearsal (`script/rehearsal/run.sh`, log in `rehearsal/latest.log`): the mainnet script
     broadcast to anvil, followed by the post-deploy check and the runbook's own `cast` commands
-    for keeper, guardian and admin actions.
+    for keeper, guardian and admin actions. The Base Sepolia path runs locally too
+    (`test/mainnet/TestnetRehearsal.t.sol`).
+12. Formal checks (Halmos, `audit/formal.md`): 16 properties proven for every input in their domain (cvc5 1.2.1 or
+    Bitwuzla 0.8.1): every policy curve's bounds and the buffer floor; monotonicity of the buffer,
+    expansion cap and rebase step; the anti-sandwich inequality at every H; the churn step's freedom
+    from reverts and its exactness; and the FWHT's linearity and involution. The two quadratic
+    fees' monotonicity times out and stays fuzzed; the token's share arithmetic did not finish.
+13. The paper (`test/paper/`): the library agrees with the paper's Python on 1,000 polygons, the
+    proven theorems hold on every accepted polygon from six generators, and the Section 7.5
+    counterexample is rejected.
+14. Static analysis, mutation and coverage: Slither and Aderyn findings are triaged in
+    `audit/slither.md`; Gambit mutants: 9 of the first 10 killed, the survivor equivalent in effect, 28 still to run
+    (`audit/mutation.md`); coverage of `src/` without the hook (whose suites need a PoolManager the coverage build
+    cannot fit in 8 GB) is 94% of lines and 80% of branches (`audit/coverage.md`).
 
-Contract sizes (runtime bytes): Stabilizer 18,072, Token 9,534, Treasury 9,271, Oracle 5,957,
-wsUSD 5,352, Hook 3,841. All are under the 24,576-byte limit. Typical gas: mint about 211k
-(including the vault deposit), redeem about 126k, rebase about 95k, transfer about 55k.
+Contract sizes (runtime bytes, limit 24,576): Stabilizer 21,486, Treasury 9,899, Token 9,194,
+Hook 6,610, Lens 5,992, Oracle 5,570, wsUSD 5,352. Gas, measured from inside a call with a
+mock vault: mint 97,620, redeem 85,974, rebase 63,032, sync 31,255, transfer 37,158; the oracle's
+worst-case write 37,638. Against real MetaMorpho bytecode, a mint inside the deposit band costs
+72,373 and one that crosses it 193,370. Details in `audit/gas.md`.
 
 ## Known limitations: read before deploying
 
-1. **C_diam is a conjecture, used only by analogy.** 2 + π/3 ≈ 3.0472 is the conjectured sharp
-   length-over-diameter ratio of self-approaching plane curves. The proven bounds are
-   3.0472 ≤ C_diam ≤ 3.1356. The churn budget borrows the number as a design constant. No
-   stability property follows from the geometry. Any constant around 3 would behave the same.
-2. **H is cheap to manipulate.** About 80 equal-sized small swaps push the EMA toward 0, which
-   means minimum fees and the maximum mint cap. One large swap in a window pushes it up. This is
-   acceptable only because H is bounded to the settings in the table above and never touches the
-   backing. Treat H as a heuristic, not a security signal.
-3. **Vault risk is the real risk.** Losses, withdrawal limits and share-price manipulation of the
-   chosen ERC-4626 vault pass straight through to holders. Pick a vault with:
+1. **Vault risk is the real risk.** Losses, withdrawal limits and share-price manipulation of the
+   chosen ERC-4626 vault pass straight through to holders, beyond what the surplus and the
+   protocol capital absorb. Pick a vault with:
    - donation-resistant accounting;
    - deep withdrawal liquidity;
    - share prices below 100 asset wei per share wei (rounding is covered by the 1 bp fee floor
      only up to that point).
 
    If the vault cannot pay, redemptions revert until it can.
-4. **Admin powers.**
+2. **Loss front-running.** A holder who learns of a vault loss before it is realised can redeem
+   at par first and leave the excess over the cushion to those who stay (A9, threat model §5.1).
+   With capital at 5% of the cap, a loss of up to 5% of the cap lowers no balance and exiting
+   early gains nothing. Redemption cannot be paused, by design, so this cannot be closed without
+   giving up instant exits.
+3. **Yield depends on the protocol capital.** Without it, the surplus must first fill the
+   2.75–5% buffer from yield, about ten months at 4%. Keep capital at 5% of the cap or more when
+   raising the cap (RUNBOOK_MAINNET.md §4). Batched deposits keep up to 1% of the reserve idle
+   above the 15% buffer, about 0.04% a year of yield at 4%.
+4. **H is steerable, within bounds.** Since Phase 4 steering it costs time rather than money:
+   about eight hours of paced trading (one 10 wsUSD trade every 20 minutes, 330 wsUSD in all)
+   moves H to about 0.05, which cuts the attacker's own mint fee by about 6 bp and raises the
+   daily mint cap toward 20%. Pushing H towards 1 raises everyone's fees within their caps.
+   Same-block round trips no longer count at all (review S-04). H can never
+   lower the surplus buffer below 2.75% and never touches the backing. Treat H as a heuristic,
+   not a security signal (`audit/oracle-manipulation.md`).
+5. **Admin powers.**
    - The guardian can pause minting and rebasing indefinitely, pull the reserve out of the vault
      into idle USDC, and cancel a migration.
    - The admin (a Safe) can set the supply cap and the liquidity buffer, and can migrate the
-     reserve to another ERC-4626 vault after a 7-day public timelock. That is the most
-     dangerous power, so watch `VaultProposed`.
+     reserve to the other allowlisted vault (Aave waBasUSDC or Gauntlet USDC Prime, fixed at
+     deployment) after a 7-day public timelock. Watch `VaultProposed`. The admin role moves only
+     in two steps with a 3-day delay.
    - Redemption and loss absorption cannot be paused, and no role can send reserve funds to an
      address of its choosing.
-   - Nothing is upgradeable.
-5. **Dust.** Redemptions below 1 sUSD revert (`MIN_AMOUNT`), so dust has to be transferred or
-   sold.
-6. **Gas.** The first swap of each block pays for the oracle's window close (about 50k gas).
+   - Nothing is upgradeable: a bug means a new deployment and moving holders.
+6. **Dust.** Redemptions below 0.01 sUSD revert unless they redeem a whole balance, so a holder
+   with dust can always exit in full.
+7. **Gas.** The first swap of each block pays for the oracle's window close (about 37k gas).
    Size gas with `eth_estimateGas`: a fixed-multiplier estimate taken in the wrong block can run
    short, and the swap then reverts with `OracleOutOfGas`.
-7. **Yield arrives late.** About 2.75% of supply is kept as surplus (at neutral H) before the
-   first rebase. With Aave at about 3–4% and 15% held idle, that takes around 10 months. The
-   constants live in the stabilizer; change them before deploying if that matters.
-8. **Not audited, not formally verified, no bug bounty.** The research report found two legal
-   constraints:
+8. **The churn budget is a design rule.** Its constant is a proven bound for plane curves, used
+   by analogy in a one-dimensional rule. No stability property follows from the geometry; any
+   constant near 3 would behave the same.
+9. **Not externally audited, no funded bug bounty.** Phase 4 is internal hardening plus an
+   independent review (`REPORT_PHASE4.md`). Halmos proves properties of the policy curves, the
+   churn step and the FWHT, not the stabilizer's flows (`audit/formal.md`). Report
+   vulnerabilities as `SECURITY.md` describes. The research report found two legal constraints:
    - the US GENIUS Act bans yield on payment stablecoins;
    - Kenya's VASP Act requires a Central Bank of Kenya licence to issue a stablecoin.
 

@@ -9,7 +9,13 @@ coding agent. Phase 4 is written for Claude Code: it uses a subagent for the fin
 and matches the code, so an auditor, or an agent regenerating the code, works from the same
 text.
 
-**Status, 2026-10-16.**
+**Status, 2026-10-17.**
+- **Done: Phase 4** on branch `phase-4-hardening`, frozen at tag `audit-freeze-1`
+  (`REPORT_PHASE4.md`). Every Track A finding is fixed or analysed, Track B is measured, the
+  paper's proven results are implemented and tested, and an independent review has run
+  (`audit/review.md`). The churn budget now uses the proven constant: no code depends on an open
+  conjecture. Recommendation D4 changed the mint-fee ceiling to 25 bp, and B8 added 1,250 USDC of
+  protocol capital, so the deployer needs 1,252 USDC.
 - **Done:** Phase 1, and the deployment half of Phase 3, for Base mainnet as a guarded launch
   (`RUNBOOK_MAINNET.md`, `make deploy-base-mainnet`). The kit is ready but **not yet
   broadcast**. It follows the October 2026 research report:
@@ -19,10 +25,10 @@ text.
   - x402 payments taken in USDC through the CDP facilitator;
   - a 25,000 sUSD supply cap;
   - a Safe as admin.
-- **Next: Phase 4** (optimization, security, and the paper's proven results). Run it before the
-  broadcast: the contracts have no upgrade path.
-- **Then:** audit freeze, a Base Sepolia dress rehearsal of the deploy workflow, the mainnet
-  broadcast, Phase 2 (self-hosted sUSD facilitator) and the Phase 3 SDK.
+- **Next:** the Base Sepolia dress rehearsal of the deploy workflow (`network=base-sepolia`,
+  `RUNBOOK_MAINNET.md` §1A), then the guarded mainnet broadcast, then an external audit before
+  the supply cap rises past 25,000 sUSD. Phase 2 (self-hosted sUSD facilitator) and the Phase 3
+  SDK come after the launch.
 
 Facts that change over time are marked *(verified 2026-10-15)*: addresses, SDK versions, header
 names. Re-verify them before any deployment. Sources are listed at the end.
@@ -446,7 +452,7 @@ audit and legal review.
 
 ---
 
-## Phase 4: optimization, security, and the paper's proven results (run next)
+## Phase 4: optimization, security, and the paper's proven results (done, 2026-10-17)
 
 Claude reviewed `base-mainnet-kit` at commit 522881c on 2026-10-16. The review covered the
 contracts, the deploy workflow, a gas report, and the paper (Langetepe and Ashioya, revised
