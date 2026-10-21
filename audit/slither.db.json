@@ -7,29 +7,29 @@
   "confidence": "Medium"
  },
  {
-  "description": "SpectralStabilizer.constructor(SpectralToken,AutonomousTreasury,ISpectralEntropyOracle,address,address,uint256,uint256,address[]) (src/SpectralStabilizer.sol#249-306) has external calls inside a loop: v == address(0) || IERC4626(v).asset() != reserveAsset (src/SpectralStabilizer.sol#271)\n",
-  "id": "9a2dde87b2c970140fa7642512556e30acd2a245ee7fb6ced3bc91e31f5b9be9",
+  "description": "SpectralStabilizer.constructor(SpectralToken,AutonomousTreasury,ISpectralEntropyOracle,address,address,uint256,uint256,address[]) (src/SpectralStabilizer.sol#256-313) has external calls inside a loop: v == address(0) || IERC4626(v).asset() != reserveAsset (src/SpectralStabilizer.sol#278)\n",
+  "id": "4e5c5d4f441db9cc2822c521cabed6783c017030c184d2196486ed4a81dc48b0",
   "check": "calls-loop",
   "impact": "Low",
   "confidence": "Medium"
  },
  {
-  "description": "Reentrancy in SpectralStabilizer.contributeCapital(uint256) (src/SpectralStabilizer.sol#396-408):\n\tExternal calls:\n\t- _syncLossWith(reserveValue()) (src/SpectralStabilizer.sol#397)\n\t\t- token.setIndex(newIndex) (src/SpectralStabilizer.sol#609)\n\t- (None,before) = treasury.sweep() (src/SpectralStabilizer.sol#399)\n\t- (None,afterValue) = treasury.depositReserve() (src/SpectralStabilizer.sol#402)\n\tState variables written after the call(s):\n\t- protocolCapital += credited (src/SpectralStabilizer.sol#405)\n",
-  "id": "07569b502f48932261321bad784a70ff7d05bba41c63c2d40f0df0ade26f62db",
+  "description": "Reentrancy in SpectralStabilizer.mint(uint256,address,uint256) (src/SpectralStabilizer.sol#321-353):\n\tExternal calls:\n\t- _syncLossWith(reserveValue()) (src/SpectralStabilizer.sol#330)\n\t\t- token.setIndex(newIndex) (src/SpectralStabilizer.sol#628)\n\t- (None,before) = treasury.sweep() (src/SpectralStabilizer.sol#335)\n\t- (None,afterValue) = treasury.depositReserve() (src/SpectralStabilizer.sol#338)\n\tState variables written after the call(s):\n\t- _consumeExpansion(out,h) (src/SpectralStabilizer.sol#345)\n\t\t- epochStart = block.timestamp.toUint64() (src/SpectralStabilizer.sol#635)\n\t- _consumeExpansion(out,h) (src/SpectralStabilizer.sol#345)\n\t\t- epochSupply = token.totalSupply().toUint128() (src/SpectralStabilizer.sol#636)\n\t- _consumeExpansion(out,h) (src/SpectralStabilizer.sol#345)\n\t\t- mintedInEpoch = 0 (src/SpectralStabilizer.sol#637)\n\t\t- mintedInEpoch = (used + out).toUint128() (src/SpectralStabilizer.sol#641)\n",
+  "id": "1a6c5a692971e67234fc0350d50012be02afb539b3ef41fa0a2572d40f8f154c",
   "check": "reentrancy-benign",
   "impact": "Low",
   "confidence": "Medium"
  },
  {
-  "description": "Reentrancy in SpectralStabilizer.mint(uint256,address,uint256) (src/SpectralStabilizer.sol#314-346):\n\tExternal calls:\n\t- _syncLossWith(reserveValue()) (src/SpectralStabilizer.sol#323)\n\t\t- token.setIndex(newIndex) (src/SpectralStabilizer.sol#609)\n\t- (None,before) = treasury.sweep() (src/SpectralStabilizer.sol#328)\n\t- (None,afterValue) = treasury.depositReserve() (src/SpectralStabilizer.sol#331)\n\tState variables written after the call(s):\n\t- _consumeExpansion(out,h) (src/SpectralStabilizer.sol#338)\n\t\t- epochStart = block.timestamp.toUint64() (src/SpectralStabilizer.sol#616)\n\t- _consumeExpansion(out,h) (src/SpectralStabilizer.sol#338)\n\t\t- epochSupply = token.totalSupply().toUint128() (src/SpectralStabilizer.sol#617)\n\t- _consumeExpansion(out,h) (src/SpectralStabilizer.sol#338)\n\t\t- mintedInEpoch = 0 (src/SpectralStabilizer.sol#618)\n\t\t- mintedInEpoch = (used + out).toUint128() (src/SpectralStabilizer.sol#622)\n",
-  "id": "7b913f1f54831d5061b724ac3000d033f097d1cdd5b5926b40980483a8a511df",
+  "description": "Reentrancy in SpectralStabilizer.contributeCapital(uint256) (src/SpectralStabilizer.sol#403-415):\n\tExternal calls:\n\t- _syncLossWith(reserveValue()) (src/SpectralStabilizer.sol#404)\n\t\t- token.setIndex(newIndex) (src/SpectralStabilizer.sol#628)\n\t- (None,before) = treasury.sweep() (src/SpectralStabilizer.sol#406)\n\t- (None,afterValue) = treasury.depositReserve() (src/SpectralStabilizer.sol#409)\n\tState variables written after the call(s):\n\t- protocolCapital += credited (src/SpectralStabilizer.sol#412)\n",
+  "id": "632b16030ed764119a870de38b3577cbe7eb11bdf3be3dc3f9fc61c13f4d0e55",
   "check": "reentrancy-benign",
   "impact": "Low",
   "confidence": "Medium"
  },
  {
-  "description": "Reentrancy in SpectralStabilizer.redeem(uint256,address,uint256) (src/SpectralStabilizer.sol#357-381):\n\tExternal calls:\n\t- _syncLossWith(reserveValue()) (src/SpectralStabilizer.sol#363)\n\t\t- token.setIndex(newIndex) (src/SpectralStabilizer.sol#609)\n\t- token.burn(msg.sender,amount) (src/SpectralStabilizer.sol#376)\n\tState variables written after the call(s):\n\t- _releaseExpansion(amount) (src/SpectralStabilizer.sol#377)\n\t\t- mintedInEpoch = used - amount.toUint128() (src/SpectralStabilizer.sol#630)\n\t\t- mintedInEpoch = 0.toUint128() (src/SpectralStabilizer.sol#630)\n",
-  "id": "fa134d150b0a49b7bad1112fd59b3ca15075bca2947e98e2a865b9021686b3dc",
+  "description": "Reentrancy in SpectralStabilizer.redeem(uint256,address,uint256) (src/SpectralStabilizer.sol#364-388):\n\tExternal calls:\n\t- _syncLossWith(reserveValue()) (src/SpectralStabilizer.sol#370)\n\t\t- token.setIndex(newIndex) (src/SpectralStabilizer.sol#628)\n\t- token.burn(msg.sender,amount) (src/SpectralStabilizer.sol#383)\n\tState variables written after the call(s):\n\t- _releaseExpansion(amount) (src/SpectralStabilizer.sol#384)\n\t\t- mintedInEpoch = used - amount.toUint128() (src/SpectralStabilizer.sol#649)\n\t\t- mintedInEpoch = 0.toUint128() (src/SpectralStabilizer.sol#649)\n",
+  "id": "e0cea67af9f6bd7e2d8ffad1f66fea668496f481bc2e5caeb8b8642275cb50db",
   "check": "reentrancy-benign",
   "impact": "Low",
   "confidence": "Medium"
@@ -49,29 +49,8 @@
   "confidence": "Medium"
  },
  {
-  "description": "SpectralStabilizer._churnState(uint256) (src/SpectralStabilizer.sol#643-650) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- expired = block.timestamp >= uint256(churnWindowStart) + CHURN_WINDOW (src/SpectralStabilizer.sol#644)\n",
-  "id": "05bd227fb24f852ccb88183d884e06f1b7769477534b566d58463d1baa8b5e59",
-  "check": "timestamp",
-  "impact": "Low",
-  "confidence": "Medium"
- },
- {
-  "description": "SpectralStabilizer._epochState(uint256) (src/SpectralStabilizer.sol#633-638) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- expired = block.timestamp >= uint256(epochStart) + EPOCH (src/SpectralStabilizer.sol#634)\n",
-  "id": "1c5a057b6ab4d2d28c1905285d9c5a9aabffceca22341975dbd3bab9bfdef4c1",
-  "check": "timestamp",
-  "impact": "Low",
-  "confidence": "Medium"
- },
- {
-  "description": "SpectralStabilizer._releaseExpansion(uint256) (src/SpectralStabilizer.sol#627-631) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp >= uint256(epochStart) + EPOCH (src/SpectralStabilizer.sol#628)\n",
-  "id": "2dc7eb481314710d192492e3d49cdd29f0f44e098bc57dc19d49e69825dcae18",
-  "check": "timestamp",
-  "impact": "Low",
-  "confidence": "Medium"
- },
- {
-  "description": "SpectralStabilizer.executeVaultMigration() (src/SpectralStabilizer.sol#521-532) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp < pendingVaultEta (src/SpectralStabilizer.sol#524)\n",
-  "id": "46ea5e1b208c1e2aa88df8be4ce7395d6396ef0205ca1da5d78d1c012c44c870",
+  "description": "SpectralStabilizer.rebase() (src/SpectralStabilizer.sol#423-458) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp < uint256(lastRebaseAt) + REBASE_INTERVAL (src/SpectralStabilizer.sol#426)\n",
+  "id": "4bab5eb2e970c3e13462396e297c2994ca558a26a6acf170216ceadc2e84c25a",
   "check": "timestamp",
   "impact": "Low",
   "confidence": "Medium"
@@ -91,6 +70,13 @@
   "confidence": "Medium"
  },
  {
+  "description": "SpectralStabilizer._releaseExpansion(uint256) (src/SpectralStabilizer.sol#646-650) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp >= uint256(epochStart) + EPOCH (src/SpectralStabilizer.sol#647)\n",
+  "id": "6df127eb4dca89ebf25da94cf4b6e2dadf1763ec5340f27d290e81aeb8aedefa",
+  "check": "timestamp",
+  "impact": "Low",
+  "confidence": "Medium"
+ },
+ {
   "description": "SpectrumLens.expansionRemaining() (src/SpectrumLens.sol#70-77) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- expired = block.timestamp >= uint256(stabilizer.epochStart()) + stabilizer.EPOCH() (src/SpectrumLens.sol#72)\n",
   "id": "7c2356dde9a5a08de6217178c2a2d5c9a3b452c3c393cbe7e39daa6f2e5c2db1",
   "check": "timestamp",
@@ -105,8 +91,8 @@
   "confidence": "Medium"
  },
  {
-  "description": "SpectralStabilizer.rebase() (src/SpectralStabilizer.sol#416-451) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp < uint256(lastRebaseAt) + REBASE_INTERVAL (src/SpectralStabilizer.sol#419)\n",
-  "id": "9b66755e035cad88f187970b36ad5b44d19997b05c60c634a33ce96bbabc75b8",
+  "description": "SpectralStabilizer._consumeExpansion(uint256,uint256) (src/SpectralStabilizer.sol#633-642) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp >= uint256(epochStart) + EPOCH (src/SpectralStabilizer.sol#634)\n",
+  "id": "84b81f05fdadc70ea24ba6ddd44cd6a799c643be2671e916a57260189f6a43d4",
   "check": "timestamp",
   "impact": "Low",
   "confidence": "Medium"
@@ -119,6 +105,20 @@
   "confidence": "Medium"
  },
  {
+  "description": "SpectralStabilizer._churnState(uint256) (src/SpectralStabilizer.sol#662-669) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- expired = block.timestamp >= uint256(churnWindowStart) + CHURN_WINDOW (src/SpectralStabilizer.sol#663)\n",
+  "id": "b951e2622ce8b61ec583a3cbfaa95b7b8f439d398487c53151b9e01423048e77",
+  "check": "timestamp",
+  "impact": "Low",
+  "confidence": "Medium"
+ },
+ {
+  "description": "SpectralStabilizer.executeVaultMigration(uint256) (src/SpectralStabilizer.sol#535-551) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp < pendingVaultEta (src/SpectralStabilizer.sol#538)\n",
+  "id": "bd190781326e3d128f59d6f08e396e153d16625e26beb15f8e9aedb0908852d9",
+  "check": "timestamp",
+  "impact": "Low",
+  "confidence": "Medium"
+ },
+ {
   "description": "SpectralEntropyOracle.isStale() (src/SpectralEntropyOracle.sol#213-215) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp > uint256(lastObservationTime) + staleAfter (src/SpectralEntropyOracle.sol#214)\n",
   "id": "d66e9d890bc5b22937e6c740b21152fee136da54bb3c2fba2cc6794fc105515a",
   "check": "timestamp",
@@ -126,8 +126,8 @@
   "confidence": "Medium"
  },
  {
-  "description": "SpectralStabilizer._consumeExpansion(uint256,uint256) (src/SpectralStabilizer.sol#614-623) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp >= uint256(epochStart) + EPOCH (src/SpectralStabilizer.sol#615)\n",
-  "id": "e6252a59d62f3eb4b716259b75cb384d6cabe331433f6f9febb1df82d1b2fe17",
+  "description": "SpectralStabilizer._epochState(uint256) (src/SpectralStabilizer.sol#652-657) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- expired = block.timestamp >= uint256(epochStart) + EPOCH (src/SpectralStabilizer.sol#653)\n",
+  "id": "d72503397af51d1929ad463d95a6f4b329076c2f8cdaa1b6523b33cd189231f7",
   "check": "timestamp",
   "impact": "Low",
   "confidence": "Medium"
@@ -154,7 +154,7 @@
   "confidence": "High"
  },
  {
-  "description": "SpectralStabilizer.constructor(SpectralToken,AutonomousTreasury,ISpectralEntropyOracle,address,address,uint256,uint256,address[]) (src/SpectralStabilizer.sol#249-306) has a high cyclomatic complexity (12).\n",
+  "description": "SpectralStabilizer.constructor(SpectralToken,AutonomousTreasury,ISpectralEntropyOracle,address,address,uint256,uint256,address[]) (src/SpectralStabilizer.sol#256-313) has a high cyclomatic complexity (12).\n",
   "id": "7ab25644da7a36ec6b8494f4dd17d9aa03210d5fd23e3ca748fbdc36829f2486",
   "check": "cyclomatic-complexity",
   "impact": "Informational",

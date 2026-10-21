@@ -279,7 +279,7 @@ abstract contract MainnetScenarios is Test {
         d.stabilizer.proposeVault(IERC4626(cfg.fallbackVault));
         vm.warp(vm.getBlockTimestamp() + 7 days);
         vm.prank(safe);
-        d.stabilizer.executeVaultMigration();
+        d.stabilizer.executeVaultMigration(1_000);
         vm.prank(safe);
         d.stabilizer.setLiquidityBuffer(1_500);
         d.stabilizer.rebalanceReserve();

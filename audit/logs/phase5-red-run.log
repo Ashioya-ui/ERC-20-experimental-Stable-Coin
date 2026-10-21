@@ -1,0 +1,12 @@
+# Phase 5 red run: the finding tests against audit-freeze-1 (ec53d52) before the fixes
+# forge test --match-path test/scale/NeobankScale.t.sol --match-test P5_0 -vv
+
+[FAIL: H below neutral must not loosen the expansion cap: 55 != 87] test_P5_01_steeringHDownDoesNotSpeedGrowth() (gas: 109350408)
+  days to $300m, H neutral (0.5):     87
+  days to $300m, H steered to 0.05:   55
+  days to $300m, H at 1:              374
+[FAIL: an illiquid migration must not cut balances: 269605390439974648 != 1000000000000000000] test_P5_03_illiquidMigrationMustNotCutBalances() (gas: 13956276)
+  index cut by the migration (ppm): 730394
+Suite result: FAILED. 0 passed; 2 failed; 0 skipped; finished in 127.87ms (126.53ms CPU time)
+[FAIL: H below neutral must not loosen the expansion cap: 55 != 87] test_P5_01_steeringHDownDoesNotSpeedGrowth() (gas: 109350408)
+[FAIL: an illiquid migration must not cut balances: 269605390439974648 != 1000000000000000000] test_P5_03_illiquidMigrationMustNotCutBalances() (gas: 13956276)

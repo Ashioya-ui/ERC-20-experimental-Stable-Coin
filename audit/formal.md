@@ -33,8 +33,9 @@ the one that finishes the quadratic fee curves. A PASS from either is a proof.
 | `check_curvesClampAboveOne` | every curve gives its h = 1 value for every h > 1e18 | all `uint256` | cvc5 | PASS | 0.01 s |
 | `check_bufferBoundedAndFloored` | 2.75% <= buffer <= 5%, and never below its value at h = 0.5 (D4) | all `uint256` | cvc5 | PASS | 0.16 s |
 | `check_bufferLocallyMonotone` | buffer(h) <= buffer(h + 1) | h < 1e18 | cvc5 | PASS | 0.28 s |
-| `check_expansionCapBounded` | 2% <= cap <= 20% | h <= 1e18 | cvc5 | PASS | 0.16 s |
-| `check_expansionCapLocallyMonotone` | cap(h) >= cap(h + 1) | h < 1e18 | cvc5 | PASS | 0.16 s |
+| `check_expansionCapBounded` | 2% <= cap <= 11% (20% before Phase 5) | h <= 1e18 | cvc5 | PASS | 1.82 s (Phase 5) |
+| `check_expansionCapLocallyMonotone` | cap(h) >= cap(h + 1) | h < 1e18 | cvc5 | PASS | 0.38 s (Phase 5) |
+| `check_expansionCapNeverAboveNeutral` | cap(h) <= cap(0.5): H can tighten the cap, never loosen it (Phase 5, P5-01) | all `uint256` | cvc5 | PASS | 0.16 s |
 | `check_rebaseStepBounded` | 0.5 bp <= step <= 1 bp | h <= 1e18 | cvc5 | PASS | 0.17 s |
 | `check_rebaseStepLocallyMonotone` | step(h) >= step(h + 1) | h < 1e18 | cvc5 | PASS | 0.17 s |
 | `check_mintFeeBounded` | 1 bp <= mint fee <= 25 bp | h <= 1e18 | Bitwuzla | PASS | 26 s |

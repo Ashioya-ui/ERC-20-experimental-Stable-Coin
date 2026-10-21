@@ -317,7 +317,7 @@ contract MorphoReplicaTest is Test {
         d.stabilizer.proposeVault(vaultB);
         vm.warp(vm.getBlockTimestamp() + 7 days);
         vm.prank(safe);
-        d.stabilizer.executeVaultMigration();
+        d.stabilizer.executeVaultMigration(1_000);
         assertEq(address(d.treasury.vault()), address(vaultB));
         assertEq(vaultA.balanceOf(address(d.treasury)), 0, "nothing left behind");
         assertApproxEqAbs(d.stabilizer.reserveValue(), reserve0, 5e12, "reserve kept, to vault rounding");
@@ -336,7 +336,7 @@ contract MorphoReplicaTest is Test {
         d.stabilizer.proposeVault(vaultB);
         vm.warp(vm.getBlockTimestamp() + 7 days);
         vm.prank(safe);
-        d.stabilizer.executeVaultMigration();
+        d.stabilizer.executeVaultMigration(type(uint256).max); // the quarantine is accepted (P5-03)
         assertEq(address(d.treasury.legacyVault()), address(vaultA), "stuck shares quarantined");
         assertLt(d.token.index(), index0, "the quarantined value is a realised loss, shared pro rata");
         _assertSolvent();

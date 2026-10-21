@@ -1,0 +1,60 @@
+step 1: deployment and runbook rehearsal: ==== REHEARSAL PASSED ====
+
+==== S1. The admin raises the supply cap for scale (25,000 -> 400m sUSD) ====
+supply cap: $400,000,000
+
+==== S2. Deposits ramp to $300m under the daily expansion cap (lens.maxMintAssets each day) ====
+day 20: supply $295,949
+day 40: supply $2,386,036
+day 60: supply $19,236,966
+day 80: supply $155,094,413
+day 87: supply $322,000,841: $300m reached in 87 days of maximal minting at H = 0.5
+
+==== S3a. 24 hours of card spend ($600m a year) with only the launch capital (1,250 USDC) ====
+rebases that distributed: 0 of 24
+card spend settled in USDC: $1,643,298
+index change: 0 wei (the 2.75% buffer must fill first)
+distributable now: $0
+
+==== S3b. The operator posts first-loss capital of 2.75% of supply ($8,854,991), then two more days ====
+protocol capital: $8,856,241
+rebases that distributed: 24 of 24
+first day: 9.21 bp (mostly the ramp's mint fees, held back until the buffer was covered)
+rebases that distributed: 24 of 24
+second day: 1.188 bp, about 4.34% a year (5% on the 85% invested, the capital's yield, card-spend fees)
+reserve ratio: 1.0275   liquidity ratio: 1.0275
+
+==== S4. Liquidity crunch: the vault's market can pay $50m today ====
+liquid now: $99,669,077 (idle + what the vault pays)
+a $60m exit is paid in full: $59,980,500
+a $100m exit now:
+reverted: InsufficientLiquidity(39688577371321)
+lens.maxRedeem says $39,701,480 fits; redeeming exactly that:
+liquid left: 0 USDC wei
+card settlement while nothing is liquid: maxRedeem = 0:
+reverted: InsufficientLiquidity(0)
+liquidity back: the settlement went through; reserve ratio 1.039973360508852
+
+==== S5. A migration while the vault is illiquid is refused by its loss bound (P5-03) ====
+reverted: MigrationLossTooHigh(181458838453896,10)
+index unchanged: yes
+migrated to 0x610178dA211FEF7D417bC0e6FeD39F05609AD788 (primary 0x610178dA211FEF7D417bC0e6FeD39F05609AD788); index unchanged: yes
+
+==== S6. Post-deploy check on the scaled system ====
+== Logs ==
+  == Spectrum state ==
+  sUSD supply (wei)         222562276345851535797296629
+  reserve value (wei)       231458838453894000000000000
+  reserve ratio (1e18 = 1)  1039973360508847492
+  idle USDC                 34718825768084
+  liquid USDC               231458838453894
+  liquidity buffer (bps)    1500
+  supply cap (wei)          400000000000000000000000000
+  smoothed entropy (1e18)   500000000000000000
+  oracle blocks filled      8
+  index (1e18)              1001190103888629318
+  protocol capital (wei)    8856241488588000000000000
+  distributable now (wei)   40320619454464202703371
+  POST-DEPLOY CHECK PASSED
+
+==== SCALE REHEARSAL PASSED ====

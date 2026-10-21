@@ -43,6 +43,8 @@ contract StabilizerHandler is Test {
     uint256 public ghostUsdcOut; // collateral paid to actors
     uint256 public ghostMigrations;
     uint256 public ghostQuarantines;
+    /// @dev Migrations refused because they would have cost more than the bound (P5-03).
+    uint256 public ghostRefusedMigrations;
     uint256 public ghostExits;
     uint256 public ghostUnexpectedGovernanceFailures;
 
@@ -390,12 +392,15 @@ contract StabilizerHandler is Test {
         vm.prank(admin);
         stabilizer.proposeVault(next);
         vm.warp(vm.getBlockTimestamp() + stabilizer.VAULT_TIMELOCK());
+        // The runbook's bounded migration, or a deliberate one that accepts a quarantine (P5-03).
+        uint256 maxLoss = seed % 5 == 1 ? 10 : type(uint256).max;
         vm.prank(admin);
-        try stabilizer.executeVaultMigration() {
+        try stabilizer.executeVaultMigration(maxLoss) {
             ghostMigrations++;
             if (address(treasury.legacyVault()) != address(0)) ghostQuarantines++;
-        } catch {
-            ghostUnexpectedGovernanceFailures++;
+        } catch (bytes memory err) {
+            if (bytes4(err) == SpectralStabilizer.MigrationLossTooHigh.selector) ghostRefusedMigrations++;
+            else ghostUnexpectedGovernanceFailures++;
         }
         if (illiquid) cur.setLiquidityCap(type(uint256).max); // liquidity returns later
         // The buffer may have been set to 100% by an exit; keep some deposits flowing.

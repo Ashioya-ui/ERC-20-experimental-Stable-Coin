@@ -1,8 +1,9 @@
 # Spectrum Protocol
 
-> **Status: hardened (Phase 4), not yet deployed, not externally audited.** The code is frozen
-> for review at tag `audit-freeze-1`; [`REPORT_PHASE4.md`](REPORT_PHASE4.md) has the findings,
-> the measurements and a go/no-go checklist. It launches guarded: a 25,000 sUSD supply cap,
+> **Status: hardened (Phases 4 and 5), not yet deployed, not externally audited.** Phase 4 is
+> frozen at tag `audit-freeze-1`; [`REPORT_PHASE4.md`](REPORT_PHASE4.md) has the findings, the
+> measurements and a go/no-go checklist. Phase 5 ran the protocol at neobank scale ($300m,
+> card-spend flows, 100,000 holders) and fixed what broke: [`REPORT_SCALE.md`](REPORT_SCALE.md). It launches guarded: a 25,000 sUSD supply cap,
 > 1,250 USDC of protocol capital, a Safe as admin, and a 7-day timelock on moving the reserve.
 > Treat sUSD as an **experimental token, not a stablecoin**; see
 > [`RUNBOOK_MAINNET.md`](RUNBOOK_MAINNET.md) §7.
@@ -20,6 +21,8 @@ The previous SPCM v2 files are kept unchanged in [`legacy/spcm-v2/`](legacy/spcm
 [`PROMPTS.md`](PROMPTS.md) holds the engineering prompts for Phases 1–4 and explains what
 changed and why. Phase 4 (security, optimization, and the paper's proven results) is done:
 [`REPORT_PHASE4.md`](REPORT_PHASE4.md) summarises it and [`audit/`](audit/) holds the evidence.
+Phase 5 (scale) is in [`REPORT_SCALE.md`](REPORT_SCALE.md), with `test/scale/`, `sim/scale.py`
+and `script/rehearsal/scale.sh`.
 [`RUNBOOK_MAINNET.md`](RUNBOOK_MAINNET.md) is the deployment and operations runbook for Base, and
 [`SECURITY.md`](SECURITY.md) says how to report a vulnerability.
 
@@ -134,15 +137,16 @@ stack-too-deep in `PoolManager` under via-IR.
    (The original prompt had this backwards.) H is neutral (0.5) during warm-up and after one hour
    without swaps. Each block contributes its **net** flow, and each fold of the moving average
    carries weight `min(0.25, dt / (dt + 1 hour))`, so steering the signal costs wall time rather
-   than a few blocks of gas (`audit/oracle-manipulation.md`). H can raise a safety margin but
-   never lower one: the surplus buffer never falls below its neutral 2.75%.
+   than a few blocks of gas (`audit/oracle-manipulation.md`). H can tighten a safety limit but
+   never loosen one: the surplus buffer never falls below its neutral 2.75%, and the daily mint
+   cap never rises above its neutral 11% (Phase 5, P5-01).
 6. **Policy (all bounded):**
 
    | | H = 0 (calm) | H = 0.5 | H = 1 (spiky) |
    |---|---|---|---|
    | Mint fee | 1 bp | 7 bp | 25 bp |
    | Redeem fee | 1 bp | 3.25 bp | 10 bp |
-   | Daily mint cap (share of supply, or the bootstrap cap if larger) | 20% | 11% | 2% |
+   | Daily mint cap (share of supply, or the bootstrap cap if larger) | 11% (20% before Phase 5) | 11% | 2% |
    | Surplus buffer kept before distributing | 2.75% | 2.75% | 5% |
    | Max rebase step | 1 bp | 0.75 bp | 0.5 bp |
 
@@ -313,8 +317,10 @@ worst-case write 37,638. Against real MetaMorpho bytecode, a mint inside the dep
    above the 15% buffer, about 0.04% a year of yield at 4%.
 4. **H is steerable, within bounds.** Since Phase 4 steering it costs time rather than money:
    about eight hours of paced trading (one 10 wsUSD trade every 20 minutes, 330 wsUSD in all)
-   moves H to about 0.05, which cuts the attacker's own mint fee by about 6 bp and raises the
-   daily mint cap toward 20%. Pushing H towards 1 raises everyone's fees within their caps.
+   moves H to about 0.05, which cuts the attacker's own mint fee by about 6 bp; since Phase 5 it
+   no longer raises the daily mint cap (P5-01). Pushing H towards 1 raises everyone's fees within
+   their caps, tightens the cap and holds back distributions while the buffer rises toward 5%;
+   protocol capital of 5% of supply keeps yield flowing whatever H reads (REPORT_SCALE.md).
    Same-block round trips no longer count at all (review S-04). H can never
    lower the surplus buffer below 2.75% and never touches the backing. Treat H as a heuristic,
    not a security signal (`audit/oracle-manipulation.md`).
@@ -323,8 +329,10 @@ worst-case write 37,638. Against real MetaMorpho bytecode, a mint inside the dep
      into idle USDC, and cancel a migration.
    - The admin (a Safe) can set the supply cap and the liquidity buffer, and can migrate the
      reserve to the other allowlisted vault (Aave waBasUSDC or Gauntlet USDC Prime, fixed at
-     deployment) after a 7-day public timelock. Watch `VaultProposed`. The admin role moves only
-     in two steps with a 3-day delay.
+     deployment) after a 7-day public timelock. Watch `VaultProposed`. The execution names the
+     largest fall of the reserve it accepts and reverts beyond it, so a migration out of an
+     illiquid vault cannot quarantine most of the reserve by accident (Phase 5, P5-03). The admin
+     role moves only in two steps with a 3-day delay.
    - Redemption and loss absorption cannot be paused, and no role can send reserve funds to an
      address of its choosing.
    - Nothing is upgradeable: a bug means a new deployment and moving holders.

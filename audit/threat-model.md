@@ -27,7 +27,7 @@ cap and the surplus buffer within fixed ranges. H never touches backing.
 | Swapper / LP | trade in the one wsUSD/USDC pool, which feeds H | nothing: H is treated as attacker-chosen |
 | Keeper (anyone) | `rebase`, `sync`, `rebalanceReserve`, `recoverLegacy` | liveness only; every call is permissionless and bounded |
 | x402 facilitator | submit someone's EIP-3009 authorisation and pay its gas | nothing: it can only execute exactly what was signed |
-| Admin Safe (`DEFAULT_ADMIN_ROLE`) | set the supply cap and the liquidity buffer; propose a vault (from the allowlist, after Phase 4) and execute it after 7 days; grant and revoke roles (two-step, 3-day delay after Phase 4) | not to take funds: no admin path sends reserve funds to an address it chooses Executing a migration while the old vault is illiquid quarantines shares and cuts the index for holders who could not leave first (review S-05.4): the runbook allows it only as an announced emergency, and the guardian cancels otherwise. |
+| Admin Safe (`DEFAULT_ADMIN_ROLE`) | set the supply cap and the liquidity buffer; propose a vault (from the allowlist, after Phase 4) and execute it after 7 days; grant and revoke roles (two-step, 3-day delay after Phase 4) | not to take funds: no admin path sends reserve funds to an address it chooses. Executing a migration while the old vault is illiquid quarantines shares and cuts the index for holders who could not leave first (review S-05.4); since Phase 5 the execution carries an explicit bound on that loss and reverts beyond it (P5-03), so it happens only when the Safe signs a bound that large. |
 | Guardian (`GUARDIAN_ROLE`, also held by the admin) | pause and unpause minting and rebasing; emergency exit from the vault to idle funds; cancel a pending migration | bounded: cannot pause redemption or loss absorption, cannot move funds out |
 | ERC-4626 vault | holds about 85% of the reserve | solvency, an honest `previewRedeem`, and liquidity through `maxWithdraw` |
 | Uniswap v4 PoolManager | calls the hook | correct v4 semantics (audited deployment) |
@@ -57,7 +57,7 @@ cap and the surplus buffer within fixed ranges. H never touches backing.
 | Stabilizer.rebalanceReserve | anyone | treasury acts only outside a 1% tolerance band | then re-syncs |
 | Stabilizer.contributeCapital | anyone | measured increase in reserve value | non-distributable first-loss capital (Phase 4, B8) |
 | Stabilizer.pause / unpause / emergencyExitVault / cancelVaultMigration | guardian | role | |
-| Stabilizer.setSupplyCap / setLiquidityBuffer / proposeVault / executeVaultMigration | admin | role; vault asset matches and is allowlisted; 7-day timelock | |
+| Stabilizer.setSupplyCap / setLiquidityBuffer / proposeVault / executeVaultMigration(maxLoss) | admin | role; vault asset matches and is allowlisted; 7-day timelock; the reserve may not fall by more than `maxLoss` (P5-03) | |
 | Token.transfer / transferFrom / approve / permit | holder | balances, allowances, EIP-712 signatures (ECDSA or ERC-1271) | |
 | Token.transferWithAuthorization / receiveWithAuthorization / cancelAuthorization | anyone / payee | validity window, unused nonce, signature | |
 | Token.mint / burn / setIndex | stabilizer only | immutable stabilizer address | |
@@ -80,7 +80,7 @@ cap and the surplus buffer within fixed ranges. H never touches backing.
 | CI dependency stealing the deployer key | key only in the broadcast step; pinned actions (A4) |
 | Admin moves the reserve to a malicious vault | immutable allowlist plus a 7-day timelock in which holders can exit (A5) |
 | Vault loss | `sync` absorbs it pro rata; the surplus and protocol capital absorb small losses first; loss front-running: section 5.1 (A9) |
-| Vault illiquidity (bank run) | idle buffer; `InsufficientLiquidity(available)`; emergency exit; quarantine of unredeemable shares on migration |
+| Vault illiquidity (bank run) | idle buffer; `InsufficientLiquidity(available)`; `SpectrumLens.maxRedeem` sizes a redemption to what is liquid (P5-02); emergency exit; a migration that would quarantine more than its bound reverts (P5-03) |
 | Donations and inflation attacks | donations become surplus; measured-increase crediting; wsUSD virtual shares plus dead shares |
 | Reentrancy, including read-only | `nonReentrant` on every state-changing path; the index changes only inside stabilizer calls; the only callbacks are to the vault and PoolManager, both trusted |
 | Rounding | mint rounds shares down, burns and transfers round up; minimum amounts keep the fee above worst-case vault rounding (A7) |

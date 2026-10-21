@@ -108,7 +108,7 @@ contract MigrationEventTest is SpectrumFixture {
 
         vm.recordLogs();
         vm.prank(admin);
-        stabilizer.executeVaultMigration();
+        stabilizer.executeVaultMigration(1_000); // abandoned dust is at most LEGACY_DUST_ASSETS
 
         assertGt(vault.balanceOf(address(treasury)), 0, "dust stayed in the old vault");
         assertEq(address(treasury.legacyVault()), address(0), "and was not quarantined");

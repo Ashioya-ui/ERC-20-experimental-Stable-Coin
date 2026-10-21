@@ -103,9 +103,9 @@ echo "buffer bps:      $(cast call $TREAS 'liquidityBufferBps()(uint256)' --rpc-
 
 step "9. Admin (Safe): timelocked migration to the fallback vault (runbook E2)"
 cast send "$STAB" "proposeVault(address)" "$FALLBACK" --private-key "$PK_ADMIN" --rpc-url "$RPC" >/dev/null
-expect_revert cast send "$STAB" "executeVaultMigration()" --private-key "$PK_ADMIN" --rpc-url "$RPC"
+expect_revert cast send "$STAB" "executeVaultMigration(uint256)" 10 --private-key "$PK_ADMIN" --rpc-url "$RPC"
 warp 604801
-cast send "$STAB" "executeVaultMigration()" --private-key "$PK_ADMIN" --rpc-url "$RPC" >/dev/null
+cast send "$STAB" "executeVaultMigration(uint256)" 10 --private-key "$PK_ADMIN" --rpc-url "$RPC" >/dev/null
 cast send "$STAB" "setLiquidityBuffer(uint256)" 1500 --private-key "$PK_ADMIN" --rpc-url "$RPC" >/dev/null
 cast send "$STAB" "rebalanceReserve()" --private-key "$PK_KEEPER" --rpc-url "$RPC" >/dev/null
 echo "treasury vault:  $(cast call $TREAS 'vault()(address)' --rpc-url $RPC)  (fallback: $FALLBACK)"

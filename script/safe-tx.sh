@@ -11,7 +11,7 @@
 #   set-supply-cap <whole sUSD>              ADMIN
 #   set-buffer <bps>                         ADMIN   (1500 = 15% of the reserve idle)
 #   propose-vault <vault address>            ADMIN   (executable after 7 days)
-#   execute-migration                        ADMIN
+#   execute-migration [max loss, USDC wei]   ADMIN   (default 10; reverts if the reserve would fall more)
 #   grant-guardian <address>                 ADMIN
 #   revoke-guardian <address>                ADMIN
 set -euo pipefail
@@ -31,7 +31,7 @@ case "$ACTION" in
   set-supply-cap)    DATA=$(cast calldata "setSupplyCap(uint256)" "$(cast to-wei "${1:?whole sUSD}")") ;;
   set-buffer)        DATA=$(cast calldata "setLiquidityBuffer(uint256)" "${1:?bps}") ;;
   propose-vault)     DATA=$(cast calldata "proposeVault(address)" "${1:?vault}") ;;
-  execute-migration) DATA=$(cast calldata "executeVaultMigration()") ;;
+  execute-migration) DATA=$(cast calldata "executeVaultMigration(uint256)" "${1:-10}") ;;
   grant-guardian)    DATA=$(cast calldata "grantRole(bytes32,address)" "$GUARDIAN_ROLE" "${1:?address}") ;;
   revoke-guardian)   DATA=$(cast calldata "revokeRole(bytes32,address)" "$GUARDIAN_ROLE" "${1:?address}") ;;
   *) sed -n '2,20p' "$0"; exit 1 ;;

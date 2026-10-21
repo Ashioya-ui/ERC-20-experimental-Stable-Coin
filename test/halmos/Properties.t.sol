@@ -169,6 +169,12 @@ contract HalmosPolicy is Test {
         assert(f <= SpectralPolicy.EXPANSION_CAP_LOW_H && f >= SpectralPolicy.EXPANSION_CAP_HIGH_H);
     }
 
+    /// Phase 5, P5-01: for every input, H can only tighten the cap, never loosen it past its
+    /// value at neutral H.
+    function check_expansionCapNeverAboveNeutral(uint256 h) public pure {
+        assert(SpectralPolicy.expansionCapRate(h) <= SpectralPolicy.expansionCapRate(0.5e18));
+    }
+
     function check_bufferLocallyMonotone(uint64 h) public pure {
         vm.assume(h < WAD);
         assert(SpectralPolicy.bufferRate(h) <= SpectralPolicy.bufferRate(uint256(h) + 1));

@@ -27,8 +27,12 @@ library SpectralPolicy {
     /// @dev Redemption fee: 1 bp to 10 bp, quadratic in h.
     uint256 internal constant REDEEM_FEE_MIN = 0.0001e18;
     uint256 internal constant REDEEM_FEE_MAX = 0.0010e18;
-    /// @dev Net minting per epoch as a fraction of epoch-start supply: 20% down to 2%.
-    uint256 internal constant EXPANSION_CAP_LOW_H = 0.20e18;
+    /// @dev Net minting per epoch as a fraction of epoch-start supply: 11% up to neutral H,
+    ///      falling linearly to 2% at h = 1. H is attacker-steerable, so it may tighten the cap
+    ///      but never loosen it past neutral (Phase 5, P5-01: the D4 rule for the buffer, applied
+    ///      to the cap). Until Phase 5 the line went on up to 20% at h = 0, so steering H down
+    ///      bought 1.7 times the daily growth (sim/scale.py, table 6).
+    uint256 internal constant EXPANSION_CAP_LOW_H = 0.11e18;
     uint256 internal constant EXPANSION_CAP_HIGH_H = 0.02e18;
     /// @dev Largest rebase step, 1 bp of supply at h = 0, halving to 0.5 bp at h = 1.
     uint256 internal constant REBASE_STEP_MAX = 0.0001e18;
@@ -61,12 +65,13 @@ library SpectralPolicy {
         }
     }
 
-    /// @dev LOW - (LOW - HIGH) h.
+    /// @dev Flat at the neutral cap up to h = 0.5, then linear down to HIGH (Phase 5, P5-01).
     function expansionCapRate(uint256 h) internal pure returns (uint256) {
         h = clamp(h);
-        // h <= 1e18: the subtrahend is at most LOW - HIGH < LOW.
+        if (h <= 0.5e18) return EXPANSION_CAP_LOW_H;
+        // 0.5e18 < h <= 1e18: 2 * (h - 0.5e18) <= 1e18, so the subtrahend is at most LOW - HIGH.
         unchecked {
-            return EXPANSION_CAP_LOW_H - ((EXPANSION_CAP_LOW_H - EXPANSION_CAP_HIGH_H) * h) / WAD;
+            return EXPANSION_CAP_LOW_H - ((EXPANSION_CAP_LOW_H - EXPANSION_CAP_HIGH_H) * (2 * (h - 0.5e18))) / WAD;
         }
     }
 

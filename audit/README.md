@@ -13,7 +13,7 @@ system description; the README has the mechanics.
 
 | | |
 |---|---|
-| Tag | `audit-freeze-1` |
+| Tag | `audit-freeze-1` (Phase 4); Phase 5 on branch `phase-5-scale` changes `SpectralPolicy` (P5-01), `SpectralStabilizer` (P5-03) and `SpectrumLens` (P5-02): freeze its final commit before the audit starts |
 | Commit | `git rev-parse audit-freeze-1` |
 | Branch | `phase-4-hardening` |
 | Toolchain | Foundry 1.5.1, solc 0.8.26, via-IR, optimizer 44,444,444 runs, EVM cancun, `bytecode_hash = none` |
@@ -21,22 +21,23 @@ system description; the README has the mechanics.
 
 ## Scope
 
-Lines are physical lines; nSLOC counts lines with code, without comments or blank lines.
+Lines are physical lines; nSLOC counts lines with code, without comments or blank lines. Counted on `phase-5-scale` (the hook, oracle and treasury
+figures also include the Phase 4 review fixes, which the earlier table predated).
 
 | File | Lines | nSLOC | Deployed |
 |---|---:|---:|---|
-| `src/SpectralStabilizer.sol` | 678 | 370 | yes |
+| `src/SpectralStabilizer.sol` | 702 | 376 | yes |
 | `src/SpectralToken.sol` | 365 | 254 | yes (sUSD) |
-| `src/AutonomousTreasury.sol` | 297 | 163 | yes |
-| `src/SpectralHook.sol` | 270 | 179 | yes (CREATE2, mined salt) |
-| `src/SpectralEntropyOracle.sol` | 204 | 103 | yes |
-| `src/SpectrumLens.sol` | 103 | 68 | yes (views only, no privileges) |
+| `src/AutonomousTreasury.sol` | 300 | 165 | yes |
+| `src/SpectralHook.sol` | 316 | 203 | yes (CREATE2, mined salt) |
+| `src/SpectralEntropyOracle.sol` | 232 | 113 | yes |
+| `src/SpectrumLens.sol` | 169 | 102 | yes (views only, no privileges) |
 | `src/WrappedSUSD.sol` | 26 | 7 | yes (wsUSD, OpenZeppelin ERC-4626) |
 | `src/libraries/SpectralMath.sol` | 203 | 107 | inlined |
-| `src/libraries/SpectralPolicy.sol` | 115 | 62 | inlined |
+| `src/libraries/SpectralPolicy.sol` | 120 | 63 | inlined |
 | `src/libraries/SelfApproaching.sol` | 121 | 62 | no: a library nothing calls on-chain yet |
 | `src/interfaces/ISpectralEntropyOracle.sol` | 19 | 6 | interface |
-| **Total** | 2,401 | 1,381 | |
+| **Total** | 2,573 | 1,458 | |
 
 Also worth reading, as they decide what gets deployed and with which addresses:
 `script/lib/SpectrumDeploy.sol` (the one deploy, check and record procedure),
@@ -52,7 +53,7 @@ Out of scope: `lib/`, `test/`, the rest of `script/`, `legacy/`, the ERC-4626 va
 git checkout audit-freeze-1
 git submodule update --init --recursive
 forge build --sizes
-forge test                        # 219 pass; 1 skips without BASE_RPC_URL (the fork suite)
+forge test                        # 231 pass; 1 skips without BASE_RPC_URL (the fork suite)
 FOUNDRY_PROFILE=ci forge test     # 10,000 fuzz runs; invariants 1,024 runs x 256 calls
 forge test --isolate              # every call in its own transaction
 script/rehearsal/run.sh           # the mainnet script on a Base-shaped anvil
@@ -68,7 +69,8 @@ via-IR).
 | Document | What it holds |
 |---|---|
 | `audit/threat-model.md` | Actors, trust, assets, every external entry point with its checks, threats, and every invariant mapped to the test that enforces it |
-| `audit/findings.md` | Every Phase 4 finding with severity, status and the test that shows it, including the independent review's |
+| `audit/findings.md` | Every Phase 4 and Phase 5 finding with severity, status and the test that shows it, including the independent review's |
+| `REPORT_SCALE.md` | The protocol at neobank scale ($300m, card-spend flows, 100,000 holders): numbers, the three Phase 5 fixes, what a deployment that size needs |
 | `audit/review.md` | The independent review: a fresh reviewer given only the diff, the threat model and the list of known issues |
 | `audit/formal.md` | What Halmos proved, over which inputs, and what it did not |
 | `audit/slither.md` | Slither and Aderyn results and their triage |

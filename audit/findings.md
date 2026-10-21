@@ -30,3 +30,38 @@ Each fix landed test-first. The failing test, then the fix, are in the commit na
 | S-03 | Low (independent review) | Fixed | `script/verify.sh` encoded the stabilizer's old seven-argument constructor (A5 added the allowlist), never verified the lens or the test vaults, and hid failures. Fix: eight arguments, with the allowlist now in the deployment JSON; the lens and test vaults added; non-zero exit with the list of failures. | `bash -n` |
 | S-04 | Info (independent review) | Fixed | Same-block round trips of dust size netted to zero-filled slots: eight of them read as H = 0 and one small one-way block among them as H = 1, so H could be pinned at either end in 3h20m for about 0.002 USDC per block; after a stale hour one swap restored the steered value. Fix: a closed block whose net flow is below the dust threshold takes no slot; only such blocks keep the signal live; a stale signal restarts with an empty window and a neutral average. | `OracleSteeringTest` (5 tests, red on 6c4bf58) |
 | S-05 | Info (independent review) | Fixed / documented | (1) `VaultMigrated` reported abandoned dust as quarantined: now 0. (2)–(6) documentation: dust redemptions near a loss sync, the pool as a pre-loss exit until `sync`, migrating while the old vault is illiquid, filling the supply cap, never resuming after a nonce error. Reasons in `audit/review.md`. | `MigrationEventTest` (red on 6c4bf58) |
+
+# Phase 5 findings: neobank scale
+
+Review of `audit-freeze-1` (ec53d52) at the size of a card neobank: about $300m of
+stablecoin deposits, about $1bn of cumulative card spend, 100,000 holders (EtherFi's published
+figures, October 2026). Tests in `test/scale/NeobankScale.t.sol`, the year-long model in
+`sim/scale.py`, the deployed system at that size in `script/rehearsal/scale.sh`, the write-up in
+`REPORT_SCALE.md`. Each fix landed test-first; the red runs are in `audit/logs/phase5-red-run.log`.
+
+| ID | Severity | Status | Finding | Test |
+|---|---|---|---|---|
+| P5-01 | Low (economic, grows with supply) | Fixed | H is steerable in about eight hours of paced trading, and steering it below neutral loosened the daily expansion cap from 11% up to 20% of supply. At $300m that is $57m of net minting a day instead of $33m, and growth from launch to $300m in 55 days instead of 87. Phase 4 (D4) already held that H may tighten a safety limit but not loosen it, and applied it to the buffer only. Fix: the cap is flat at its neutral 11% up to H = 0.5 and falls to 2% at H = 1, as before above neutral. | `test_P5_01_steeringHDownDoesNotSpeedGrowth` (red: 55 != 87 days); `test_policyEndpoints`, `test_mint_capScalesWithSupplyAndEntropy` |
+| P5-02 | Low (integration) | Fixed (new views) | `redeem` is all-or-nothing. In a liquidity crunch a redemption sized to the balance reverts, and an integrator that settles around the clock (a card program, an exchange) had only `liquidAssets()` in USDC to size from, without the fee, the minimum or a pending loss. Fix: `SpectrumLens.maxRedeem(owner)` returns exactly the largest redemption that goes through (fee at the current H, the minimum partial redemption, the loss `redeem` absorbs first); `maxMintAssets()` returns the largest mint the caps allow now (0 below the minimum mint); `liquidityRatio()` is the run-readiness number to alert on. | `testFuzz_P5_02_maxRedeemIsTheLargestRedemptionThatFits` (that amount pays, one wei more reverts), `test_P5_02_maxRedeemCountsAPendingLoss`, `testFuzz_P5_02_maxMintAssetsFits`, `test_P5_02_maxMintAssetsIsZeroBelowTheMinimum`, `test_runAt300mIsServedUpToLiquidityThenCompletes` |
+| P5-03 | Medium (at scale; needs the admin) | Fixed | `executeVaultMigration` while the old vault can pay only part of the position quarantined the rest, which removed it from the reserve and cut every balance by that share at once; what `recoverLegacy` returns later goes to whoever holds sUSD then, including minters who joined at par after the cut. At $300m with $50m of vault liquidity the cut was 73% ($227m quarantined). A migration is most likely exactly when the vault is in trouble, which is when it is illiquid. The Phase 4 review called it its most material item (review item 4, S-05.4) and Phase 4 left it as a runbook rule. Fix: `executeVaultMigration(uint256 maxLoss)` reverts with `MigrationLossTooHigh(loss, maxLoss)` if the reserve would fall by more than the bound; the proposal stays executable. The runbook passes 10 USDC wei; a larger bound is a deliberate decision for a vault that will not recover. | `test_P5_03_illiquidMigrationIsRefusedThenGoesThroughWhenLiquid` (red: index cut 730,394 ppm), `test_P5_03_aDeliberateBoundStillAllowsTheQuarantine`, the invariant handler now mixes bounded and deliberate migrations |
+
+Held at scale without a change, each with a test or a model row:
+- Amounts: $1 trillion in and out with no overflow; the packed state uses `uint128`, and USDC's
+  whole supply is under 2^93 sUSD wei (`test_trillionDollarAmountsDoNotOverflow`).
+- Holders: 10,000 holders through yield, rebases and a 5% loss; supply minus the sum of
+  balances is 5,001 wei, under one wei per holder. Nothing iterates over holders
+  (`test_tenThousandHoldersStayExact`).
+- Card flows: 90 days at $300m with card spend settled every four hours ($148m), top-ups, 5%
+  yield and a rebase every hour: no settlement failed, the floor held every hour, the index only
+  rose, holders earned 121 bp in 90 days (4.9% a year) (`test_ninetyDaysOfCardSpendAt300m`).
+- Losses: cuts equal exactly what the surplus and the capital cannot cover
+  (`test_vaultLossesAt300m`).
+- Runs: exits are served in order up to idle funds plus the vault's liquidity, the next one
+  reverts with the exact amount available, nobody is paid less than par minus the fee, and
+  everyone exits once liquidity returns (`test_runAt300mIsServedUpToLiquidityThenCompletes`).
+
+Economic and operational findings with no code change (numbers in `REPORT_SCALE.md`): the
+first-loss capital needed at scale; the idle buffer's cost; same-day exit capacity against the
+vault's market depth; card settlement during a run; upward steering of H, which holds back
+yield unless capital covers the 5% buffer; onboarding time under the expansion cap; and that
+the operator earns nothing from the reserve.

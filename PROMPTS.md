@@ -9,7 +9,13 @@ coding agent. Phase 4 is written for Claude Code: it uses a subagent for the fin
 and matches the code, so an auditor, or an agent regenerating the code, works from the same
 text.
 
-**Status, 2026-10-17.**
+**Status, 2026-10-22.**
+- **Done: Phase 5 (scale)** on branch `phase-5-scale` (`REPORT_SCALE.md`): the protocol run at
+  EtherFi's size ($300m of deposits, card-spend flows, 100,000 holders) on the real contracts, in
+  a year-long model and on the local Base-shaped chain. Three fixes, test-first: H can no longer
+  loosen the daily mint cap (P5-01); `SpectrumLens.maxRedeem` and friends for integrators that
+  settle around the clock (P5-02); `executeVaultMigration(maxLoss)` refuses a migration that
+  would quarantine more than its bound (P5-03).
 - **Done: Phase 4** on branch `phase-4-hardening`, frozen at tag `audit-freeze-1`
   (`REPORT_PHASE4.md`). Every Track A finding is fixed or analysed, Track B is measured, the
   paper's proven results are implemented and tested, and an independent review has run

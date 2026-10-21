@@ -27,12 +27,13 @@ import {SpectralPolicy} from "./libraries/SpectralPolicy.sol";
 ///         destroys backing. It only prices access (fees), rate-limits growth (expansion
 ///         cap), and sets how much surplus is kept as a buffer before a rebase.
 ///
-///         Entropy semantics (see SpectralMath). Low H = homogeneous flow (cheap minting,
-///         larger expansion cap). High H = flow dominated by a few large swaps (higher fees,
-///         tighter cap, larger buffer, smaller rebase steps). H is a heuristic that an
-///         attacker can steer at some cost, so its effect is limited to the bounded policy
-///         ranges below, never reaches the backing, and can only ever *raise* a safety margin:
-///         the surplus buffer is floored at its neutral value whatever H reads (Phase 4, D4).
+///         Entropy semantics (see SpectralMath). Low H = homogeneous flow (cheap minting).
+///         High H = flow dominated by a few large swaps (higher fees, tighter expansion cap,
+///         larger buffer, smaller rebase steps). H is a heuristic that an attacker can steer
+///         at some cost, so its effect is limited to the bounded policy ranges below, never
+///         reaches the backing, and can only ever *tighten* a safety limit: the surplus buffer
+///         is floored at its neutral value (Phase 4, D4) and the expansion cap is capped at its
+///         neutral value (Phase 5, P5-01), whatever H reads.
 ///
 ///         Reserve floor. Every state-changing entry point re-checks
 ///         `reserveValue() >= totalSupply()` and reverts otherwise. Protocol actions can
@@ -56,7 +57,8 @@ import {SpectralPolicy} from "./libraries/SpectralPolicy.sol";
 ///         raises it as confidence grows. The daily expansion cap still applies under it.
 ///
 ///         Roles. DEFAULT_ADMIN_ROLE (a Safe): supply cap, liquidity buffer, vault migration
-///         behind a 7-day timelock (holders can redeem before it executes). The admin role
+///         behind a 7-day timelock (holders can redeem before it executes), executed with an
+///         explicit bound on the loss it may cause (Phase 5, P5-03). The admin role
 ///         itself transfers in two steps behind ADMIN_TRANSFER_DELAY (OpenZeppelin
 ///         AccessControlDefaultAdminRules), and it cannot be renounced in one call.
 ///         GUARDIAN_ROLE (a faster Safe or monitored key, plus the admin): pause/unpause
@@ -110,9 +112,11 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
     uint256 public constant REDEEM_FEE_MAX = SpectralPolicy.REDEEM_FEE_MAX;
 
     /// @notice Net minting allowed per epoch (sUSD minted minus sUSD redeemed in the epoch,
-    ///         floored at zero), as a fraction of supply at the start of the epoch: 20% at
-    ///         h = 0 down to 2% at h = 1. Counting net flow means a mint-and-redeem round trip
-    ///         in one transaction cannot use up other users' capacity (Phase 4, A1).
+    ///         floored at zero), as a fraction of supply at the start of the epoch: 11% up to
+    ///         neutral H, down to 2% at h = 1. Steering H below neutral no longer loosens it
+    ///         (Phase 5, P5-01; it reached 20% at h = 0 before). Counting net flow means a
+    ///         mint-and-redeem round trip in one transaction cannot use up other users' capacity
+    ///         (Phase 4, A1).
     uint256 public constant EPOCH = 1 days;
     uint256 public constant EXPANSION_CAP_LOW_H = SpectralPolicy.EXPANSION_CAP_LOW_H;
     uint256 public constant EXPANSION_CAP_HIGH_H = SpectralPolicy.EXPANSION_CAP_HIGH_H;
@@ -236,6 +240,9 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
     error WiringMismatch();
     error VaultNotAllowed(address vault);
     error BadVaultAllowlist();
+    /// @param loss    Fall of the reserve the migration would cause, in asset units.
+    /// @param maxLoss The bound the caller accepted.
+    error MigrationLossTooHigh(uint256 loss, uint256 maxLoss);
 
     // ---------------------------------------------------------------------- constructor
 
@@ -516,9 +523,16 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
     // Reentrancy: nonReentrant on every state-changing entry point, and the calls go to the
     // immutable token and treasury and, through it, to allowlisted vaults (audit/slither.md).
     // slither-disable-start reentrancy-no-eth
-    /// @notice Execute the pending migration. Unredeemable old shares are quarantined and the
-    ///         resulting loss is absorbed pro rata.
-    function executeVaultMigration() external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
+    /// @notice Execute the pending migration, bounding what it may cost holders. Old-vault
+    ///         shares that cannot be redeemed now are quarantined, which removes their value
+    ///         from the reserve and cuts every balance by that share at once; what
+    ///         `recoverLegacy` returns later goes to whoever holds sUSD then. The call therefore
+    ///         reverts if the reserve falls by more than `maxLoss` (asset units) (Phase 5,
+    ///         P5-03). In normal operation pass a rounding tolerance and migrate from a liquid
+    ///         vault: if it is not liquid, wait (the proposal stays executable). A larger bound
+    ///         is a deliberate decision, for a vault that will not recover.
+    /// @param  maxLoss Largest fall of `treasury.reserveAssets()` accepted, in asset units.
+    function executeVaultMigration(uint256 maxLoss) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
         IERC4626 v = pendingVault;
         if (address(v) == address(0)) revert NoPendingVault();
         if (block.timestamp < pendingVaultEta) revert VaultTimelockActive(pendingVaultEta);
@@ -526,7 +540,12 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         delete pendingVaultEta;
         address old = address(treasury.vault());
         _syncLoss();
+        uint256 before = treasury.reserveAssets();
         treasury.migrateVault(v);
+        uint256 afterMigration = treasury.reserveAssets();
+        if (before > afterMigration && before - afterMigration > maxLoss) {
+            revert MigrationLossTooHigh(before - afterMigration, maxLoss);
+        }
         _syncLoss();
         emit VaultMigrationExecuted(old, address(v));
     }

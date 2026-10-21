@@ -86,3 +86,12 @@ binary the build uses (verified against solc-bin, `audit/tools.md`). Report:
 
 No High or Medium finding remains open in either tool. The CI job fails on any new Medium or
 High until it is fixed or triaged here.
+
+## Phase 5
+
+`make analyze` on `phase-5-scale`: 0 results with `--fail-medium` (24 accepted, all Low or
+Informational). Two new results came from the new `SpectrumLens.maxRedeem`, both
+`incorrect-equality` on guards in a view (`balance == 0`, and a payout that would round to zero,
+which `redeem` refuses too); they carry `slither-disable-next-line` with that reason. The triage
+database was re-recorded because line numbers moved: the same 24 findings, one of them renamed
+with `executeVaultMigration(uint256)` (P5-03).

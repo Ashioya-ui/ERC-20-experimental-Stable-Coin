@@ -67,7 +67,7 @@ contract SpectrumLens {
     }
 
     /// @notice Net expansion still available in the current epoch, in sUSD wei.
-    function expansionRemaining() external view returns (uint256) {
+    function expansionRemaining() public view returns (uint256) {
         uint256 h = oracle.smoothedEntropy();
         bool expired = block.timestamp >= uint256(stabilizer.epochStart()) + stabilizer.EPOCH();
         uint256 base = expired ? token.totalSupply() : stabilizer.epochSupply();
@@ -77,7 +77,7 @@ contract SpectrumLens {
     }
 
     /// @notice Minting room left under the supply cap, in sUSD wei.
-    function supplyCapRemaining() external view returns (uint256) {
+    function supplyCapRemaining() public view returns (uint256) {
         uint256 supply = token.totalSupply();
         uint256 cap = stabilizer.supplyCap();
         return cap > supply ? cap - supply : 0;
@@ -99,5 +99,75 @@ contract SpectrumLens {
     /// @notice Assets the treasury can pay out right now (idle + the vault's `maxWithdraw`).
     function liquidAssets() external view returns (uint256) {
         return treasury.liquidAssets();
+    }
+
+    // ------------------------------------------------------------------ integrators at scale
+    //
+    // Phase 5 (P5-02). `redeem` is all-or-nothing, and a card program or exchange that settles
+    // around the clock needs to know what fits before it sends a transaction, above all during
+    // a liquidity crunch, when a redemption sized to the balance reverts.
+
+    /// @notice The most sUSD `owner` can redeem in one call right now: the whole balance, or
+    ///         less when the treasury cannot pay that much at once (idle funds plus the vault's
+    ///         `maxWithdraw`). Accounts for a loss not yet absorbed (`redeem` syncs first), the
+    ///         fee at the current H and the minimum partial redemption. 0 if nothing fits.
+    function maxRedeem(address owner) external view returns (uint256) {
+        uint256 balance = _balanceAfterSync(owner);
+        // A guard for an empty account, not a balance check anyone can game (a view).
+        // slither-disable-next-line incorrect-equality
+        if (balance == 0) return 0;
+        uint256 rate = stabilizer.redeemFeeRate(oracle.smoothedEntropy());
+        // A redemption of `a` pays (a - ceil(a * rate / WAD)) / scale, which must not exceed
+        // the liquid assets L, i.e. a - ceil(a * rate / WAD) <= t with t = (L + 1) * scale - 1.
+        // The left side never decreases in `a` and lies in (a (1 - r) - 1, a (1 - r)], so the
+        // largest such `a` is below (t + 1) / (1 - r) + 1; search down from there (at most a
+        // few steps, since 1 / (1 - r) < 1.002).
+        uint256 t = (treasury.liquidAssets() + 1) * scale - 1;
+        uint256 a = Math.min(balance, Math.mulDiv(t + 1, WAD, WAD - rate) + 1);
+        while (a > 0 && _netOf(a, rate) > t) {
+            --a;
+        }
+        // A full exit is allowed below the minimum; a partial one is not. Either must pay out
+        // at least one unit of the asset, as `redeem` requires (a guard, in a view).
+        // slither-disable-next-line incorrect-equality
+        if (_netOf(a, rate) / scale == 0) return 0;
+        if (a < balance && a < stabilizer.minAmount()) return 0;
+        return a;
+    }
+
+    /// @notice The most reserve-asset units one `mint` can take right now under the daily
+    ///         expansion cap and the supply cap, at the current H. 0 while minting is paused, and
+    ///         0 when even that much would be below the minimum mint. Vault rounding can only
+    ///         lower what a mint is credited, so a mint of this size fits.
+    function maxMintAssets() external view returns (uint256) {
+        if (stabilizer.paused()) return 0;
+        uint256 room = Math.min(expansionRemaining(), supplyCapRemaining());
+        uint256 rate = stabilizer.mintFeeRate(oracle.smoothedEntropy());
+        // Credited c pays out c - ceil(c * rate / WAD) <= c (1 - rate); c <= room / (1 - rate)
+        // keeps that within the room.
+        uint256 assets = Math.mulDiv(room, WAD, WAD - rate) / scale;
+        return assets * scale < stabilizer.minAmount() ? 0 : assets;
+    }
+
+    /// @notice What the treasury can pay out right now as a share of supply, WAD (max uint if
+    ///         supply is zero). The run-readiness number to alert on at scale.
+    function liquidityRatio() external view returns (uint256) {
+        uint256 supply = token.totalSupply();
+        if (supply == 0) return type(uint256).max;
+        return Math.mulDiv(treasury.liquidAssets() * scale, WAD, supply);
+    }
+
+    /// @dev `owner`'s balance after the loss absorption `redeem` would run first.
+    function _balanceAfterSync(address owner) private view returns (uint256) {
+        uint256 r = reserveValue();
+        if (r >= token.totalSupply()) return token.balanceOf(owner);
+        uint256 newIndex = Math.mulDiv(r, WAD, token.totalShares());
+        if (newIndex == 0) newIndex = 1;
+        return Math.mulDiv(token.sharesOf(owner), newIndex, WAD);
+    }
+
+    /// @dev What a redemption of `a` keeps after the fee, in sUSD wei.
+    function _netOf(uint256 a, uint256 rate) private pure returns (uint256) {
+        return a - Math.mulDiv(a, rate, WAD, Math.Rounding.Ceil);
     }
 }

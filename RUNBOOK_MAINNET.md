@@ -239,12 +239,15 @@ can send directly: `cast send $S "<fn>" --ledger --rpc-url $RPC`.
   can be proposed: Aave waBasUSDC and Gauntlet USDC Prime. `cast call $S "allowedVaults()(address[])"`
   shows them, and nothing can add to the list afterwards, so moving to a third venue needs a new
   deployment. Announce the migration; holders have **7 days** to redeem if they disagree. That
-  protection assumes the old vault is liquid: redemptions beyond the idle buffer need it. Execute
-  a migration only when `cast call <old vault> "maxWithdraw(address)(uint256)" $T` covers the
-  position, or as an emergency you have announced; otherwise the shares the old vault cannot pay
-  are quarantined and holders who could not leave take the loss. The guardian cancels a
-  migration that does not meet this (E6). Then:
-  1. `script/safe-tx.sh execute-migration`
+  protection assumes the old vault is liquid: redemptions beyond the idle buffer need it. Since
+  Phase 5 (P5-03) the execution carries the largest fall of the reserve it accepts, in USDC wei,
+  and reverts beyond it: the default of 10 covers rounding, so a migration out of a vault that
+  cannot pay the whole position is refused, nothing moves, and the proposal stays executable
+  until `cast call <old vault> "maxWithdraw(address)(uint256)" $T` covers the position. Pass a
+  larger bound only for a vault that will not recover, as an emergency you have announced: the
+  shares it cannot pay are then quarantined and every balance is cut by their share at once.
+  Then:
+  1. `script/safe-tx.sh execute-migration` (or `execute-migration <max loss in USDC wei>`)
   2. `script/safe-tx.sh set-buffer 1500`
   3. `cast send $S "rebalanceReserve()"`
 

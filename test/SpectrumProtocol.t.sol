@@ -1055,7 +1055,9 @@ contract SpectralStabilizerTest is SpectrumFixture {
         assertEq(stabilizer.mintFeeRate(0.5e18), 0.0007e18); // 1 bp + 24 bp / 4
         assertEq(stabilizer.redeemFeeRate(0), 0.0001e18);
         assertEq(stabilizer.redeemFeeRate(1e18), 0.001e18);
-        assertEq(stabilizer.expansionCapRate(0), 0.2e18);
+        assertEq(stabilizer.expansionCapRate(0), 0.11e18, "capped at neutral (P5-01; was 20%)");
+        assertEq(stabilizer.expansionCapRate(0.5e18), 0.11e18);
+        assertEq(stabilizer.expansionCapRate(0.75e18), 0.065e18);
         assertEq(stabilizer.expansionCapRate(1e18), 0.02e18);
         assertEq(stabilizer.bufferRate(0), 0.0275e18, "floored at the neutral buffer (D4)");
         assertEq(stabilizer.bufferRate(0.5e18), 0.0275e18);
@@ -1193,13 +1195,17 @@ contract SpectralStabilizerTest is SpectrumFixture {
     function test_mint_capScalesWithSupplyAndEntropy() public {
         bootstrapCap = 1_000e18;
         _deploySystem();
-        for (uint256 d; d < 6; ++d) {
+        for (uint256 d; d < 12; ++d) {
             _mintFor(alice, 1_000e6); // 999.9 sUSD per epoch (bootstrap-bound)
             vm.warp(vm.getBlockTimestamp() + 1 days);
         }
-        uint256 supply = token.totalSupply(); // 5,999.4 sUSD
-        assertEq(supply, 5_999.4e18);
-        assertEq(lens.expansionRemaining(), (supply * 20) / 100, "20% of supply at h = 0");
+        uint256 supply = token.totalSupply(); // 11,998.8 sUSD
+        assertEq(supply, 11_998.8e18);
+        assertEq(lens.expansionRemaining(), (supply * 11) / 100, "11% of supply at neutral H (h = 0 here)");
+        oracle.setEntropy(0.5e18);
+        assertEq(lens.expansionRemaining(), (supply * 11) / 100, "steering below neutral buys nothing (P5-01)");
+        oracle.setEntropy(0.75e18);
+        assertEq(lens.expansionRemaining(), 1_000e18, "6.5% of supply < bootstrap at h = 0.75");
         oracle.setEntropy(1e18);
         assertEq(lens.expansionRemaining(), 1_000e18, "2% of supply < bootstrap at h = 1");
     }
@@ -1886,14 +1892,14 @@ contract VaultGovernanceTest is SpectrumFixture {
         assertEq(eta, vm.getBlockTimestamp() + 7 days);
         vm.prank(admin);
         vm.expectRevert(abi.encodeWithSelector(SpectralStabilizer.VaultTimelockActive.selector, eta));
-        stabilizer.executeVaultMigration();
+        stabilizer.executeVaultMigration(10);
 
         vm.prank(guardian);
         stabilizer.cancelVaultMigration();
         vm.warp(eta);
         vm.prank(admin);
         vm.expectRevert(SpectralStabilizer.NoPendingVault.selector);
-        stabilizer.executeVaultMigration();
+        stabilizer.executeVaultMigration(10);
     }
 
     /// A5: the admin can only ever move the reserve to a vault fixed at deployment, so a
@@ -1914,7 +1920,7 @@ contract VaultGovernanceTest is SpectrumFixture {
         stabilizer.proposeVault(vault2); // the allowlisted fallback still works
         vm.warp(vm.getBlockTimestamp() + 7 days);
         vm.prank(admin);
-        stabilizer.executeVaultMigration();
+        stabilizer.executeVaultMigration(10);
         assertEq(address(treasury.vault()), address(vault2));
 
         // The emergency exit never depends on the allowlist.
@@ -1951,7 +1957,7 @@ contract VaultGovernanceTest is SpectrumFixture {
         _proposeAndWait(vault2);
         uint256 reserveBefore = stabilizer.reserveValue();
         vm.prank(admin);
-        stabilizer.executeVaultMigration();
+        stabilizer.executeVaultMigration(10);
         assertEq(address(treasury.vault()), address(vault2));
         assertEq(vault.balanceOf(address(treasury)), 0);
         assertEq(vault2.totalAssets(), 9_000e6);
@@ -1966,7 +1972,7 @@ contract VaultGovernanceTest is SpectrumFixture {
         _proposeAndWait(vault2);
         uint256 supplyBefore = token.totalSupply();
         vm.prank(admin);
-        stabilizer.executeVaultMigration();
+        stabilizer.executeVaultMigration(type(uint256).max);
 
         assertEq(address(treasury.legacyVault()), address(vault));
         assertEq(vault.balanceOf(address(treasury)), 6_000e6, "stuck shares quarantined");
@@ -1979,7 +1985,7 @@ contract VaultGovernanceTest is SpectrumFixture {
         _proposeAndWait(vault);
         vm.prank(admin);
         vm.expectRevert(AutonomousTreasury.NewVaultIsLegacy.selector);
-        stabilizer.executeVaultMigration();
+        stabilizer.executeVaultMigration(type(uint256).max);
 
         // Liquidity returns: anyone recovers the shares; value flows back as surplus.
         vault.setLiquidityCap(type(uint256).max);
@@ -2010,7 +2016,7 @@ contract VaultGovernanceTest is SpectrumFixture {
         vm.expectRevert(denied);
         stabilizer.setLiquidityBuffer(0);
         vm.expectRevert(denied);
-        stabilizer.executeVaultMigration();
+        stabilizer.executeVaultMigration(10);
         vm.stopPrank();
     }
 }

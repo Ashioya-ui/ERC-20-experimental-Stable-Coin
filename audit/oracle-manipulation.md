@@ -12,7 +12,7 @@ Reproduce: `forge test --match-contract OracleManipulationTest -vv`.
 |---|---|---|---|
 | Mint fee | 1 bp | 7 bp | 25 bp (50 bp before D4) |
 | Redemption fee | 1 bp | 3.25 bp | 10 bp |
-| Expansion cap (fraction of supply per epoch) | 20% | 11% | 2% |
+| Expansion cap (fraction of supply per epoch) | 11% (20% before Phase 5, P5-01) | 11% | 2% |
 | Surplus buffer | **2.75%** (was 0.5%) | 2.75% | 5% |
 | Rebase step | 1 bp | 0.75 bp | 0.5 bp |
 
