@@ -1,0 +1,3 @@
+policy-cvc5 solver=cvc5-int exit=0 seconds=5
+policy-bitwuzla solver=bitwuzla-abs exit=1 seconds=1361
+fwht-bitwuzla solver=bitwuzla-abs exit=0 seconds=4

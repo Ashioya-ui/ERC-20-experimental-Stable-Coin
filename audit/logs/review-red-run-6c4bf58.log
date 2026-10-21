@@ -1,0 +1,127 @@
+Compiling 145 files with Solc 0.8.26
+Solc 0.8.26 finished in 53.84s
+Compiler run successful!
+
+Ran 1 test for test/ReviewFindings.t.sol:MigrationEventTest
+[FAIL: nothing quarantined: 500 != 0] test_S05_migrationReportsZeroQuarantinedForAbandonedDust() (gas: 387597)
+Suite result: FAILED. 0 passed; 1 failed; 0 skipped; finished in 15.74ms (2.67ms CPU time)
+
+Ran 4 tests for test/poc/PocA2PriceBand.t.sol:PocA2PriceBandTest
+[PASS] test_A2_emptyPoolPriceMovesForFreeAndUnrecorded() (gas: 30035529)
+[PASS] test_A2_inBandFrontRunStillAbortsTheScript() (gas: 29807485)
+[PASS] test_A2_oneWeiDonationBlocksScriptStart_wsIsCurrency0() (gas: 30234612)
+[PASS] test_A2_oneWeiDonationBlocksScriptStart_wsIsCurrency1() (gas: 30235947)
+Suite result: ok. 4 passed; 0 failed; 0 skipped; finished in 26.57ms (17.65ms CPU time)
+
+Ran 5 tests for test/ReviewFindings.t.sol:OracleSteeringTest
+[FAIL: only the one-way block counts: 8 > 2] test_S04_oneSmallBlockAmongRoundTripsIsNotASpike() (gas: 440445)
+[FAIL: round trips do not fill the window: 8 > 1] test_S04_roundTripBlocksTakeNoSlot() (gas: 486740)
+[FAIL: no fold happened: 28156757354736329 != 500000000000000000] test_S04_roundTripsCannotPinH() (gas: 1252373)
+[FAIL: two hours of round trips: no signal left: 264600552498822091 != 500000000000000000] test_S04_roundTripsDoNotKeepASteeredSignalAlive() (gas: 1344743)
+[FAIL: a fresh window: 8 != 1] test_S04_staleSignalStartsOverFromNeutral() (gas: 963178)
+Suite result: FAILED. 0 passed; 5 failed; 0 skipped; finished in 12.66ms (12.29ms CPU time)
+
+Ran 5 tests for test/poc/PocA6NetFlowSteering.t.sol:PocA6NetFlowSteeringTest
+[PASS] test_oneSmallBlockAmongZerosReadsAsAWhale() (gas: 444529)
+[PASS] test_pinHNearOne() (gas: 1518844)
+Logs:
+  smoothed H after 3h20m: 0.971843242645263671
+  redeem fee (bp): 9.500313594477340000
+  mint fee (bp): 23.667502918606260000
+  attacker swaps of 10 wsUSD: 33
+
+[PASS] test_pinHNearZero() (gas: 1030167)
+Logs:
+  smoothed H after 3h20m: 0.028156757354736329
+  attacker swaps of 10 wsUSD: 36
+
+[PASS] test_roundTripBlocksReadAsPerfectlyCalm() (gas: 436445)
+[PASS] test_staleThenOneRoundTripRestoresTheSteeredValue() (gas: 1093934)
+Suite result: ok. 5 passed; 0 failed; 0 skipped; finished in 10.32ms (9.96ms CPU time)
+
+Ran 4 tests for test/mainnet/TestnetRehearsal.t.sol:TestnetRehearsalTest
+[FAIL: check: pool price is more than 50 bp from wsUSD's redemption value] test_S01_checkSurvivesAnEmptyPoolWalkedOffPar() (gas: 1735598)
+Logs:
+  test vault A              0x1d1499e622D69689cdf9004d05Ec547d650Ff211
+  test vault B              0xA4AD4f68d0b91CFD19687c881e50f3A00242828c
+  == preflight ==
+  chain id                  84532
+  deployer                  0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496
+  deployer ETH (wei)        79228162514264337593543950335
+  admin (Safe)              0xb1C7022DEBF60EBaf5F2Db614ce71521F66Eb61e
+  vault                     0x1d1499e622D69689cdf9004d05Ec547d650Ff211
+  vault totalAssets (USDC)  0
+  vault 1 share -> assets   1000000
+  vault maxDeposit (USDC)   115792089237316195423570985008687907853269984665640564039457584007913129
+  round trip 1,000 USDC ->  1000000000
+  protocol capital (USDC)   5
+
+[PASS] test_mintRedeemOnTheRehearsal() (gas: 375204)
+Logs:
+  test vault A              0x1d1499e622D69689cdf9004d05Ec547d650Ff211
+  test vault B              0xA4AD4f68d0b91CFD19687c881e50f3A00242828c
+  == preflight ==
+  chain id                  84532
+  deployer                  0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496
+  deployer ETH (wei)        79228162514264337593543950335
+  admin (Safe)              0xb1C7022DEBF60EBaf5F2Db614ce71521F66Eb61e
+  vault                     0x1d1499e622D69689cdf9004d05Ec547d650Ff211
+  vault totalAssets (USDC)  0
+  vault 1 share -> assets   1000000
+  vault maxDeposit (USDC)   115792089237316195423570985008687907853269984665640564039457584007913129
+  round trip 1,000 USDC ->  1000000000
+  protocol capital (USDC)   5
+
+[PASS] test_rehearsalDeploysAgainstLabelledTestVaults() (gas: 50904)
+Logs:
+  test vault A              0x1d1499e622D69689cdf9004d05Ec547d650Ff211
+  test vault B              0xA4AD4f68d0b91CFD19687c881e50f3A00242828c
+  == preflight ==
+  chain id                  84532
+  deployer                  0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496
+  deployer ETH (wei)        79228162514264337593543950335
+  admin (Safe)              0xb1C7022DEBF60EBaf5F2Db614ce71521F66Eb61e
+  vault                     0x1d1499e622D69689cdf9004d05Ec547d650Ff211
+  vault totalAssets (USDC)  0
+  vault 1 share -> assets   1000000
+  vault maxDeposit (USDC)   115792089237316195423570985008687907853269984665640564039457584007913129
+  round trip 1,000 USDC ->  1000000000
+  protocol capital (USDC)   5
+
+[PASS] test_testVaultRefusesBaseMainnet() (gas: 143114)
+Logs:
+  test vault A              0x1d1499e622D69689cdf9004d05Ec547d650Ff211
+  test vault B              0xA4AD4f68d0b91CFD19687c881e50f3A00242828c
+  == preflight ==
+  chain id                  84532
+  deployer                  0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496
+  deployer ETH (wei)        79228162514264337593543950335
+  admin (Safe)              0xb1C7022DEBF60EBaf5F2Db614ce71521F66Eb61e
+  vault                     0x1d1499e622D69689cdf9004d05Ec547d650Ff211
+  vault totalAssets (USDC)  0
+  vault 1 share -> assets   1000000
+  vault maxDeposit (USDC)   115792089237316195423570985008687907853269984665640564039457584007913129
+  round trip 1,000 USDC ->  1000000000
+  protocol capital (USDC)   5
+
+Suite result: FAILED. 3 passed; 1 failed; 0 skipped; finished in 76.24ms (5.82ms CPU time)
+
+Ran 5 test suites in 110.91ms (141.53ms CPU time): 12 tests passed, 7 failed, 0 skipped (19 total tests)
+
+Failing tests:
+Encountered 1 failing test in test/ReviewFindings.t.sol:MigrationEventTest
+[FAIL: nothing quarantined: 500 != 0] test_S05_migrationReportsZeroQuarantinedForAbandonedDust() (gas: 387597)
+
+Encountered 5 failing tests in test/ReviewFindings.t.sol:OracleSteeringTest
+[FAIL: only the one-way block counts: 8 > 2] test_S04_oneSmallBlockAmongRoundTripsIsNotASpike() (gas: 440445)
+[FAIL: round trips do not fill the window: 8 > 1] test_S04_roundTripBlocksTakeNoSlot() (gas: 486740)
+[FAIL: no fold happened: 28156757354736329 != 500000000000000000] test_S04_roundTripsCannotPinH() (gas: 1252373)
+[FAIL: two hours of round trips: no signal left: 264600552498822091 != 500000000000000000] test_S04_roundTripsDoNotKeepASteeredSignalAlive() (gas: 1344743)
+[FAIL: a fresh window: 8 != 1] test_S04_staleSignalStartsOverFromNeutral() (gas: 963178)
+
+Encountered 1 failing test in test/mainnet/TestnetRehearsal.t.sol:TestnetRehearsalTest
+[FAIL: check: pool price is more than 50 bp from wsUSD's redemption value] test_S01_checkSurvivesAnEmptyPoolWalkedOffPar() (gas: 1735598)
+
+Encountered a total of 7 failing tests, 12 tests succeeded
+
+Tip: Run `forge test --rerun` to retry only the 7 failed tests

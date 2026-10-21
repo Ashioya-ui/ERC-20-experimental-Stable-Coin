@@ -1,0 +1,13 @@
+Compiling 6 files with Solc 0.8.26
+Solc 0.8.26 finished in 13.10s
+Compiler run successful!
+
+Running 14 tests for test/halmos/Properties.t.sol:HalmosPolicy
+[PASS] check_bufferBoundedAndFloored(uint256) (paths: 5, time: 0.16s, bounds: [])
+[PASS] check_bufferLocallyMonotone(uint64) (paths: 10, time: 0.33s, bounds: [])
+[PASS] check_churnStepNeverRevertsAndIsExact(uint128,uint128,uint128,uint128,uint128) (paths: 49, time: 0.86s, bounds: [])
+[PASS] check_curvesClampAboveOne(uint256) (paths: 1, time: 0.01s, bounds: [])
+[PASS] check_expansionCapBounded(uint64) (paths: 4, time: 0.17s, bounds: [])
+[PASS] check_expansionCapLocallyMonotone(uint64) (paths: 6, time: 0.16s, bounds: [])
+ERROR    solver_output.error='executor has been shutdown'                       
+         (solver_output.returncode=-1)                                          

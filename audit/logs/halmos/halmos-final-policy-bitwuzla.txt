@@ -1,0 +1,11 @@
+No files changed, compilation skipped
+
+Running 5 tests for test/halmos/Properties.t.sol:HalmosPolicy
+[PASS] check_mintFeeBounded(uint64) (paths: 4, time: 26.12s, bounds: [])
+[TIMEOUT] check_mintFeeLocallyMonotone(uint64) (paths: 4, time: 600.32s, bounds: [])
+Timeout queries saved in: /tmp/check_mintFeeLocallyMonotone-a46c0105-timeout
+[PASS] check_rebaseStepBelowRoundTripFees(uint256) (paths: 4, time: 7.53s, bounds: [])
+[PASS] check_redeemFeeBounded(uint64) (paths: 4, time: 124.77s, bounds: [])
+[TIMEOUT] check_redeemFeeLocallyMonotone(uint64) (paths: 4, time: 600.26s, bounds: [])
+Timeout queries saved in: /tmp/check_redeemFeeLocallyMonotone-l7xc69e2-timeout
+Symbolic test result: 3 passed; 2 failed; time: 1359.02s

@@ -1,0 +1,48 @@
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.26"
+evm_version = "cancun"      # Uniswap v4 uses transient storage (EIP-1153)
+via_ir = true               # required to compile v4-core's PoolManager for tests
+optimizer = true
+optimizer_runs = 44_444_444  # same as v4-core; lower values hit stack-too-deep in PoolManager under via-IR
+bytecode_hash = "none"
+fs_permissions = [{ access = "read", path = "./" }, { access = "read-write", path = "./deployments" }]
+
+[profile.default.fuzz]
+runs = 1_000
+seed = "0x5bec7a"
+
+[profile.default.invariant]
+runs = 256
+depth = 128
+fail_on_revert = false
+
+[profile.ci.fuzz]
+runs = 10_000
+
+[profile.ci.invariant]
+runs = 1_024
+depth = 256
+
+[fmt]
+line_length = 110
+number_underscore = "thousands"
+
+[lint]
+# Style-only notes that conflict with the codebase's naming of immutables and modifiers.
+exclude_lints = ["screaming-snake-case-immutable", "unwrapped-modifier-logic"]
+ignore = ["test/**/*.sol", "script/**/*.sol"]
+
+[rpc_endpoints]
+base = "${BASE_RPC_URL}"
+base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
+local = "http://127.0.0.1:8545"
+
+[etherscan]
+# Etherscan API V2: one key for all supported chains (Basescan included).
+base = { key = "${ETHERSCAN_API_KEY}", chain = 8453 }
+base_sepolia = { key = "${ETHERSCAN_API_KEY}", chain = 84532 }

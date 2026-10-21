@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SPCM · Spectral Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/ethers@6.13.4/dist/ethers.umd.min.js"></script>
+<style>
+  :root {
+    --bg:#080808; --s1:#0d0d0d; --b1:#1e1e1e; --b2:#2a2a2a;
+    --text:#e8e8e8; --muted:#666; --sub:#aaa;
+    --green:#1abc9c; --orange:#e67e22; --red:#c0392b; --gold:#c9a84c;
+    --fn:"Helvetica Neue",sans-serif; --mono:"SF Mono","Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--fn);font-size:14px;min-height:100vh}
+  header{border-bottom:1px solid var(--b1);padding:16px 28px;display:flex;align-items:center;gap:16px}
+  .logo{font-size:13px;letter-spacing:.2em;font-weight:500}
+  .status-dot{width:8px;height:8px;border-radius:50%;background:var(--muted);animation:pulse 2s infinite}
+  .status-dot.live{background:var(--green)}
+  .status-txt{font-size:11px;color:var(--muted);letter-spacing:.08em}
+  main{max-width:1000px;margin:0 auto;padding:32px 28px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1px;background:var(--b1);margin-bottom:1px}
+  .card{background:var(--s1);padding:24px}
+  .card-label{font-size:9px;letter-spacing:.15em;color:var(--muted);margin-bottom:10px}
+  .card-value{font-size:28px;font-weight:300;letter-spacing:-.01em;font-family:var(--mono)}
+  .card-sub{font-size:11px;color:var(--muted);margin-top:6px}
+  .regime{font-size:14px;font-weight:600;letter-spacing:.06em}
+  .regime.critical{color:var(--orange)}
+  .regime.periodic{color:#2980b9}
+  .regime.chaotic{color:var(--red)}
+  .bar-track{height:4px;background:var(--b2);border-radius:2px;margin-top:10px}
+  .bar-fill{height:100%;border-radius:2px;transition:width .5s}
+  .entropy-window{display:flex;align-items:center;gap:8px;margin-top:4px}
+  .window-seg{height:4px;flex:1;background:var(--b2);border-radius:1px}
+  .window-seg.active{background:var(--orange)}
+  .history{margin-top:24px;background:var(--s1);border:1px solid var(--b1);padding:20px}
+  .history-label{font-size:9px;letter-spacing:.14em;color:var(--muted);margin-bottom:14px}
+  .sparkline{display:flex;align-items:flex-end;gap:3px;height:60px}
+  .spark-bar{flex:1;background:var(--b2);border-radius:1px;transition:height .3s,background .3s}
+  .spark-bar.critical{background:var(--orange)}
+  .spark-bar.outside{background:var(--red)}
+  .config{margin-top:24px;background:var(--s1);border:1px solid var(--b1);padding:20px}
+  .config-label{font-size:9px;letter-spacing:.14em;color:var(--muted);margin-bottom:14px}
+  .inputs{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  input[type=text]{background:var(--bg);border:1px solid var(--b1);color:var(--text);
+    font-family:var(--mono);font-size:11px;padding:10px 12px;width:100%;outline:none;border-radius:2px}
+  input[type=text]:focus{border-color:var(--b2)}
+  .connect-btn{margin-top:12px;padding:10px 20px;background:var(--text);color:#000;
+    font-size:11px;letter-spacing:.08em;font-weight:600;border:none;border-radius:2px;
+    cursor:pointer;transition:opacity .15s}
+  .connect-btn:hover{opacity:.88}
+  .error{color:var(--red);font-size:11px;margin-top:8px}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">SPCM</div>
+  <div class="status-dot" id="dot"></div>
+  <div class="status-txt" id="status-txt">Not connected</div>
+</header>
+
+<main>
+  <!-- Config -->
+  <div class="config">
+    <div class="config-label">CONTRACT ADDRESSES</div>
+    <div class="inputs">
+      <div>
+        <div style="font-size:10px;color:var(--muted);margin-bottom:6px">ORACLE</div>
+        <input type="text" id="in-oracle" placeholder="0x...SpectralEntropyOracle">
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--muted);margin-bottom:6px">STABILIZER</div>
+        <input type="text" id="in-stab" placeholder="0x...SpectralStabilizer">
+      </div>
+    </div>
+    <button class="connect-btn" onclick="connect()">Connect →</button>
+    <div class="error" id="err"></div>
+  </div>
+
+  <!-- Metrics -->
+  <div class="grid" id="metrics" style="display:none;margin-top:24px">
+    <div class="card">
+      <div class="card-label">H_WHT ENTROPY</div>
+      <div class="card-value" id="entropy-val">—</div>
+      <div class="card-sub">nats (target: 2.3)</div>
+      <div class="entropy-window">
+        <div class="window-seg" id="ws0"></div>
+        <div class="window-seg" id="ws1"></div>
+        <div class="window-seg" id="ws2"></div>
+        <div class="window-seg" id="ws3"></div>
+        <div class="window-seg" id="ws4"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-top:4px">
+        <span>1.0</span><span>1.8</span><span>2.3</span><span>2.8</span><span>4.0</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-label">REGIME</div>
+      <div class="regime" id="regime-val">—</div>
+      <div class="card-sub" id="regime-desc"></div>
+    </div>
+    <div class="card">
+      <div class="card-label">DYNAMIC FEE</div>
+      <div class="card-value" id="fee-val">—</div>
+      <div class="card-sub">%</div>
+    </div>
+    <div class="card">
+      <div class="card-label">OBSERVATIONS</div>
+      <div class="card-value" id="obs-val">—</div>
+      <div class="card-sub">in rolling window</div>
+    </div>
+    <div class="card">
+      <div class="card-label">SPCM SUPPLY</div>
+      <div class="card-value" id="supply-val">—</div>
+      <div class="card-sub">SPCM circulating</div>
+      <div class="bar-track"><div class="bar-fill" id="supply-bar" style="background:var(--orange);width:0%"></div></div>
+    </div>
+    <div class="card">
+      <div class="card-label">ADJUSTMENTS</div>
+      <div class="card-value" id="adj-val">—</div>
+      <div class="card-sub">total adjustments</div>
+    </div>
+    <div class="card">
+      <div class="card-label">TOTAL MINTED</div>
+      <div class="card-value" id="minted-val">—</div>
+      <div class="card-sub">SPCM minted by stabilizer</div>
+    </div>
+    <div class="card">
+      <div class="card-label">TOTAL BURNED</div>
+      <div class="card-value" id="burned-val">—</div>
+      <div class="card-sub">SPCM burned by stabilizer</div>
+    </div>
+  </div>
+
+  <!-- Entropy history -->
+  <div class="history" id="history-block" style="display:none">
+    <div class="history-label">ENTROPY HISTORY (last 32 observations)</div>
+    <div class="sparkline" id="sparkline"></div>
+  </div>
+</main>
+
+<script>
+const ORACLE_ABI = [
+  "function getState() view returns (uint256 entropy, bool critical, uint256 fano, uint256 observations, uint256 dynamicFee)",
+  "function twapEntropy(uint256 n) view returns (uint256)",
+  "function entropyHistory(uint256) view returns (uint256)",
+  "function historyIndex() view returns (uint256)",
+];
+const STAB_ABI = [
+  "function getStats() view returns (uint256 supply, uint256 entropy, bool critical, uint256 minted, uint256 burned, uint256 adjustments, uint256 nextAdjustment)",
+];
+
+let provider, oracle, stab, pollTimer;
+
+async function connect() {
+  const oracleAddr = document.getElementById('in-oracle').value.trim();
+  const stabAddr   = document.getElementById('in-stab').value.trim();
+  const err        = document.getElementById('err');
+  err.textContent  = '';
+
+  if (!ethers.isAddress(oracleAddr) || !ethers.isAddress(stabAddr)) {
+    err.textContent = 'Enter valid addresses for both contracts.';
+    return;
+  }
+
+  try {
+    provider = new ethers.JsonRpcProvider(
+      'https://sepolia.base.org'   // switch to mainnet for production
+    );
+    oracle = new ethers.Contract(oracleAddr, ORACLE_ABI, provider);
+    stab   = new ethers.Contract(stabAddr,   STAB_ABI,   provider);
+
+    await update();
+    document.getElementById('metrics').style.display = 'grid';
+    document.getElementById('history-block').style.display = 'block';
+    document.getElementById('dot').classList.add('live');
+    document.getElementById('status-txt').textContent = 'Live — updating every 10s';
+
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(update, 10000);
+  } catch(e) {
+    err.textContent = 'Connection failed: ' + e.message;
+  }
+}
+
+async function update() {
+  try {
+    const [entropy, critical, fano, observations, dynamicFee] = await oracle.getState();
+    const stats = await stab.getStats();
+
+    const e    = parseFloat(ethers.formatUnits(entropy, 18));
+    const fee  = (Number(dynamicFee) / 10000).toFixed(4);
+    const obs  = Number(observations);
+
+    document.getElementById('entropy-val').textContent = e.toFixed(4);
+    document.getElementById('fee-val').textContent     = fee;
+    document.getElementById('obs-val').textContent     = obs.toLocaleString();
+
+    // Regime
+    let regime, regimeDesc, regimeClass;
+    if (e < 1.8) {
+      regime = 'PERIODIC'; regimeDesc = 'Ordered / bot activity'; regimeClass = 'periodic';
+    } else if (e > 2.8) {
+      regime = 'CHAOTIC';  regimeDesc = 'High volatility / noise'; regimeClass = 'chaotic';
+    } else {
+      regime = 'CRITICAL'; regimeDesc = 'Edge-of-chaos — healthy market'; regimeClass = 'critical';
+    }
+    const rEl = document.getElementById('regime-val');
+    rEl.textContent = regime; rEl.className = 'regime ' + regimeClass;
+    document.getElementById('regime-desc').textContent = regimeDesc;
+
+    // Entropy window indicator (5 segments spanning [1.0, 4.0])
+    const breaks = [1.0, 1.8, 2.3, 2.8, 4.0];
+    for (let i = 0; i < 4; i++) {
+      const seg = document.getElementById('ws' + i);
+      if (e >= breaks[i] && e < breaks[i+1]) {
+        seg.classList.add('active');
+      } else {
+        seg.classList.remove('active');
+      }
+    }
+
+    // Stats
+    const supply = parseFloat(ethers.formatUnits(stats.supply, 18));
+    const minted = parseFloat(ethers.formatUnits(stats.minted, 18));
+    const burned = parseFloat(ethers.formatUnits(stats.burned, 18));
+    const adj    = Number(stats.adjustments);
+
+    document.getElementById('supply-val').textContent  = fmt(supply);
+    document.getElementById('adj-val').textContent     = adj;
+    document.getElementById('minted-val').textContent  = fmt(minted);
+    document.getElementById('burned-val').textContent  = fmt(burned);
+    document.getElementById('supply-bar').style.width  = Math.min(100, supply / 21000000 * 100) + '%';
+
+    // Entropy history sparkline
+    await drawSparkline();
+
+  } catch(e) {
+    console.error('Update error:', e);
+  }
+}
+
+async function drawSparkline() {
+  const spark  = document.getElementById('sparkline');
+  spark.innerHTML = '';
+  try {
+    const idx = Number(await oracle.historyIndex());
+    const n   = Math.min(32, idx);
+    const vals = [];
+    for (let i = 0; i < n; i++) {
+      const v = await oracle.entropyHistory(i % 32);
+      vals.push(parseFloat(ethers.formatUnits(v, 18)));
+    }
+    if (!vals.length) return;
+    const max = Math.max(...vals, 0.1);
+    vals.forEach(v => {
+      const bar = document.createElement('div');
+      bar.className = 'spark-bar ' + (v >= 1.8 && v <= 2.8 ? 'critical' : 'outside');
+      bar.style.height = Math.max(4, (v / max) * 60) + 'px';
+      bar.title = v.toFixed(4) + ' nats';
+      spark.appendChild(bar);
+    });
+  } catch {}
+}
+
+function fmt(n) {
+  if (n >= 1e6) return (n/1e6).toFixed(2) + 'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1) + 'k';
+  return n.toFixed(0);
+}
+</script>
+</body>
+</html>
