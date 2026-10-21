@@ -15,6 +15,7 @@ official GitHub source or release instead, pinned and, where a checksum is publi
 | Halmos | 0.3.3 | `github.com/a16z/halmos` at `ba94bdc232c746b61f12eeacef6136eace81c7c2` | pinned commit |
 | z3 (Halmos's branching checks) | 4.12.6 | `z3_solver-4.12.6.0` wheel from the `z3-4.12.6` GitHub release | sha256 `dca097b9a3026a63019eba65fe7ad120dcccec847cc33a7c0e548cfe324680fc` |
 | Bitwuzla (Halmos's assertion solver) | 0.8.1 | GitHub release, fetched by Halmos | Halmos checks the sha256 pinned in its `solvers.py` (`d88ca19b…bb1d8`) |
+| cvc5 (Halmos's other assertion solver) | 1.2.1 | GitHub release `cvc5-Linux-x86_64-static.zip`, fetched by Halmos | Halmos checks the sha256 pinned in its `solvers.py` (`6d44abc2…8de56`) |
 | Yices | 2.6.4 | GitHub release, fetched by Halmos | sha256 pinned in Halmos (`84118450…601a4`); used only for a first trial run |
 | Gambit (mutation testing) | 1.0.6 | `github.com/Certora/gambit` release binary | sha256 `76321d84564ff4d8222bfb359f1fe67eae69f21e689dbc9c23760257a94864fa` |
 | Aderyn | 0.6.8 | `github.com/Cyfrin/aderyn` release `aderyn-v0.6.8` | sha256 `ffd6ca658962e211a3ac821c646f69c8e14bf1b1001cbfe091bcd4535a691e46` |
@@ -45,11 +46,9 @@ environment:
     slither . --filter-paths "lib/|test/|script/" --exclude-dependencies \
       --triage-database audit/slither.db.json --fail-medium
     aderyn . --src src
-    FOUNDRY_OUT=out-halmos FOUNDRY_CACHE_PATH=cache-halmos halmos --forge-build-out out-halmos \
-      --match-contract Halmos --function check_ --loop 9 --solver bitwuzla-abs \
-      --solver-timeout-assertion 10m
+    make formal                 # Halmos, each check with the solver that finishes it (audit/formal.md)
     gambit mutate ...           # see audit/mutation.md
-    forge coverage --ir-minimum --report summary
+    audit/logs/scripts/coverage-lite.sh   # or `make coverage` with 16 GB (audit/coverage.md)
 
 Halmos uses its own build directory because it needs the AST, which a normal `forge build`
 does not keep, and Foundry's cache does not tell the two builds apart.

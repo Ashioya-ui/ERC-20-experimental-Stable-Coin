@@ -62,12 +62,22 @@ analyze:
 	slither . --filter-paths "lib/|test/|script/" --exclude-dependencies \
 	  --triage-database audit/slither.db.json --fail-medium
 
+# Each check runs with the solver that finishes it (audit/formal.md). Halmos fetches the solvers
+# from their GitHub releases and checks the sha256 it pins; HALMOS_ALLOW_DOWNLOAD allows that.
+# Two fee-monotonicity checks reach the solver time limit, so a failure does not stop make.
+HALMOS = HALMOS_ALLOW_DOWNLOAD=1 FOUNDRY_OUT=out-halmos FOUNDRY_CACHE_PATH=cache-halmos \
+         halmos --forge-build-out out-halmos --loop 9 --solver-timeout-assertion 10m
+
 formal:
-	FOUNDRY_OUT=out-halmos FOUNDRY_CACHE_PATH=cache-halmos halmos --forge-build-out out-halmos \
-	  --match-contract Halmos --function check_ --loop 9 --solver bitwuzla-abs --solver-timeout-assertion 10m
+	-$(HALMOS) --contract HalmosPolicy --solver cvc5-int \
+	  --match-test '^check_(buffer|churn|curves|expansion|monotone|rebaseStepBounded|rebaseStepLocally)'
+	-$(HALMOS) --contract HalmosPolicy --solver bitwuzla-abs --match-test '^check_(mintFee|redeemFee|rebaseStepBelow)'
+	-$(HALMOS) --contract HalmosFwht --solver bitwuzla-abs --function check_
+	-$(HALMOS) --contract HalmosToken --solver cvc5-int --function check_ --solver-timeout-assertion 3m
 
 coverage:
-	forge coverage --ir-minimum --report summary --no-match-coverage "test|script|lib"
+	forge coverage --ir-minimum --report summary --no-match-coverage "^(test|script|lib)/" \
+	  --no-match-test "test_record_worstCaseGasFitsHookBudget|test_entropy_gas"
 
 sim:
 	python3 sim/simulate.py

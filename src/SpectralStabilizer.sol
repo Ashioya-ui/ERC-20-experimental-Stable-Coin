@@ -656,12 +656,17 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
         returns (bool ok, uint256 len, uint256 range)
     {
         (, uint128 len0, uint128 mx, uint128 mn) = _churnState(oldIndex);
+        // The new maximum and minimum are only needed when the move is committed.
+        // slither-disable-next-line unused-return
         (len,,, range, ok) = SpectralPolicy.churnStep(len0, mx, mn, oldIndex.toUint128(), newIndex.toUint128());
     }
 
     function _commitChurn(uint256 oldIndex, uint256 newIndex) internal {
         (bool expired, uint128 len0, uint128 mx0, uint128 mn0) = _churnState(oldIndex);
         if (expired) churnWindowStart = block.timestamp.toUint64();
+        // The range and the verdict were checked before the move (_churnAfter) or do not apply
+        // (loss absorption is never deferred).
+        // slither-disable-next-line unused-return
         (uint256 len, uint256 mx, uint256 mn,,) =
             SpectralPolicy.churnStep(len0, mx0, mn0, oldIndex.toUint128(), newIndex.toUint128());
         churnLength = len.toUint128();

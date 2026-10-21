@@ -228,7 +228,7 @@ contract AutonomousTreasury is ReentrancyGuardTransient {
         uint256 left = old.balanceOf(address(this));
         // Dust that vault rounding leaves behind is abandoned, not quarantined: it is worth at
         // most LEGACY_DUST_ASSETS and the stabilizer re-syncs right after.
-        uint256 quarantined;
+        uint256 quarantined = 0;
         if (left > 0 && old.previewRedeem(left) > LEGACY_DUST_ASSETS) {
             if (address(legacyVault) != address(0)) revert LegacyNotEmpty();
             legacyVault = old;

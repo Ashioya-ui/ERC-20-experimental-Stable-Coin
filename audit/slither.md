@@ -15,6 +15,15 @@ Command (the CI job runs exactly this; it fails on any untriaged Medium or High)
 | Phase 4 code before triage | 0 | 36 | 18 | 4 |
 | After the fixes and inline triage below | **0** | **0** | 18 | 4 |
 | CI command (with `audit/slither.db.json`) | 0 | 0 | 0 | 0 shown, exit 0 |
+| Final code, after the review fixes (audit-freeze-1) | **0** | **0** | 20 | 4 |
+| CI command on the final code (database refreshed) | 0 | 0 | 0 | 0 shown, exit 0 |
+
+The review fixes added four Mediums, all handled like the earlier ones: an uninitialized local
+in `migrateVault` (now `= 0`), and three `unused-return` reports on deliberate partial tuple
+reads (`initializePool` needs only the price from `getSlot0`; `_churnAfter` and `_commitChurn`
+each need only part of `churnStep`'s results), each with an inline reason. The triage database
+was regenerated because the review fixes moved the Low and Informational findings' source
+lines; their categories are the ones triaged below.
 
 The 13 extra Mediums come from B4 unrolling the `lnWad` series (each unrolled step is a
 separate divide-before-multiply report) and from the new `SelfApproaching` and protocol-capital

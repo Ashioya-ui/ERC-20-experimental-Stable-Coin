@@ -1,178 +1,170 @@
 [
  {
-  "id": "ee2780c6c22af125f03a0614ea4ac1c043256560dc8fd2462665bd7147f64af2",
+  "description": "SpectralEntropyOracle.record(int256) (src/SpectralEntropyOracle.sol#109-150) should emit an event for: \n\t- _currentNet += amount (src/SpectralEntropyOracle.sol#117) \n\t- _currentNet = amount (src/SpectralEntropyOracle.sol#147) \n",
+  "id": "5f9947d53f6b232c16caed823dd16f4fa02b71f47ed83ffe24407ddf8551bf5e",
+  "check": "events-maths",
+  "impact": "Low",
+  "confidence": "Medium"
+ },
+ {
+  "description": "SpectralStabilizer.constructor(SpectralToken,AutonomousTreasury,ISpectralEntropyOracle,address,address,uint256,uint256,address[]) (src/SpectralStabilizer.sol#249-306) has external calls inside a loop: v == address(0) || IERC4626(v).asset() != reserveAsset (src/SpectralStabilizer.sol#271)\n",
+  "id": "9a2dde87b2c970140fa7642512556e30acd2a245ee7fb6ced3bc91e31f5b9be9",
   "check": "calls-loop",
   "impact": "Low",
-  "confidence": "Medium",
-  "description": "SpectralStabilizer.constructor(SpectralToken,AutonomousTreasury,ISpectralEntropyOracle,address,address,uint256,uint256,address[]) (src/SpectralStabilizer.sol#237-291) has external calls inside a loop: v == address(0) || IERC4626(v).asset() != reserveAsset (src/SpectralStabilizer.sol#259)\n",
-  "triage": "accepted: Constructor only, bounded by MAX_ALLOWED_VAULTS = 4: it checks each allowlisted vault's asset()."
+  "confidence": "Medium"
  },
  {
-  "id": "7457ec1d144c1724bce60edb3252629ae76ffec4e3192a49e23ebb304054c4ee",
+  "description": "Reentrancy in SpectralStabilizer.contributeCapital(uint256) (src/SpectralStabilizer.sol#396-408):\n\tExternal calls:\n\t- _syncLossWith(reserveValue()) (src/SpectralStabilizer.sol#397)\n\t\t- token.setIndex(newIndex) (src/SpectralStabilizer.sol#609)\n\t- (None,before) = treasury.sweep() (src/SpectralStabilizer.sol#399)\n\t- (None,afterValue) = treasury.depositReserve() (src/SpectralStabilizer.sol#402)\n\tState variables written after the call(s):\n\t- protocolCapital += credited (src/SpectralStabilizer.sol#405)\n",
+  "id": "07569b502f48932261321bad784a70ff7d05bba41c63c2d40f0df0ade26f62db",
   "check": "reentrancy-benign",
   "impact": "Low",
-  "confidence": "Medium",
-  "description": "Reentrancy in SpectralStabilizer.redeem(uint256,address,uint256) (src/SpectralStabilizer.sol#342-366):\n\tExternal calls:\n\t- _syncLossWith(reserveValue()) (src/SpectralStabilizer.sol#348)\n\t\t- token.setIndex(newIndex) (src/SpectralStabilizer.sol#567)\n\t- token.burn(msg.sender,amount) (src/SpectralStabilizer.sol#361)\n\tState variables written after the call(s):\n\t- _releaseExpansion(amount) (src/SpectralStabilizer.sol#362)\n\t\t- mintedInEpoch = used - amount.toUint128() (src/SpectralStabilizer.sol#588)\n\t\t- mintedInEpoch = 0.toUint128() (src/SpectralStabilizer.sol#588)\n",
-  "triage": "accepted: nonReentrant on the entry point; the calls go to the immutable token and treasury (and allowlisted vaults through it); the state written afterwards is the caller's own accounting."
+  "confidence": "Medium"
  },
  {
-  "id": "8beec8fca0ef32146b433a6b3397491ec3ae5007addf5fe555df45c08af1dd52",
+  "description": "Reentrancy in SpectralStabilizer.mint(uint256,address,uint256) (src/SpectralStabilizer.sol#314-346):\n\tExternal calls:\n\t- _syncLossWith(reserveValue()) (src/SpectralStabilizer.sol#323)\n\t\t- token.setIndex(newIndex) (src/SpectralStabilizer.sol#609)\n\t- (None,before) = treasury.sweep() (src/SpectralStabilizer.sol#328)\n\t- (None,afterValue) = treasury.depositReserve() (src/SpectralStabilizer.sol#331)\n\tState variables written after the call(s):\n\t- _consumeExpansion(out,h) (src/SpectralStabilizer.sol#338)\n\t\t- epochStart = block.timestamp.toUint64() (src/SpectralStabilizer.sol#616)\n\t- _consumeExpansion(out,h) (src/SpectralStabilizer.sol#338)\n\t\t- epochSupply = token.totalSupply().toUint128() (src/SpectralStabilizer.sol#617)\n\t- _consumeExpansion(out,h) (src/SpectralStabilizer.sol#338)\n\t\t- mintedInEpoch = 0 (src/SpectralStabilizer.sol#618)\n\t\t- mintedInEpoch = (used + out).toUint128() (src/SpectralStabilizer.sol#622)\n",
+  "id": "7b913f1f54831d5061b724ac3000d033f097d1cdd5b5926b40980483a8a511df",
   "check": "reentrancy-benign",
   "impact": "Low",
-  "confidence": "Medium",
-  "description": "Reentrancy in SpectralStabilizer.mint(uint256,address,uint256) (src/SpectralStabilizer.sol#299-331):\n\tExternal calls:\n\t- _syncLossWith(reserveValue()) (src/SpectralStabilizer.sol#308)\n\t\t- token.setIndex(newIndex) (src/SpectralStabilizer.sol#567)\n\t- (None,before) = treasury.sweep() (src/SpectralStabilizer.sol#313)\n\t- (None,afterValue) = treasury.depositReserve() (src/SpectralStabilizer.sol#316)\n\tState variables written after the call(s):\n\t- _consumeExpansion(out,h) (src/SpectralStabilizer.sol#323)\n\t\t- epochStart = block.timestamp.toUint64() (src/SpectralStabilizer.sol#574)\n\t- _consumeExpansion(out,h) (src/SpectralStabilizer.sol#323)\n\t\t- epochSupply = token.totalSupply().toUint128() (src/SpectralStabilizer.sol#575)\n\t- _consumeExpansion(out,h) (src/SpectralStabilizer.sol#323)\n\t\t- mintedInEpoch = 0 (src/SpectralStabilizer.sol#576)\n\t\t- mintedInEpoch = (used + out).toUint128() (src/SpectralStabilizer.sol#580)\n",
-  "triage": "accepted: nonReentrant on the entry point; the calls go to the immutable token and treasury (and allowlisted vaults through it); the state written afterwards is the caller's own accounting."
+  "confidence": "Medium"
  },
  {
-  "id": "d2e17f1778f848ad3fbf3b6a6ccf0a5117b22e0327ae35b6619b1fc213ab5d72",
+  "description": "Reentrancy in SpectralStabilizer.redeem(uint256,address,uint256) (src/SpectralStabilizer.sol#357-381):\n\tExternal calls:\n\t- _syncLossWith(reserveValue()) (src/SpectralStabilizer.sol#363)\n\t\t- token.setIndex(newIndex) (src/SpectralStabilizer.sol#609)\n\t- token.burn(msg.sender,amount) (src/SpectralStabilizer.sol#376)\n\tState variables written after the call(s):\n\t- _releaseExpansion(amount) (src/SpectralStabilizer.sol#377)\n\t\t- mintedInEpoch = used - amount.toUint128() (src/SpectralStabilizer.sol#630)\n\t\t- mintedInEpoch = 0.toUint128() (src/SpectralStabilizer.sol#630)\n",
+  "id": "fa134d150b0a49b7bad1112fd59b3ca15075bca2947e98e2a865b9021686b3dc",
+  "check": "reentrancy-benign",
+  "impact": "Low",
+  "confidence": "Medium"
+ },
+ {
+  "description": "Reentrancy in SpectralHook.afterSwap(address,PoolKey,SwapParams,BalanceDelta,bytes) (src/SpectralHook.sol#223-242):\n\tExternal calls:\n\t- oracle.record(int256(d)) (src/SpectralHook.sol#235-239)\n\tEvent emitted after the call(s):\n\t- OracleRecordFailed(reason) (src/SpectralHook.sol#238)\n",
+  "id": "ef53f816be49e4efcce6dbefa2bb4fca9c39169e072bc6cea14e90adcec648d8",
   "check": "reentrancy-events",
   "impact": "Low",
-  "confidence": "Medium",
-  "description": "Reentrancy in SpectralHook.afterSwap(address,PoolKey,SwapParams,BalanceDelta,bytes) (src/SpectralHook.sol#177-196):\n\tExternal calls:\n\t- oracle.record(int256(d)) (src/SpectralHook.sol#189-193)\n\tEvent emitted after the call(s):\n\t- OracleRecordFailed(reason) (src/SpectralHook.sol#192)\n",
-  "triage": "accepted: Event order only: the hook logs OracleRecordFailed after the oracle call it reports on. The oracle is the protocol's own contract."
+  "confidence": "Medium"
  },
  {
-  "id": "06524a9208e7e38b10e3a959c8be1bfd104c98b51de9c236b08472966c191d58",
+  "description": "SpectralEntropyOracle.smoothedEntropy() (src/SpectralEntropyOracle.sol#190-193) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- filled < WINDOW || isStale() (src/SpectralEntropyOracle.sol#191)\n",
+  "id": "00d3f4d5c65ee9a8e78ae8b36ce9b8502830b30c7be36c6923d9e10542330115",
   "check": "timestamp",
   "impact": "Low",
-  "confidence": "Medium",
-  "description": "SpectrumLens.expansionRemaining() (src/SpectrumLens.sol#57-64) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- expired = block.timestamp >= uint256(stabilizer.epochStart()) + stabilizer.EPOCH() (src/SpectrumLens.sol#59)\n",
-  "triage": "accepted: Intended: epochs, rebase interval, timelock, EMA weight, permit and EIP-3009 windows. The sequencer can skew block.timestamp by seconds; every comparison tolerates that."
+  "confidence": "Medium"
  },
  {
-  "id": "070c90a3907958094acfa9dbf28dbb012d0fa5a0a3d5196236082fb310c4b8dc",
+  "description": "SpectralStabilizer._churnState(uint256) (src/SpectralStabilizer.sol#643-650) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- expired = block.timestamp >= uint256(churnWindowStart) + CHURN_WINDOW (src/SpectralStabilizer.sol#644)\n",
+  "id": "05bd227fb24f852ccb88183d884e06f1b7769477534b566d58463d1baa8b5e59",
   "check": "timestamp",
   "impact": "Low",
-  "confidence": "Medium",
-  "description": "SpectralEntropyOracle.foldWeight() (src/SpectralEntropyOracle.sol#153-157) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- w < emaAlphaMax (src/SpectralEntropyOracle.sol#156)\n",
-  "triage": "accepted: Intended: epochs, rebase interval, timelock, EMA weight, permit and EIP-3009 windows. The sequencer can skew block.timestamp by seconds; every comparison tolerates that."
+  "confidence": "Medium"
  },
  {
-  "id": "21e34a8506137b456fda391ddae031ca277a8d1bd26ef8b90113a48f20f30331",
+  "description": "SpectralStabilizer._epochState(uint256) (src/SpectralStabilizer.sol#633-638) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- expired = block.timestamp >= uint256(epochStart) + EPOCH (src/SpectralStabilizer.sol#634)\n",
+  "id": "1c5a057b6ab4d2d28c1905285d9c5a9aabffceca22341975dbd3bab9bfdef4c1",
   "check": "timestamp",
   "impact": "Low",
-  "confidence": "Medium",
-  "description": "SpectralStabilizer._churnAfter(uint256,uint256) (src/SpectralStabilizer.sol#599-620) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp >= uint256(churnWindowStart) + CHURN_WINDOW (src/SpectralStabilizer.sol#606)\n",
-  "triage": "accepted: Intended: epochs, rebase interval, timelock, EMA weight, permit and EIP-3009 windows. The sequencer can skew block.timestamp by seconds; every comparison tolerates that."
+  "confidence": "Medium"
  },
  {
-  "id": "2db7bb18042341a21fb9718af40d8c791044c77e9dc009ebebff5c4085def2a9",
+  "description": "SpectralStabilizer._releaseExpansion(uint256) (src/SpectralStabilizer.sol#627-631) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp >= uint256(epochStart) + EPOCH (src/SpectralStabilizer.sol#628)\n",
+  "id": "2dc7eb481314710d192492e3d49cdd29f0f44e098bc57dc19d49e69825dcae18",
   "check": "timestamp",
   "impact": "Low",
-  "confidence": "Medium",
-  "description": "SpectralEntropyOracle.smoothedEntropy() (src/SpectralEntropyOracle.sol#160-163) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- filled < WINDOW || isStale() (src/SpectralEntropyOracle.sol#161)\n",
-  "triage": "accepted: Intended: epochs, rebase interval, timelock, EMA weight, permit and EIP-3009 windows. The sequencer can skew block.timestamp by seconds; every comparison tolerates that."
+  "confidence": "Medium"
  },
  {
-  "id": "3f034d2de434bf11aca54d7416c5ae8eb7521cc27774ff155aafe178168bfacd",
+  "description": "SpectralStabilizer.executeVaultMigration() (src/SpectralStabilizer.sol#521-532) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp < pendingVaultEta (src/SpectralStabilizer.sol#524)\n",
+  "id": "46ea5e1b208c1e2aa88df8be4ce7395d6396ef0205ca1da5d78d1c012c44c870",
   "check": "timestamp",
   "impact": "Low",
-  "confidence": "Medium",
-  "description": "SpectralEntropyOracle._foldWindowIntoEma() (src/SpectralEntropyOracle.sol#124-134) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- h >= e (src/SpectralEntropyOracle.sol#129)\n",
-  "triage": "accepted: Intended: epochs, rebase interval, timelock, EMA weight, permit and EIP-3009 windows. The sequencer can skew block.timestamp by seconds; every comparison tolerates that."
+  "confidence": "Medium"
  },
  {
-  "id": "56750658db89aac6d8e23b5202ed13db287e83cf707fd2b425a4af075c079081",
+  "description": "SpectralEntropyOracle._foldWindowIntoEma() (src/SpectralEntropyOracle.sol#152-164) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- h >= e (src/SpectralEntropyOracle.sol#158)\n",
+  "id": "5c23efdef5b129ed3a022ea3c8c6165971b4f97ae2bd12ea5acfd731a43ff0a2",
   "check": "timestamp",
   "impact": "Low",
-  "confidence": "Medium",
-  "description": "SpectralStabilizer.rebase() (src/SpectralStabilizer.sol#373-403) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp < uint256(lastRebaseAt) + REBASE_INTERVAL (src/SpectralStabilizer.sol#376)\n",
-  "triage": "accepted: Intended: epochs, rebase interval, timelock, EMA weight, permit and EIP-3009 windows. The sequencer can skew block.timestamp by seconds; every comparison tolerates that."
+  "confidence": "Medium"
  },
  {
+  "description": "SpectralToken._useAuthorization(bytes32,address,address,uint256,uint256,uint256,bytes32,bytes) (src/SpectralToken.sol#283-301) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp <= validAfter (src/SpectralToken.sol#293)\n\t- block.timestamp >= validBefore (src/SpectralToken.sol#294)\n",
   "id": "6aad95793c0d56b3d6ee29038b260a0b35e35b19759ecec97bad94ab3ebacf9b",
   "check": "timestamp",
   "impact": "Low",
-  "confidence": "Medium",
-  "description": "SpectralToken._useAuthorization(bytes32,address,address,uint256,uint256,uint256,bytes32,bytes) (src/SpectralToken.sol#283-301) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp <= validAfter (src/SpectralToken.sol#293)\n\t- block.timestamp >= validBefore (src/SpectralToken.sol#294)\n",
-  "triage": "accepted: Intended: epochs, rebase interval, timelock, EMA weight, permit and EIP-3009 windows. The sequencer can skew block.timestamp by seconds; every comparison tolerates that."
+  "confidence": "Medium"
  },
  {
+  "description": "SpectrumLens.expansionRemaining() (src/SpectrumLens.sol#70-77) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- expired = block.timestamp >= uint256(stabilizer.epochStart()) + stabilizer.EPOCH() (src/SpectrumLens.sol#72)\n",
+  "id": "7c2356dde9a5a08de6217178c2a2d5c9a3b452c3c393cbe7e39daa6f2e5c2db1",
+  "check": "timestamp",
+  "impact": "Low",
+  "confidence": "Medium"
+ },
+ {
+  "description": "SpectralEntropyOracle.record(int256) (src/SpectralEntropyOracle.sol#109-150) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- filled != 0 && block.timestamp > uint256(lastObservationTime) + staleAfter (src/SpectralEntropyOracle.sol#120)\n",
+  "id": "7dface73976c6ea1ec44d4f11490a3be28036065ebaa372965176754e9494719",
+  "check": "timestamp",
+  "impact": "Low",
+  "confidence": "Medium"
+ },
+ {
+  "description": "SpectralStabilizer.rebase() (src/SpectralStabilizer.sol#416-451) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp < uint256(lastRebaseAt) + REBASE_INTERVAL (src/SpectralStabilizer.sol#419)\n",
+  "id": "9b66755e035cad88f187970b36ad5b44d19997b05c60c634a33ce96bbabc75b8",
+  "check": "timestamp",
+  "impact": "Low",
+  "confidence": "Medium"
+ },
+ {
+  "description": "SpectralToken.permit(address,address,uint256,uint256,bytes) (src/SpectralToken.sol#179-188) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp > deadline (src/SpectralToken.sol#182)\n",
   "id": "9bf00af1ed4be2288bd70e3e8c241baf5c24c585cc39f7390828162d0c5b879a",
   "check": "timestamp",
   "impact": "Low",
-  "confidence": "Medium",
-  "description": "SpectralToken.permit(address,address,uint256,uint256,bytes) (src/SpectralToken.sol#179-188) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp > deadline (src/SpectralToken.sol#182)\n",
-  "triage": "accepted: Intended: epochs, rebase interval, timelock, EMA weight, permit and EIP-3009 windows. The sequencer can skew block.timestamp by seconds; every comparison tolerates that."
+  "confidence": "Medium"
  },
  {
-  "id": "bddd0d246410aa2837171cf62b112ed4d91dfc6cabe7e854f665ab99b93229ac",
+  "description": "SpectralEntropyOracle.isStale() (src/SpectralEntropyOracle.sol#213-215) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp > uint256(lastObservationTime) + staleAfter (src/SpectralEntropyOracle.sol#214)\n",
+  "id": "d66e9d890bc5b22937e6c740b21152fee136da54bb3c2fba2cc6794fc105515a",
   "check": "timestamp",
   "impact": "Low",
-  "confidence": "Medium",
-  "description": "SpectralStabilizer._commitChurn(uint256,uint256) (src/SpectralStabilizer.sol#622-632) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp >= uint256(churnWindowStart) + CHURN_WINDOW (src/SpectralStabilizer.sol#623)\n",
-  "triage": "accepted: Intended: epochs, rebase interval, timelock, EMA weight, permit and EIP-3009 windows. The sequencer can skew block.timestamp by seconds; every comparison tolerates that."
+  "confidence": "Medium"
  },
  {
-  "id": "befc4b5eabb2fce61bb1ba536714616af0893b8e7859d67ee5ff2f8bf686e373",
+  "description": "SpectralStabilizer._consumeExpansion(uint256,uint256) (src/SpectralStabilizer.sol#614-623) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp >= uint256(epochStart) + EPOCH (src/SpectralStabilizer.sol#615)\n",
+  "id": "e6252a59d62f3eb4b716259b75cb384d6cabe331433f6f9febb1df82d1b2fe17",
   "check": "timestamp",
   "impact": "Low",
-  "confidence": "Medium",
-  "description": "SpectralStabilizer._consumeExpansion(uint256,uint256) (src/SpectralStabilizer.sol#572-581) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp >= uint256(epochStart) + EPOCH (src/SpectralStabilizer.sol#573)\n",
-  "triage": "accepted: Intended: epochs, rebase interval, timelock, EMA weight, permit and EIP-3009 windows. The sequencer can skew block.timestamp by seconds; every comparison tolerates that."
+  "confidence": "Medium"
  },
  {
-  "id": "bf42c45d9693c0fcc7be7f0a0aee49fd4060cb0a4777b02b715b9dd5eb8458c6",
+  "description": "SpectralEntropyOracle.foldWeight() (src/SpectralEntropyOracle.sol#183-187) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- w < emaAlphaMax (src/SpectralEntropyOracle.sol#186)\n",
+  "id": "f6e231405bf02e04763555af746f55e93c585a494d78337f900b52fbfcc1804c",
   "check": "timestamp",
   "impact": "Low",
-  "confidence": "Medium",
-  "description": "SpectralStabilizer._epochState(uint256) (src/SpectralStabilizer.sol#591-596) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- expired = block.timestamp >= uint256(epochStart) + EPOCH (src/SpectralStabilizer.sol#592)\n",
-  "triage": "accepted: Intended: epochs, rebase interval, timelock, EMA weight, permit and EIP-3009 windows. The sequencer can skew block.timestamp by seconds; every comparison tolerates that."
+  "confidence": "Medium"
  },
  {
-  "id": "d666a0e148a21df3f7203d27989b52b1244d56550ac9422d3d565308e2790081",
-  "check": "timestamp",
-  "impact": "Low",
-  "confidence": "Medium",
-  "description": "SpectralStabilizer.executeVaultMigration() (src/SpectralStabilizer.sol#473-484) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp < pendingVaultEta (src/SpectralStabilizer.sol#476)\n",
-  "triage": "accepted: Intended: epochs, rebase interval, timelock, EMA weight, permit and EIP-3009 windows. The sequencer can skew block.timestamp by seconds; every comparison tolerates that."
- },
- {
-  "id": "d7558acde63442c9aba89388ed3f7f29482cd6555a645e9e30c4618422e23993",
-  "check": "timestamp",
-  "impact": "Low",
-  "confidence": "Medium",
-  "description": "SpectralStabilizer._releaseExpansion(uint256) (src/SpectralStabilizer.sol#585-589) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp >= uint256(epochStart) + EPOCH (src/SpectralStabilizer.sol#586)\n",
-  "triage": "accepted: Intended: epochs, rebase interval, timelock, EMA weight, permit and EIP-3009 windows. The sequencer can skew block.timestamp by seconds; every comparison tolerates that."
- },
- {
-  "id": "fdf84fbcd4c328c08abb78157816383d66b17e29ecb82fa8e1f2a40a275b745b",
-  "check": "timestamp",
-  "impact": "Low",
-  "confidence": "Medium",
-  "description": "SpectralEntropyOracle.isStale() (src/SpectralEntropyOracle.sol#182-184) uses timestamp for comparisons\n\tDangerous comparisons:\n\t- block.timestamp > uint256(lastObservationTime) + staleAfter (src/SpectralEntropyOracle.sol#183)\n",
-  "triage": "accepted: Intended: epochs, rebase interval, timelock, EMA weight, permit and EIP-3009 windows. The sequencer can skew block.timestamp by seconds; every comparison tolerates that."
- },
- {
+  "description": "SpectralMath.fwht8.asm_0.bf() (src/libraries/SpectralMath.sol#50-57) uses assembly\n\t- INLINE ASM (src/libraries/SpectralMath.sol#50-57)\n",
   "id": "32b478542de3d6465af709ab7737e783ab30852dd35eab1cd9ae535096a1a5a6",
   "check": "assembly",
   "impact": "Informational",
-  "confidence": "High",
-  "description": "SpectralMath.fwht8.asm_0.bf() (src/libraries/SpectralMath.sol#50-57) uses assembly\n\t- INLINE ASM (src/libraries/SpectralMath.sol#50-57)\n",
-  "triage": "accepted: fwht8's Yul butterflies, tested against the naive Hadamard product by fuzzing."
+  "confidence": "High"
  },
  {
+  "description": "SpectralMath.fwht8(int256[8]) (src/libraries/SpectralMath.sol#48-74) uses assembly\n\t- INLINE ASM (src/libraries/SpectralMath.sol#49-73)\n",
   "id": "c4deb99d95558dd470fb2855370951d834465a78a03b0633df6297c9be5a2cbc",
   "check": "assembly",
   "impact": "Informational",
-  "confidence": "High",
-  "description": "SpectralMath.fwht8(int256[8]) (src/libraries/SpectralMath.sol#48-74) uses assembly\n\t- INLINE ASM (src/libraries/SpectralMath.sol#49-73)\n",
-  "triage": "accepted: fwht8's Yul butterflies, tested against the naive Hadamard product by fuzzing."
+  "confidence": "High"
  },
  {
+  "description": "SpectralStabilizer.constructor(SpectralToken,AutonomousTreasury,ISpectralEntropyOracle,address,address,uint256,uint256,address[]) (src/SpectralStabilizer.sol#249-306) has a high cyclomatic complexity (12).\n",
   "id": "7ab25644da7a36ec6b8494f4dd17d9aa03210d5fd23e3ca748fbdc36829f2486",
   "check": "cyclomatic-complexity",
   "impact": "Informational",
-  "confidence": "High",
-  "description": "SpectralStabilizer.constructor(SpectralToken,AutonomousTreasury,ISpectralEntropyOracle,address,address,uint256,uint256,address[]) (src/SpectralStabilizer.sol#237-291) has a high cyclomatic complexity (12).\n",
-  "triage": "accepted: The constructor's validation of wiring and the vault allowlist; each branch is a revert tested on its own."
+  "confidence": "High"
  },
  {
+  "description": "Function SpectralToken.DOMAIN_SEPARATOR() (src/SpectralToken.sol#197-199) is not in mixedCase\n",
   "id": "734ed49e0e46f622deeb2ebd065bc6dd1eea1acc9cc0ec96f41359ad6b2b0fa8",
   "check": "naming-convention",
   "impact": "Informational",
-  "confidence": "High",
-  "description": "Function SpectralToken.DOMAIN_SEPARATOR() (src/SpectralToken.sol#197-199) is not in mixedCase\n",
-  "triage": "accepted: DOMAIN_SEPARATOR() is the name EIP-2612 requires."
+  "confidence": "High"
  }
 ]

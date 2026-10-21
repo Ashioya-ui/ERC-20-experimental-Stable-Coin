@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # usage: run-halmos3.sh <tag> then lines "<solver> <contract> <match-test regex>" on stdin-like args
 cd /home/claude/halmos-run
-SP=/tmp/claude-0/-home-claude/c90d58fd-1930-5dd9-a7a1-c28eb862692d/scratchpad
+SP=${SCRATCH:-/tmp}
 export PATH=/home/claude/tools/bin:$PATH FOUNDRY_SOLC=/home/claude/tools/bin/solc-0.8.26 FOUNDRY_OFFLINE=true HALMOS_ALLOW_DOWNLOAD=1
 run() { # solver contract regex name
   start=$(date +%s)

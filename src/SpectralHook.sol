@@ -134,8 +134,12 @@ contract SpectralHook is IHooks {
     /// @return started True if this call initialised the pool.
     function initializePool() external returns (bool started) {
         PoolKey memory key = _poolKey(measuredCurrency, otherCurrency, poolFee, poolTickSpacing);
+        // Only the price is needed: zero means the pool has not started.
+        // slither-disable-next-line unused-return
         (uint160 current,,,) = poolManager.getSlot0(allowedPoolId);
         if (current != 0) return false;
+        // The starting tick that initialize returns is not needed.
+        // slither-disable-next-line unused-return
         poolManager.initialize(key, parSqrtPriceX96());
         return true;
     }

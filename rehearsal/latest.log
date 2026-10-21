@@ -40,15 +40,15 @@ ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
   SpectralStabilizer  0x3Aa5ebB10DC797CAC828524e59A333d0A371443c
   WrappedSUSD wsUSD   0xc6e7DF5E7b4f2A278906862b61205850344D4e7d
   SpectrumLens        0x59b670e9fA9D0A427751Af201D676719a970857b
-  SpectralHook        0xa3193fC2dF7070625B8D27e2cf6f3aF0762a2040
-  hook salt           0x0000000000000000000000000000000000000000000000000000000000005919
+  SpectralHook        0x946580c92e993aDfD3B20e1Fba65549e87b86040
+  hook salt           0x0000000000000000000000000000000000000000000000000000000000001377
   written to          deployments/31337.json
 ## Setting up 1 EVM.
 ==========================
 Chain 31337
 Estimated gas price: 0.319603701 gwei
-Estimated total gas used for script: 19897356
-Estimated amount required: 0.006359268617714556 ETH
+Estimated total gas used for script: 20489910
+Estimated amount required: 0.00654865106915691 ETH
 ==========================
 ==========================
 ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
