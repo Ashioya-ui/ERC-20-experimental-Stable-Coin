@@ -205,8 +205,12 @@ What this means for a neobank weighing Spectrum:
    holds. Spectrum gives the operator no cut of the reserve's yield.
    - A share of each distribution for an operator address would be a small change to `rebase`,
      but it is a change to the token's economics. It is not built here.
-   - It also bears on regulation: the US GENIUS Act bars issuers of payment stablecoins from
-     paying holders yield. Take counsel before either design.
+   - It also bears on regulation. On 21 October 2026 the OCC finalised its GENIUS Act rule,
+     effective 18 January 2027: issuers may not pay holders yield for holding the coin, reserves
+     must sit in cash, deposits, short Treasuries, repos or government money market funds, and
+     only licensed issuers may issue. Kenya licenses stablecoin issuers too (KES 300m of
+     capital). sUSD as designed (holder yield, a lending-vault reserve, no licence) meets none
+     of this; `RUNBOOK_MAINNET.md` §7 has the detail. Take counsel before any public launch.
 2. **It has no compliance layer.** Freezing and screening would live in the operator's app
    and card program, not in the token.
 3. **One vault.** At $300m the reserve should be split across venues.
@@ -223,6 +227,9 @@ What this means for a neobank weighing Spectrum:
   spike are assumptions in `sim/scale.py`. Check live Aave and Morpho figures before sizing the
   idle buffer.
 - **Not built:** a multi-vault allocator and an operator revenue share.
+- **Legal:** no public launch as a stablecoin without counsel and a licence, in Kenya or for US
+  users (`RUNBOOK_MAINNET.md` §7, updated for the OCC's final rule). Base Sepolia is free and
+  carries no such risk.
 
 ## 6. Verification
 

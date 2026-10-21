@@ -301,6 +301,23 @@ returns with and without capital, and after losses).
 
 ## 7. Legal (read before opening to the public)
 
+**Update, 22 October 2026: the US rules are final.** On 21 October 2026 the OCC issued its final
+rule implementing the GENIUS Act. The framework takes effect on **18 January 2027**. From then:
+- only a permitted payment stablecoin issuer (a bank subsidiary, an OCC-approved nonbank, or a
+  state-qualified issuer) may issue a payment stablecoin in the United States;
+- reserves must be at least 1:1, in cash, bank deposits, short-dated Treasuries, Treasury
+  repos or government money market funds;
+- redemptions generally within two business days;
+- no interest or yield to holders "solely in connection with the holding, use, or retention"
+  of the coin. The OCC dropped a proposed presumption about payments through affiliates and
+  third parties: it will judge those case by case and act against evasion.
+Knowing violations of the Act carry fines of up to $1 million per violation and up to five years
+in prison. In Kenya, stablecoin issuance is a licensed activity under the VASP Regulations 2026,
+with KES 300 million of paid-up capital; existing operators have until 4 November 2026 to
+comply, and the draft rules put reserves in Kenyan bank accounts and short government
+securities. sUSD as designed fails each of these tests: it pays holders yield by rebase, its
+reserve is USDC in a lending vault, and nobody behind it is licensed.
+
 The research report found:
 - The US GENIUS Act forbids a permitted payment-stablecoin issuer from paying yield, so a
   rebasing, yield-passing sUSD cannot be a compliant US payment stablecoin.
@@ -311,7 +328,9 @@ What follows:
 - launch as an experimental DeFi token and do not market it as a stablecoin;
 - geo-restrict US persons;
 - avoid any government imagery;
-- take counsel in Kenya and the US before inviting outside users.
+- take counsel in Kenya and the US before inviting outside users;
+- until then, use Base Sepolia (`DEPLOY_AND_TEST.md`, level 2): it is free, and its tokens have no
+  value.
 
 ## 8. Addresses (Base, chain 8453; verified 2026-10-15)
 
@@ -329,4 +348,7 @@ What follows:
 Sources: developers.uniswap.org/docs/protocols/v4/deployments; developers.circle.com/stablecoins/usdc-contract-addresses;
 basescan.org (each address); aavescan.com/base-v3/usdc; app.morpho.org (Gauntlet USDC Prime);
 support.uniswap.org article "How do custom hooks work in the Labs interface?"; docs.x402.org/faq;
-CRS IF13174 (GENIUS Act §4(a)(11)); Kenya VASP Regulations 2026 (LN 134 of 2026).
+CRS IF13174 (GENIUS Act §4(a)(11)); Kenya VASP Regulations 2026 (LN 134 of 2026); OCC final rule of
+21 October 2026 (cointelegraph.com/news/occ-finalizes-genius-act-rules-stablecoin-issuers-custody,
+bpi.com/occ-genius-act-rule-leaves-room-for-ambiguity-on-yield); mofo.com GENIUS Act summary
+(penalties); spencer-west.com on the Kenya VASP Regulations 2026.

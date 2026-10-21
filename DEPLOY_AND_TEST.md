@@ -18,16 +18,19 @@ until level 3.
 ```bash
 curl -L https://foundry.paradigm.xyz | bash && foundryup   # built and tested with Foundry 1.5.1
 cd spectrum                     # this folder: the dependencies are already in lib/
-forge test                      # first build 5–10 minutes; then 219 tests pass (1 skips: it needs a Base RPC)
+forge test                      # first build 5–10 minutes; then 231 tests pass (1 skips: it needs a Base RPC)
 script/rehearsal/run.sh         # the real mainnet script on a local copy of Base; ends REHEARSAL PASSED
+script/rehearsal/scale.sh       # the same, then run at $300m (REPORT_SCALE.md); ends SCALE REHEARSAL PASSED
 ```
 
 If `forge test` says a library is missing, run `git submodule update --init --recursive` once.
 
 ### On GitHub (works from a phone)
 
-1. Create a **private** repository and push this folder to it (or connect GitHub to Claude and
-   ask Claude to push it for you).
+1. Push this folder to a GitHub repository (or open a new Claude Code session on the repository,
+   attach the zip and ask it to push to `main`). Route A of level 2 uses environment secrets,
+   which GitHub offers on public repositories on every plan, and on private ones only with
+   GitHub Pro or above. The workflows must be on the default branch to show **Run workflow**.
 2. Open the **Actions** tab. The `test` workflow runs by itself on every push: the dependency
    pins, the full suite with 10,000 fuzz runs, the suite in isolated mode, the gas check, the
    local mainnet rehearsal and Slither. All green means level 1 is done. (The Base fork job
@@ -93,8 +96,10 @@ make post-deploy-check-sepolia
 
 ## Level 3: mainnet (guarded launch)
 
-Only after levels 1 and 2 are green, and after you have taken legal advice (the US GENIUS Act
-and Kenya's VASP Act; `RUNBOOK_MAINNET.md` §7). Follow `RUNBOOK_MAINNET.md` from §0. In short:
+Only after levels 1 and 2 are green, and after you have taken legal advice. The US rules became
+final on 21 October 2026 (effective 18 January 2027), and Kenya licenses stablecoin issuers:
+`RUNBOOK_MAINNET.md` §7 explains why sUSD, as designed, is not a compliant payment stablecoin in
+either. Follow `RUNBOOK_MAINNET.md` from §0. In short:
 a Safe as admin in `config/8453.json`, a fresh Ledger account with 1,252 USDC and 0.003 ETH,
 then `make preflight` and `make deploy-base-mainnet`. Launch it as an experimental token with
 the 25,000 sUSD cap, and get an external audit (`audit/README.md` is the package) before
