@@ -155,6 +155,11 @@ lying 402.
 | T14 | Burning the facilitator's gas with payments that will fail | Simulation before every send, done again inside the send queue | node "settlement failure" |
 | T15 | Lost receipts reported as failures, so a payer is charged and gets nothing | Two-step send, `settlement_unconfirmed` with the hash, idempotent retry | node "lost receipt" |
 | T16 | An agent overspends | Per-request cap, budget and payee allow list, enforced before signing | node "spend policy" |
+| T18 | A chain read throws and a later request inherits the failure from `inflight` (the PHP2Shell class) | `verify`/`settle` catch; `settle` never rejects | node `state` 1–4 |
+| T19 | `unconfirmed` grows without bound on a provokable error path | TTL of 2×`MAX_TIMEOUT` plus a 1,000-entry cap | node `state` 5 |
+| T20 | One hung send parks every later settlement for ever | `cast` runs under `CAST_TIMEOUT_MS` (SIGKILL); waiting for a turn is bounded by `FACILITATOR_QUEUE_WAIT_MS` | node `state` 6 |
+| T21 | A retry re-broadcasts an authorization whose receipt was unreadable | The `unconfirmed` record is kept unless the chain says success or reverted | node `state` 7, 8 |
+| T22 | One awkward request ends the process (Node 22 exits on an unhandled rejection) | The handler's error path cannot itself throw | node `state` 10, 11 |
 | T17 | Key exposure | Agent keys are encrypted keystores with a password file. The facilitator uses anvil's unlocked account or a keystore. No key appears in arguments, environment or logs | by construction |
 
 ### Known limitations
@@ -175,7 +180,12 @@ lying 402.
   `payload.spectrum.salt`, so they can use the sUSD and plain USDC paths but not the router.
 - **One process, in memory.** The idempotency cache does not survive a restart, and settlements
   are serialized from one account, so throughput is about one per block. Production needs a
-  persistent store and nonce management or several hot wallets.
+  persistent store and nonce management or several hot wallets. Two facilitators sharing one key
+  would race.
+- **Operational limits** (`audit/x402-state-audit.md`): `CAST_TIMEOUT_MS` (default 120 s) bounds
+  any single `cast` invocation, and `FACILITATOR_QUEUE_WAIT_MS` (default 120 s) bounds how long a
+  settlement waits for its turn in the send queue. Waiting is bounded; a send already in flight is
+  not, because the only honest answer then is the one it produces.
 - **No facilitator fee.** The operator pays the gas.
 - **Local chain only.** The workspace cannot reach Base RPCs. The Base Sepolia steps are in
   `DEPLOY_AND_TEST.md`.

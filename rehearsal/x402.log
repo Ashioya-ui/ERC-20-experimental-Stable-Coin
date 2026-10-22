@@ -2,3 +2,24 @@
 ==== 0. anvil: chain 31337, a block every 2 seconds, transactions mined on arrival ====
 
 ==== 1-3. USDC (FiatToken v2.2), v4 PoolManager, Spectrum (mainnet script), oracle live ====
+sUSD 0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE   stabilizer 0x3Aa5ebB10DC797CAC828524e59A333d0A371443c   USDC 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
+oracle filled: 8
+
+==== 4. SpectrumPayRouter ====
+router 0x36C02dA8a0983159322a80FFE9F24b1acfF8B570
+sUSD to pay 0.05 USDC: 50016255282966965 [5.001e16]
+
+==== 5. Agent wallets: encrypted keystores, test money ====
+client   0x7e82d6FF9d2a139D50b65EB3B62639FEAC53bCa6   sUSD 599580000000000000000 [5.995e20]
+redteam  0x0D9f8fB192637494EDd0a85EF562a8FfB60B7Ca4   sUSD 24982500000000000000 [2.498e19]
+reviewer 0x2A52Ac63F3fEaCFa5C98dD9EdA7E4926A51a6954   merchant 0x523c3A72f6900126aa1E9947aCE1fbc00dAB37ac
+
+==== 6. Facilitator (:4020) and merchant (:4021) ====
+facilitator on http://127.0.0.1:4020 (eip155:31337), gas paid by 0x15d34aaf54267db7d7c367839aaf71a00a2c6a65
+merchant on http://127.0.0.1:4021 (eip155:31337)
+  kind: {'asset': '0x9a9f2ccfde556a7e9ff0848998aa4a0cfd8863ae', 'name': 'Spectrum Agentic USD', 'version': '1'}
+  kind: {'asset': '0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0', 'name': 'USD Coin', 'version': '2'}
+  kind: {'asset': '0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0', 'spectrumRouter': '0x36c02da8a0983159322a80ffe9f24b1acff8b570', 'payWith': '0x9a9f2ccfde556a7e9ff0848998aa4a0cfd8863ae'}
+  extensions: ['spectrum-router', 'spectrum-convert']
+
+==== SERVING: source x402/.tmp/current/env.sh (Ctrl-C or kill to stop) ====

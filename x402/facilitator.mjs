@@ -28,8 +28,18 @@ const SKEW = 6n; // seconds of clock slack allowed beyond maxTimeoutSeconds
 // facilitator into accepting an authorization that stays spendable for days (A-02).
 const MAX_TIMEOUT = 3600n;
 
-export async function createFacilitator({ rpcUrl, signer, chain: chainOverride }) {
+/** Raised when a settlement waited for its turn in the send queue and never got one. */
+class QueueTimeout extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'QueueTimeout';
+  }
+}
+
+export async function createFacilitator({ rpcUrl, signer, chain: chainOverride, queueWaitMs }) {
   const chain = chainOverride || makeChain(rpcUrl); // tests may pass a wrapped chain
+  // How long a settlement may wait for its turn in the send queue before giving up (see serial).
+  const QUEUE_WAIT = Number(queueWaitMs ?? process.env.FACILITATOR_QUEUE_WAIT_MS ?? 120_000);
   const dep = await loadDeployment(chain);
   const A = dep.addresses;
   const from = await signerAddress(signer);
@@ -69,19 +79,66 @@ export async function createFacilitator({ rpcUrl, signer, chain: chainOverride }
   // authorization presented with other requirements.
   const settled = new Map(); // key -> { fp, result }
   const inflight = new Map(); // key -> { fp, result: Promise }
-  const unconfirmed = new Map(); // key -> { fp, hash, payer }: sent, receipt not yet read
+  const unconfirmed = new Map(); // key -> { fp, hash, payer, at }: sent, receipt not yet read
   const MAX_SETTLED = 10_000;
+  // `unconfirmed` grows on an error path, so it needs a bound of its own: an error an untrusted
+  // caller can provoke must not be a way to exhaust memory. An entry is only useful while the
+  // authorization it covers could still be settled, and check() refuses any validBefore more
+  // than MAX_TIMEOUT + SKEW past chain time, so one older than that can no longer let a retry
+  // broadcast anything and is safe to forget. The count cap is the backstop for a burst.
+  const MAX_UNCONFIRMED = 1_000;
+  const UNCONFIRMED_TTL_MS = Number(MAX_TIMEOUT) * 2 * 1000;
+
+  /** Record that `key` was broadcast, dropping entries too old or too many to be worth keeping. */
+  const rememberUnconfirmed = (key, entry) => {
+    unconfirmed.delete(key); // re-insert, so the map stays in age order
+    unconfirmed.set(key, { ...entry, at: Date.now() });
+    const cutoff = Date.now() - UNCONFIRMED_TTL_MS;
+    for (const [old, v] of unconfirmed) {
+      if (old === key) break; // never evict the one just recorded
+      if (unconfirmed.size <= MAX_UNCONFIRMED && v.at >= cutoff) break; // Map iterates oldest first
+      unconfirmed.delete(old);
+    }
+  };
 
   // One transaction at a time from the facilitator's account: no nonce races, and each
   // settlement is simulated again against the state its predecessor left.
+  //
+  // The queue is shared by every caller, so a send that never comes back would park all of
+  // them for ever. A settlement that has waited QUEUE_WAIT for its turn gives up instead --
+  // but only while it is still waiting. Once fn has started, a transaction may be in flight
+  // and the only honest answer is the one fn produces, however long it takes; cast's own
+  // timeout is what bounds that half.
   let queue = Promise.resolve();
   const serial = (fn) => {
-    const run = queue.then(fn, fn);
+    let started = false;
+    let abandoned = false;
+    const start = () => {
+      if (abandoned) return undefined; // its caller is gone: send nothing, let the queue move on
+      started = true;
+      return fn();
+    };
+    const run = queue.then(start, start);
     queue = run.catch(() => {});
-    return run;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        if (started) return;
+        abandoned = true;
+        reject(new QueueTimeout('the settlement queue did not come round'));
+      }, QUEUE_WAIT);
+      run.then(
+        (v) => { clearTimeout(timer); if (!abandoned) resolve(v); },
+        (e) => { clearTimeout(timer); if (!abandoned) reject(e); },
+      );
+    });
   };
 
   const bad = (invalidReason, payer) => ({ isValid: false, invalidReason, ...(payer ? { payer } : {}) });
+  // The payer named by a request, for answers produced before check() got far enough to find it.
+  const payerOf = (body) => {
+    const from = body?.paymentPayload?.payload?.authorization?.from;
+    return isAddress(from) ? lc(from) : undefined;
+  };
   const fingerprint = (body) => {
     const p = body?.paymentPayload;
     const r = body?.paymentRequirements;
@@ -176,7 +233,15 @@ export async function createFacilitator({ rpcUrl, signer, chain: chainOverride }
   }
 
   async function verify(body) {
-    const v = await check(body);
+    let v;
+    try {
+      v = await check(body);
+    } catch (e) {
+      // A chain read that threw is not a verdict on the payment. Answering in the protocol's
+      // own shape keeps a flaky RPC from looking like a broken facilitator, and -- because
+      // settle() shares check() -- keeps a rejected promise out of the in-flight map.
+      return bad(reasonOf(e) || 'unexpected_verify_error', payerOf(body));
+    }
     return v.isValid ? { isValid: true, payer: v.payer } : v;
   }
 
@@ -200,38 +265,62 @@ export async function createFacilitator({ rpcUrl, signer, chain: chainOverride }
     const work = prior
       ? (async () => {
           // A transaction was sent for this request but its receipt was lost: look again.
+          let receipt;
           try {
-            const receipt = await chain.receipt(prior.hash);
-            unconfirmed.delete(key);
-            const ok = ['0x1', '1', 'true'].includes(String(receipt.status));
-            return ok ? succeed(prior.payer, prior.hash) : fail('invalid_transaction_state', prior.payer, prior.hash);
+            receipt = await chain.receipt(prior.hash);
           } catch {
             return fail('settlement_unconfirmed', prior.payer, prior.hash);
           }
+          const status = String(receipt?.status ?? '');
+          const ok = ['0x1', '1', 'true'].includes(status);
+          const reverted = ['0x0', '0', 'false'].includes(status);
+          if (!ok && !reverted) {
+            // The chain did not say either way. Keep the record of the broadcast: it is the only
+            // thing stopping the next retry from running check() and sending the same
+            // authorization a second time.
+            return fail('settlement_unconfirmed', prior.payer, prior.hash);
+          }
+          unconfirmed.delete(key);
+          return ok ? succeed(prior.payer, prior.hash) : fail('invalid_transaction_state', prior.payer, prior.hash);
         })()
       : (async () => {
-          const v = await check(body);
+          let v;
+          try {
+            v = await check(body);
+          } catch (e) {
+            // As in verify(): a read that threw decided nothing, and settle() must not reject,
+            // or the promise parked in `inflight` would hand the rejection to every later
+            // request that joins it.
+            return fail(reasonOf(e) || 'unexpected_settle_error', payerOf(body));
+          }
           if (!v.isValid) return fail(v.invalidReason, v.payer);
-          return serial(async () => {
-            try {
-              await chain.call(v.tx.to, v.tx.sig, v.tx.args, { from }); // again, against the latest state
-            } catch (e) {
-              return fail(reasonOf(e) || 'unexpected_settle_error', v.payer);
-            }
-            try {
-              const sent = await chain.send(v.tx.to, v.tx.sig, v.tx.args, signer);
-              if (!sent.ok) return fail('invalid_transaction_state', v.payer, sent.hash);
-              return succeed(v.payer, sent.hash);
-            } catch (e) {
-              if (e instanceof UnconfirmedError) {
-                // Sent, outcome unknown: never report it as failed-and-unsent. A retry of the
-                // same request looks the receipt up again.
-                unconfirmed.set(key, { fp, hash: e.hash, payer: v.payer });
-                return fail('settlement_unconfirmed', v.payer, e.hash);
+          try {
+            return await serial(async () => {
+              try {
+                await chain.call(v.tx.to, v.tx.sig, v.tx.args, { from }); // again, against the latest state
+              } catch (e) {
+                return fail(reasonOf(e) || 'unexpected_settle_error', v.payer);
               }
-              return fail(reasonOf(e) || 'unexpected_settle_error', v.payer);
-            }
-          });
+              try {
+                const sent = await chain.send(v.tx.to, v.tx.sig, v.tx.args, signer);
+                if (!sent.ok) return fail('invalid_transaction_state', v.payer, sent.hash);
+                return succeed(v.payer, sent.hash);
+              } catch (e) {
+                if (e instanceof UnconfirmedError) {
+                  // Sent, outcome unknown: never report it as failed-and-unsent. A retry of the
+                  // same request looks the receipt up again.
+                  rememberUnconfirmed(key, { fp, hash: e.hash, payer: v.payer });
+                  return fail('settlement_unconfirmed', v.payer, e.hash);
+                }
+                return fail(reasonOf(e) || 'unexpected_settle_error', v.payer);
+              }
+            });
+          } catch (e) {
+            // Its turn never came, so nothing was broadcast for it: a plain failure the payer
+            // can retry with the same authorization.
+            if (e instanceof QueueTimeout) return fail('settlement_queue_timeout', v.payer);
+            throw e;
+          }
         })();
     if (key) inflight.set(key, { fp, result: work });
     try {
@@ -279,7 +368,15 @@ export async function createFacilitator({ rpcUrl, signer, chain: chainOverride }
       if (req.method === 'POST' && url.pathname === '/convert') return sendJson(res, 200, await convert(await readJson(req)));
       return sendJson(res, 404, { error: 'not found' });
     } catch (e) {
-      return sendJson(res, e.status || 500, { error: e.status ? e.message : 'internal error' });
+      // Answering must not throw in turn: an exception escaping this handler is an unhandled
+      // rejection, and Node 22 ends the process on one, so a single awkward request would take
+      // the facilitator down for everybody.
+      try {
+        if (!res.headersSent) sendJson(res, e.status || 500, { error: e.status ? e.message : 'internal error' });
+        else if (!res.writableEnded) res.end();
+      } catch {
+        /* the connection is already gone */
+      }
     }
   });
 

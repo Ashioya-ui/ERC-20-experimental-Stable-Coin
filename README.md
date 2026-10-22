@@ -189,6 +189,32 @@ stack-too-deep in `PoolManager` under via-IR.
     about ten months, small vault losses lower no balance, and redeeming ahead of a known loss
     gains nothing while the loss fits in the cushion (A9). Holders earn the yield on it.
 
+## The x402 payment rail (Phase 6)
+
+An agent that holds one sUSD balance can pay any x402 bill. It needs no vault position, no USDC
+float and no ETH for gas, and the balance earns between payments.
+
+| | |
+|---|---|
+| `src/periphery/SpectrumPayRouter.sol` | Immutable, ownerless, holds nothing between calls. Redeems exactly enough sUSD, pays the merchant the exact USDC price, returns all change in the same transaction |
+| `x402/facilitator.mjs` | x402 v2 `/verify`, `/settle`, `/supported`, plus `/convert` |
+| `x402/merchant.mjs` | Example resource server, including an agent marketplace |
+| `x402/agent.mjs` | Agent client and CLI with a spend policy |
+
+The EIP-3009 nonce *is* the payment intent — `keccak256(payTo, assets, salt)`, recomputed inside
+`pay()` — so a submitter who changes the payee, the price or the salt invalidates the signature.
+Measured cost is a flat **3.0–3.3 bps** from $0.01 upward; an agent can turn over roughly 46% of
+its treasury in payments per day before fees cancel the yield
+(`x402/review/fee-curve.mjs`, `x402/review/unit-economics.mjs`).
+
+```bash
+make x402          # chain, router, facilitator, merchant, demo and tests, about a minute
+make x402-serve    # the same, left running for agents
+```
+
+Design and threat model: `docs/design/x402-rail.md`. Cross-request state audit:
+`audit/x402-state-audit.md`. Base Sepolia walkthrough: `DEPLOY_AND_TEST.md`.
+
 ## The paper
 
 The geometry comes from E. Langetepe and W. A. Ashioya, *The length-over-diameter ratio of
