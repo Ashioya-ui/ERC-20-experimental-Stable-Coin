@@ -1,98 +1,275 @@
-# Cross-request state audit of the x402 facilitator
+# x402 facilitator: cross-request state audit
 
-**Date** 22 October 2026 · **Scope** `x402/facilitator.mjs`, `x402/merchant.mjs`, `x402/lib/cast.mjs`
-**Guarding tests** `x402/test/state.test.mjs` (11), `x402/test/stub.mjs`, additions to `x402/test/unit.test.mjs`
-**Result** 43/43 Node tests green.
+**Scope** `x402/facilitator.mjs`, `x402/merchant.mjs`, `x402/lib/cast.mjs`, `x402/agent.mjs`
+**Frame** the PHP2Shell class (CVE-2026-109618 / 109619): a long-lived worker whose module-scope
+mutable state outlives a request, an error path that unwinds without restoring the invariant, and
+a later request that reads the leftover as if it were live.
+**Date** 2026-10-22 · Node 22.22.0 · local anvil (chain 31337) with Spectrum and the pay router.
 
-## Why this audit
+The facilitator is one process holding, across every request from untrusted merchants and payers:
+`settled`, `inflight` and `unconfirmed` (Maps keyed by `payer:nonce`), a `queue` promise chain that
+serialises transaction sends, and `dep` / `errors` / `from` / `forbiddenPayTo` captured once at
+startup. The last four are immutable after boot and are not discussed further.
 
-On 21 October 2026 the PHP project patched **PHP2Shell** (CVE-2026-109618 / CVE-2026-109619,
-CVSS 9.2). The headline is memory corruption, but the structural cause is not memory safety:
+## How each finding was reproduced
 
-> A long-lived worker serves many requests from untrusted callers. Mutable state at global scope
-> outlives any one request. An **error path** unwinds without restoring invariants, leaving a
-> global referring to state that belonged to a dead request. A **later** request then reads that
-> stale global as if it were live.
+`createFacilitator({ chain })` already took a chain override. `x402/test/stub.mjs` supplies one
+whose every method can be hooked; the defaults describe a healthy chain on which every payment is
+good, so a test overrides only the call it wants to fail. That makes the RPC-misbehaving paths —
+a read that throws, a send whose receipt is lost, a send that never returns — reachable
+deterministically, in milliseconds, with no anvil.
 
-The Spectrum facilitator has that exact shape. It is a long-lived Node process, it takes requests
-from untrusted merchants and payers, it moves value on-chain, and it keeps `settled`, `inflight`
-and `unconfirmed` maps plus a shared `queue` promise chain alive across every request. The
-question is not whether our bug looks like theirs; it is whether our error paths restore our
-invariants.
+The probe used throughout is side-effect free:
 
-Error paths are hard to reach against a healthy chain, so the audit added **`x402/test/stub.mjs`**:
-a chain whose every method can be hooked. `createFacilitator({ chain })` already accepted an
-override, so a test can make exactly one call throw, hang, or lose a receipt, deterministically
-and in milliseconds, with a fixed clock.
+```js
+// does any shared map still hold (payer, nonce)?
+const holds = async (payer, nonce) => {
+  const r = await f.settle(payment({ payer, nonce, amount: '0' }));  // same key, different fingerprint
+  if (r.errorReason === 'invalid_exact_evm_payload_authorization_nonce_used') return true;
+  if (r.errorReason === 'invalid_payment_requirements') return false;  // check() rejected amount 0
+  throw new Error('unexpected');
+};
+```
 
-## Findings
+Every finding below was reproduced against the code as it stood, the test was watched to fail, the
+patch applied, and the test watched to pass. The four tests that already passed before the patch
+are the controls for the SOUND verdicts.
 
-| # | Question | Verdict | Severity | Guarding test |
-|---|---|---|---|---|
-| 1 | What survives a throw from `check()` or a chain read? | **VULNERABLE** → fixed | High | 1, 2 |
-| 2 | Can a rejected promise in `inflight` reach a later request? | **VULNERABLE** → fixed | High | 3, 4 |
-| 3 | Does `unconfirmed` evict? | **VULNERABLE** → fixed | Medium | 5 |
-| 4 | Can the send queue be stalled permanently? | **VULNERABLE** → fixed | High | 6 |
-| 5 | Is anything published to a shared map before it commits? | **SOUND** | — | 9 |
-| 6 | Can one request kill the process? | **VULNERABLE** → fixed | High | 10, 11 |
+---
 
-### 1 & 2 — a throw escaped into the shared maps
+## 1. If `check()` or a `chain.*` call throws, what is left behind, and what does the next request with the same key see?
 
-`check()` performs several chain reads. A throw from any of them propagated out of `verify()` as
-a 500, and out of `settle()` as a **rejected promise that had already been stored in `inflight`**.
-Every later request for the same `payer:nonce` joined that promise and inherited the rejection —
-a failure belonging to one request being served as the answer to another. This is the PHP2Shell
-shape precisely.
+**Verdict SOUND for the state, VULNERABLE for the answer. Severity: low.**
 
-Both now catch. A read that threw is not a verdict on the payment, so the answer is in the
-protocol's own shape (`unexpected_verify_error` / `unexpected_settle_error`, or the mapped custom
-error) with the payer taken from the request. `settle()` never rejects, so nothing poisonous is
-ever parked in `inflight`.
+`settle()` wraps the await of `work` in `try { return await work } finally { inflight.delete(key) }`,
+so a throw out of `check()` does not leave an entry in `inflight`. Reproduced: with
+`chain.timestamp` throwing once, `holds()` returned false immediately afterwards and the identical
+request settled normally on the next attempt. Nothing is written to `settled` or `unconfirmed`
+before the send, so neither is touched either. The next request with the same key sees a clean
+slate and re-runs `check()` — which is correct, because a read that threw decided nothing.
 
-### 3 — `unconfirmed` grew without bound
+What was wrong is the *answer*. `check()` only catches throws around the final `eth_call`
+simulation; `chain.timestamp()`, `chain.bool()` and `chain.uint()` propagate. `verify()` and
+`settle()` then rejected, the HTTP handler's catch-all turned that into **`500 {"error":"internal
+error"}`**, and a merchant parsing `settled.success` saw an undefined field. A flaky RPC made the
+facilitator look broken rather than the payment look unsettled, and (see §2) the rejection was
+shared with every request that joined the same key.
 
-`settled` evicts at `MAX_SETTLED`; `unconfirmed` had no bound at all, and it grows **on an error
-path** — exactly the memory-exhaustion-from-a-provokable-error pattern. Bounded now at 1,000
-entries with a TTL of `2 × MAX_TIMEOUT`. The TTL is sound because `check()` refuses any
-`validBefore` more than `MAX_TIMEOUT + SKEW` past chain time, so an older entry can no longer
-let a retry broadcast anything. The count cap is the backstop for a burst.
+*Patch* — `x402/facilitator.mjs`: `verify()` and `settle()` now catch a throw out of `check()` and
+answer `unexpected_verify_error` / `unexpected_settle_error` in the protocol's own shape, with the
+payer filled in from the request. Those reasons already existed for simulation failures; this
+extends them to any read that threw. `settle()` therefore never rejects at all — see §2.
 
-### 4 — one hung send parked every later settlement
+*Tests* — `test/state.test.mjs`:
+`a chain read that throws leaves nothing behind, and answers in the protocol, not a 500`,
+`the HTTP surface answers 200 with an x402 body when a chain read throws`.
 
-Settlements are serialised through one promise chain so the facilitator's account has no nonce
-races. A `cast` subprocess whose RPC stops answering never returns, so one hung send parked every
-later settlement **for ever**.
+## 2. Can a rejected promise parked in `inflight` be handed to a later request?
 
-Fixed at both levels. `cast` now runs under a timeout (`CAST_TIMEOUT_MS`, default 120 s,
-SIGKILL), turning a hang into an ordinary transient failure the existing handling already covers.
-And a settlement that has waited `QUEUE_WAIT` for its *turn* gives up with
-`settlement_queue_timeout` — but only while still waiting. Once the send has started, a
-transaction may be in flight and the only honest answer is the one it produces.
+**Verdict VULNERABLE (bounded). Severity: low.**
 
-### 5 — SOUND
+Yes, while it is pending. `settle()` publishes `inflight.set(key, { fp, result: work })` before
+awaiting, and a second request with the same key and the same fingerprint takes the early return
+`if (prior && prior.result) return prior.result`. Reproduced: with the first request's chain read
+parked on a gate and then throwing, **both** callers received the same rejection, and both became
+500s.
 
-Nothing is published to `settled` before the send commits. `succeed()` runs only after a receipt
-with a success status. A receipt that is unreadable, or that says neither success nor reverted,
-**keeps** the `unconfirmed` record — that record is the only thing stopping the next retry from
-re-running `check()` and broadcasting the same authorization twice.
+It is bounded: the `finally` removes the entry whether `work` resolves or rejects, so a *settled*
+rejection is never read by a request that arrives later — `holds()` was false immediately after.
+There is also no cross-key deletion: only the request that created an entry ever writes or deletes
+it, because every other request with that key takes an early return before `inflight.set`.
 
-### 6 — one request could end the process
+The structural fix is in §1: with `check()`'s throws converted to answers, `settle()` cannot reject,
+so nothing rejected can be parked in `inflight` in the first place. That property is now asserted
+directly against a chain whose every method throws.
 
-An exception escaping the HTTP handler is an unhandled rejection, and Node 22 exits on one, so a
-single awkward request could take the facilitator down for everyone. The handler's own error path
-can no longer throw: it checks `headersSent`, falls back to ending the response, and swallows a
-dead connection.
+*Patch* — as §1.
+*Tests* — `a request joining one in flight never inherits a rejection`,
+`settle never rejects, whatever the chain does`.
 
-## Also fixed
+## 3. `settled` evicts at MAX_SETTLED; does `unconfirmed` evict at all?
 
-`parseJsonOutput` took the first JSON object in `cast` output. A provider's log line can itself be
-JSON, in which case the first object is not the answer asked for. It now accepts a predicate so a
-caller can say which object it recognises; a receipt lookup uses it.
+**Verdict VULNERABLE. Severity: medium.**
 
-## Limitations
+It did not evict, ever. `unconfirmed.set()` runs on the `UnconfirmedError` path — a transaction
+broadcast whose receipt could not be read — and `unconfirmed.delete()` ran only when a later retry
+read the receipt successfully. A settlement nobody retries, or whose receipt stays unreadable,
+stayed in the Map for the life of the process. Reproduced: after one unconfirmed settlement and
+2,000 more with distinct keys, `holds()` on the first still returned true.
 
-- State lives in one process's memory. Restart clears idempotency; two facilitators on one key
-  would race. Production needs shared storage and either nonce management or several hot wallets.
-- `QUEUE_WAIT` bounds waiting for a turn, not a send already in flight. That half is bounded by
-  `CAST_TIMEOUT_MS`.
-- The stub exercises the facilitator's reaction to a misbehaving chain, not the chain itself.
+What an attacker who can provoke many unconfirmed settlements achieves is unbounded memory growth
+in the one process that moves the money — the writeup's "unbounded growth of a shared structure
+that turns an error into resource exhaustion". Each entry carries the full request fingerprint
+(~0.5 KB), and there is no ceiling and no expiry. `settled`, by contrast, was already capped at
+`MAX_SETTLED` and is safe to evict because the chain, not the cache, is the source of truth for a
+consumed nonce.
+
+*Patch* — `x402/facilitator.mjs`: `MAX_UNCONFIRMED = 1_000` and a TTL of `2 × MAX_TIMEOUT` seconds,
+applied by a new `rememberUnconfirmed()` that re-inserts (so the Map stays in age order) and then
+drops from the oldest end. The TTL is the safe one to choose: `check()` refuses any `validBefore`
+more than `MAX_TIMEOUT + SKEW` past chain time, so an entry older than that covers an authorization
+that can no longer be settled by anyone, and forgetting it cannot cause the re-broadcast of §5.
+
+*Test* — `` `unconfirmed` is bounded: many lost receipts cannot grow it for ever `` (1,100 entries;
+the first must be gone).
+
+## 4. Can the `queue` chain be poisoned or stalled so every later settlement hangs?
+
+**Poisoned: no. Stalled: yes. Verdict VULNERABLE. Severity: high.**
+
+Poisoning is handled: `queue = run.catch(() => {})` means the shared chain never carries a
+rejection, and `queue.then(fn, fn)` runs the next settlement whether its predecessor resolved or
+threw.
+
+Stalling was total. `serial()` returned `queue.then(fn, fn)` with no bound on the wait, and nothing
+in `lib/cast.mjs` bounded a subprocess: `execFile` was called with `maxBuffer` but no `timeout`, and
+`cast receipt` blocks until a transaction is mined. One send that never comes back — a stuck RPC
+connection, a transaction the node never mines — parks **every later settlement for ever**.
+Reproduced: with one send returning a promise that never settles, an unrelated later settlement for
+a different payer had still not been answered after 3 seconds, and five queued behind it were all
+silent. `/verify`, `/supported` and `/health` kept answering, so the facilitator looks alive while
+no money can move and merchants' sockets accumulate.
+
+*Patch* — two halves, because the two halves of the hang are different.
+
+- `x402/lib/cast.mjs`: every `cast` invocation now carries a timeout (`CAST_TIMEOUT_MS`, default
+  120 s, `killSignal: 'SIGKILL'`). A killed subprocess reports `timed out`, which `TRANSIENT`
+  already matches, so reads retry and sends — which are never given retries — do not. A hung send
+  becomes an ordinary `UnconfirmedError`, which the facilitator already knows how to carry.
+- `x402/facilitator.mjs`: `serial()` now bounds the *wait for a turn*, not the work. A settlement
+  that has waited `QUEUE_WAIT` (`queueWaitMs` option or `FACILITATOR_QUEUE_WAIT_MS`, default 120 s)
+  gives up before `fn` runs, so nothing was broadcast for it, and `settle()` answers
+  `settlement_queue_timeout` — a plain failure the payer can retry with the same authorization.
+  Once `fn` has started it is never abandoned: a transaction may be in flight and the only honest
+  answer is the one `fn` produces. The abandoned callback still runs as a no-op so the queue moves
+  on, and the stub records that no second transaction was sent.
+
+*Test* — `one stuck send does not park every later settlement for ever` (asserts the answer, the
+empty `transaction` field, and that the abandoned settlement is never sent).
+
+## 5. Is anything published to a shared Map before the on-chain action commits, such that a failure between the two leaves a lie cached?
+
+**Verdict VULNERABLE, in the mirror image. Severity: high.**
+
+No false *success* is cached. `succeed()` is only reached after `chain.send` has returned a receipt
+with status 1, or after a retry has read such a receipt; a send that reverts or throws returns
+`fail()` and writes nothing. Reproduced and kept as a control test.
+
+The defect is the opposite: **the record that a transaction *was* committed is destroyed by an error
+path that cannot tell "it failed" from "I could not read the answer."** The retry branch read
+
+```js
+const receipt = await chain.receipt(prior.hash);
+unconfirmed.delete(key);                                   // <- unconditional
+const ok = ['0x1', '1', 'true'].includes(String(receipt.status));
+```
+
+`chain.receipt` is `parseJsonOutput(cast receipt --json …)`, and `parseJsonOutput` returned *the
+first JSON object in the output*, with no check that it was the receipt for that hash. `cast` prints
+provider log lines next to the JSON — the existing unit test at `test/unit.test.mjs` exists because
+of exactly that — and a log line in JSON form parses into an object with no `status`. Then `ok` is
+false, the entry is deleted as if the chain had reported a revert, and the only record that the
+authorization had already been broadcast is gone.
+
+Reproduced end to end: a settlement whose receipt was lost, then a retry whose receipt parsed to a
+log record, then a third retry — **the same authorization was broadcast twice** (`sends == 2`), and
+the second broadcast was reported to the merchant as the settlement. On a real chain the EIP-3009
+nonce makes the second transaction revert, so no money moves twice; what is lost is the facilitator's
+gas, and the truth: a payment that succeeded is reported `invalid_transaction_state`, then
+`nonce_used` for ever after, so the payer paid and the merchant never delivers. This is the writeup's
+"shared slot reused without revalidating identity" together with "cleanup that only runs on the
+success path", in the one place where the invariant is worth money.
+
+*Patch* — both ends, so neither layer has to trust the other.
+
+- `x402/lib/cast.mjs`: `parseJsonOutput(out, accept)` takes a predicate and returns the first JSON
+  object the caller recognises; `makeChain.receipt(hash)` passes one matching `transactionHash`, and
+  rejects a receipt whose `status` is not one the chain actually reports. Not knowing is now an
+  error, not a verdict — and an error is what `send()` turns into `UnconfirmedError` and the retry
+  branch turns into `settlement_unconfirmed`, which are the correct answers.
+- `x402/facilitator.mjs`: the retry branch narrows its `try` to the read, then deletes the
+  `unconfirmed` entry **only** when the status is positively `ok` or positively `reverted`. Anything
+  else keeps the record and answers `settlement_unconfirmed`.
+
+*Tests* — `an unreadable receipt never drops the record that a transaction was broadcast` (asserts
+`sends == 1` throughout and that the final success carries the first hash),
+`a receipt that really says reverted does release the key` (the key must be reusable: a revert
+consumed nothing), `success is only published once the send has committed`, and in
+`test/unit.test.mjs` the `parseJsonOutput` predicate against a JSON-formatted log line.
+
+## 6. Does an unhandled rejection kill the process — can one crafted request take the facilitator down?
+
+**Verdict SOUND as far as I could drive it; one latent path hardened. Severity: low.**
+
+I could not craft a request that kills the facilitator, and I tried: a client that vanishes mid-
+settlement, a body over the 64 KB limit, a body that stops halfway, a socket reset after the
+request line, non-JSON bodies, and the request targets `/settle?a=%zz`, `//evil.example/settle`,
+`/%`, `http://x/settle` and `*`. All were answered or dropped cleanly and the process stayed up.
+This is tested **in a child process with no listener of its own**, so Node 22's own response to an
+unhandled rejection — ending the process — is what decides the test, not the runner's handler.
+
+The latent path is real and one line from being reachable. `sendJson` throws `ERR_HTTP_HEADERS_SENT`
+if the headers are already out (demonstrated directly), and both servers' catch-alls called
+`sendJson` unconditionally; a throw there escapes an `async` handler as an unhandled rejection,
+which Node 22 turns into a dead process. Today nothing in either handler writes before the final
+`sendJson`, so it is unreachable — but it is the kind of thing a later edit makes reachable, and the
+blast radius is the whole payment rail.
+
+*Patch* — `x402/facilitator.mjs` and `x402/merchant.mjs`: the catch-all answers only if
+`!res.headersSent`, ends the response if it cannot, and does the whole thing inside its own
+`try`/`catch`.
+
+*Tests* — `awkward requests do not take the process down (no handler to hide them)` (child process,
+exit code checked), `the server keeps serving after an awkward request`.
+
+---
+
+## Observations not patched
+
+- **An oversized body gets no answer.** `readJson` calls `req.destroy()` in the same tick as the
+  413 rejection, so the handler writes the response to a dead socket and the client sees
+  `ECONNRESET`, not `413`. Confirmed with a raw socket. Cosmetic, no state consequence; fixing it
+  properly means either draining an attacker's body or closing the connection deliberately, and
+  neither belongs in a state-audit patch.
+- **An ambiguous broadcast is still reported as unsent.** If `cast send --async` fails *after* the
+  node accepted the transaction, `makeChain.send` throws a `CastError`, not an `UnconfirmedError`,
+  and `settle` answers `unexpected_settle_error` with no hash — a transaction may exist that the
+  facilitator has no record of. Unlike §5 this cannot be fixed from the error alone; it needs a
+  lookup by the facilitator's own account nonce. Out of scope, worth a design note.
+- **`merchant.mjs` holds no mutable state across requests.** `routes` is built once and is
+  immutable, the market file is read per request, and the retry loop's state is local. Its only
+  cross-request coupling is the facilitator's idempotency, which §5 covers. SOUND.
+- **`agent.mjs` is a client**, one process per agent, not a shared worker. Its `spent` counter and
+  ledger are per-process and not reachable by an untrusted caller. Out of the frame.
+
+## UNVERIFIED
+
+- That an attacker can *force* many unconfirmed settlements (§3) rather than relying on RPC
+  flakiness. The growth itself is reproduced and the bound is cheap, but I have no reproduction of
+  an attacker-driven path to `UnconfirmedError` on a healthy node.
+- That any request reaches the `ERR_HTTP_HEADERS_SENT` path in the shipped handlers (§6). The throw
+  and its fatality are demonstrated; reachability is not.
+
+## Changed files
+
+| File | Change |
+| --- | --- |
+| `x402/facilitator.mjs` | `check()` throws become protocol answers (§1, §2); bounded `unconfirmed` with `rememberUnconfirmed` (§3); `serial()` bounds the wait for a turn, `settlement_queue_timeout` (§4); retry branch only drops the `unconfirmed` record on a status the chain actually reported (§5); guarded catch-all (§6). New option `queueWaitMs`. |
+| `x402/lib/cast.mjs` | Subprocess timeout on every `cast` invocation (§4); `parseJsonOutput(out, accept)` predicate and a `receipt()` that validates `transactionHash` and `status` (§5). |
+| `x402/merchant.mjs` | Guarded catch-all (§6). |
+| `x402/test/stub.mjs` | The hookable chain stub, the payment builder, the `holds()` probe. |
+| `x402/test/state.test.mjs` | New: 11 tests, one or more per question. |
+| `x402/test/unit.test.mjs` | `parseJsonOutput` predicate against a JSON-formatted log line. |
+
+## Regression gate
+
+```
+cd /home/claude/spectrum/x402 && source .tmp/current/env.sh && node --test --test-concurrency=1 "test/*.test.mjs"
+# tests 43   pass 43   fail 0      (32 pre-existing + 11 new)
+```
+
+Seven of the eleven new tests were watched failing against the unpatched files
+(`git show HEAD:x402/facilitator.mjs` and friends) before the patch; the other four are the controls
+for the SOUND verdicts and pass either way. The patched servers were also smoke-tested over HTTP
+from the CLI entry points: `node x402/facilitator.mjs` + `node x402/merchant.mjs` +
+`node x402/agent.mjs pay`, which settled a real 0.005 sUSD payment on the local chain.

@@ -158,7 +158,7 @@ lying 402.
 | T18 | A chain read throws and a later request inherits the failure from `inflight` (the PHP2Shell class) | `verify`/`settle` catch; `settle` never rejects | node `state` 1–4 |
 | T19 | `unconfirmed` grows without bound on a provokable error path | TTL of 2×`MAX_TIMEOUT` plus a 1,000-entry cap | node `state` 5 |
 | T20 | One hung send parks every later settlement for ever | `cast` runs under `CAST_TIMEOUT_MS` (SIGKILL); waiting for a turn is bounded by `FACILITATOR_QUEUE_WAIT_MS` | node `state` 6 |
-| T21 | A retry re-broadcasts an authorization whose receipt was unreadable | The `unconfirmed` record is kept unless the chain says success or reverted | node `state` 7, 8 |
+| T21 | A retry **broadcasts the same authorization twice** when a receipt is unreadable (found live: `sends == 2`, because `parseJsonOutput` took the first JSON object without checking it was that hash's receipt) | `receipt()` validates `transactionHash` and `status`; the `unconfirmed` record is dropped only on a status the chain actually reported | node `state` 7, 8 |
 | T22 | One awkward request ends the process (Node 22 exits on an unhandled rejection) | The handler's error path cannot itself throw | node `state` 10, 11 |
 | T17 | Key exposure | Agent keys are encrypted keystores with a password file. The facilitator uses anvil's unlocked account or a keystore. No key appears in arguments, environment or logs | by construction |
 
