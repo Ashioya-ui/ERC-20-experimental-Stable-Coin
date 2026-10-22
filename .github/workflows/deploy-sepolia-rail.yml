@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      contents: read
+      contents: write
     env:
       CHAIN_ID: "84532"
       RPC: https://sepolia.base.org
@@ -49,7 +49,6 @@ jobs:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           submodules: recursive
-          persist-credentials: false
       - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
           version: v1.5.1
@@ -183,6 +182,22 @@ jobs:
               echo '```json'; cat pay-susd.json pay-router.json; echo '```'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit the deployment addresses back to the repository
+        if: success()
+        run: |
+          set -euo pipefail
+          # The artifact and the raw logs sit behind hosts an agent session may not be allowed to
+          # reach, and the job summary is only readable in a browser. The addresses are the whole
+          # point of the run, so put them somewhere plain git can fetch them.
+          [[ -f "deployments/$CHAIN_ID.json" ]] || exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p deployments
+          git add -f "deployments/$CHAIN_ID.json" "deployments/$CHAIN_ID-router.json" || true
+          git commit -q -m "deploy(base-sepolia): record the live addresses from run ${{ github.run_id }}" || exit 0
+          git push origin "HEAD:refs/heads/deployments/base-sepolia-${{ github.run_id }}"
+          echo "addresses pushed to branch deployments/base-sepolia-${{ github.run_id }}"
 
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: always()
