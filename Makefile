@@ -10,6 +10,10 @@
 #   make post-deploy-check               # read-only checks against the live deployment
 #   make verify-base-mainnet             # re-verify with explicit constructor args if needed
 #
+# x402 rail (docs/design/x402-rail.md):
+#   make x402                            # local chain, pay router, facilitator, merchant, demo, tests
+#   make x402-serve                      # same set-up, then keeps serving for agents
+#
 # Audit tooling (audit/README.md):
 #   make deps analyze formal coverage sim  # pins, Slither, Halmos, coverage, parameter model
 #
@@ -26,7 +30,7 @@ CHAIN_ID ?= 8453
 .PHONY: help build test test-ci test-isolate bench snapshot rehearsal fork-test preflight \
         deploy-base-mainnet verify-base-mainnet verify-blockscout post-deploy-check sizes \
         clean-local analyze formal coverage deps sim preflight-sepolia deploy-base-sepolia \
-        post-deploy-check-sepolia
+        post-deploy-check-sepolia x402 x402-serve
 
 help:
 	@grep -E '^#' Makefile | sed 's/^# \{0,1\}//'
@@ -54,6 +58,12 @@ sizes:
 
 rehearsal:
 	script/rehearsal/run.sh
+
+x402:
+	script/rehearsal/x402.sh
+
+x402-serve:
+	script/rehearsal/x402.sh --serve
 
 deps:
 	script/check-deps.sh

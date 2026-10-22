@@ -12,7 +12,7 @@ env:
 
 jobs:
   forge:
-    name: Build, tests (10k fuzz, invariants 1,024 x 256) and mainnet rehearsal
+    name: Build, tests (10k fuzz, invariants 1,024 x 256), mainnet and x402 rehearsals
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -41,11 +41,20 @@ jobs:
         env:
           FOUNDRY_PROFILE: default
         run: script/rehearsal/run.sh
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+      - name: x402 rail on anvil (pay router, facilitator, merchant, agent; Node end-to-end tests)
+        env:
+          FOUNDRY_PROFILE: default
+        run: script/rehearsal/x402.sh
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: always()
         with:
           name: rehearsal-log
-          path: rehearsal/latest.log
+          path: |
+            rehearsal/latest.log
+            rehearsal/x402.log
 
   base-fork:
     name: Mainnet scenarios on a live Base fork

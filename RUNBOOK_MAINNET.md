@@ -324,13 +324,31 @@ The research report found:
 - Kenya's VASP Act 2025 requires a Central Bank of Kenya licence (KES 300M paid-up capital) to
   issue a stablecoin, and Aave or Morpho vaults are not eligible reserve assets.
 
+**Germany and the EU (MiCA), checked 22 October 2026.** A crypto-asset that keeps a stable value
+by referencing one official currency is an e-money token. Only an authorised credit institution
+or e-money institution may offer one to the public in the EU, after notifying a white paper
+(MiCA Art. 48(1)). Neither the issuer nor a crypto-asset service provider may grant interest on
+it, and any benefit tied to how long it is held counts as interest (Art. 50). In Germany,
+offering an e-money token or an asset-referenced token to the public without meeting those
+requirements is a crime: up to five years in prison or a fine, and up to three years if negligent
+(§ 46(1) and (6) KMAG). In the one German case so far, BaFin treated Ethena's yield-bearing sUSDe
+as a suspected security offered without a prospectus. The Frankfurt administrative court upheld
+BaFin's warning (2 May 2025, 7 L 1257/25), reasoning that a variable return paid in further tokens
+has the features of a security, and Ethena GmbH's USDe business was wound down. sUSD's rebase is
+exactly that kind of return. For founders based in Germany, there is no lawful mainnet launch of
+sUSD as designed. The routes to discuss with a German MiCA lawyer, and with BaFin, are:
+1. a no-yield e-money token issued by, or with, an authorised e-money institution; or
+2. the yield product structured as a security, with a prospectus or an exemption, through
+   licensed intermediaries.
+
 What follows:
-- launch as an experimental DeFi token and do not market it as a stablecoin;
+- launch as an experimental DeFi token and do not market it as a stablecoin (outside the EU and
+  the US, and only after local counsel);
 - geo-restrict US persons;
 - avoid any government imagery;
-- take counsel in Kenya and the US before inviting outside users;
-- until then, use Base Sepolia (`DEPLOY_AND_TEST.md`, level 2): it is free, and its tokens have no
-  value.
+- take counsel in Kenya, the US and Germany before inviting outside users;
+- until then, use Base Sepolia (`DEPLOY_AND_TEST.md`, level 2, including the x402 rail): it is
+  free, and its tokens have no value.
 
 ## 8. Addresses (Base, chain 8453; verified 2026-10-15)
 
