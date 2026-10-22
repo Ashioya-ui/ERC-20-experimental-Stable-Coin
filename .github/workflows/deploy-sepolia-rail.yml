@@ -195,6 +195,10 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           mkdir -p deployments
           git add -f "deployments/$CHAIN_ID.json" "deployments/$CHAIN_ID-router.json" || true
+          # The settlement receipts are the proof the rail works on a public chain, so they
+          # travel with the addresses rather than only into the artifact.
+          cp -f pay-susd.json pay-router.json deployments/ 2>/dev/null || true
+          git add -f deployments/pay-susd.json deployments/pay-router.json || true
           git commit -q -m "deploy(base-sepolia): record the live addresses from run ${{ github.run_id }}" || exit 0
           git push origin "HEAD:refs/heads/deployments/base-sepolia-${{ github.run_id }}"
           echo "addresses pushed to branch deployments/base-sepolia-${{ github.run_id }}"

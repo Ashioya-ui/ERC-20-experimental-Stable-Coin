@@ -2,7 +2,32 @@
 
 **Branch** `phase-6-x402` (merged to `main`) · **Date** 22 October 2026
 **Tests** 246 Forge (15 on the router) + 47 Node = 293 · **CI** green on GitHub's runners
-**Status** local chain and CI only. Not deployed to any public network. No professional audit.
+**Status** **live on Base Sepolia** (chain 84532), block 48884064. No professional audit.
+
+## Live on Base Sepolia
+
+Deployed by GitHub Actions (`deploy-sepolia-rail.yml`) against Circle's real USDC and Uniswap
+v4's PoolManager, then used to pay two real x402 invoices on the public chain. Explorer:
+`https://sepolia.basescan.org/address/<address>`.
+
+| Contract | Address |
+|---|---|
+| sUSD | `0x54De35aC7fd6756D49eA77ce7bbCd026faDC364a` |
+| SpectrumPayRouter | `0x1783d46C349224992A5A3ab4C84fc7EBf71c056e` |
+| SpectralStabilizer | `0x3940F5F444B1ec69bb0245062796896135B8f948` |
+| AutonomousTreasury | `0x1af57BA60edaEDF91F5925A3A79F346cb50F12a6` |
+| SpectralEntropyOracle | `0xC7A4b9E9A7DAef0cF2bb531CCda1a3a4a744B4BB` |
+| SpectralHook | `0x7A4BB5720a158a22ae14297915aa21efbd1B6040` |
+| SpectrumLens | `0x384768E8b0b9d992EE5F23701D21B1b880495285` |
+| WrappedSUSD (wsUSD) | `0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8` |
+| USDC (Circle, existing) | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
+
+The hook address ends `6040` because Uniswap v4 encodes a hook's permissions in its address; it
+was CREATE2-mined to land on exactly `beforeInitialize | afterSwap` on a live network.
+
+The run paid an sUSD-priced invoice and a USDC-priced invoice routed out of sUSD. The agent held
+no ETH: the facilitator submitted both and paid the gas. The whole deployment, the router, the
+facilitator's gas float and both settlements came out of a single 0.01 test-ETH faucet drip.
 
 ## What was built
 
@@ -87,9 +112,9 @@ exactly. Five of six questions came back vulnerable.
 
 ## Limitations
 
-- **Local chain and CI only.** The build workspace cannot reach Base RPCs; every public endpoint
-  tried returned 403 at the proxy. `deploy-sepolia-rail.yml` is ready and needs one secret, one
-  variable and a funded throwaway wallet.
+- **Base Sepolia, not mainnet.** Deployed and exercised on a public testnet with valueless
+  tokens. The build workspace itself cannot reach Base RPCs, so every public-network action runs
+  through GitHub Actions.
 - **No professional audit.** Self-audited and reviewed by a separate agent; not the same thing.
 - **Interoperability untested.** The format follows the v2 spec, but no x402 SDK or public
   facilitator has been run against it. Standard clients do not send `payload.spectrum.salt`, so
