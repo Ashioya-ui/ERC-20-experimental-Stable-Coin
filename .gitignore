@@ -8,3 +8,7 @@ rehearsal/*.tmp
 safe-tx/
 out-halmos/
 cache-halmos/
+
+# Application drafts: personal material, kept local until the author decides to
+# publish it deliberately rather than as a side effect of a tidy working tree.
+docs/speedrun-application.md
