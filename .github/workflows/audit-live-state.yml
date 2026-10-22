@@ -34,8 +34,8 @@ jobs:
           version: v1.5.1
 
 
-      - name: Targeted probes (senders, balances, access control)
-        run: bash audit/probe/probe3.sh > probe3.txt 2>&1 || true; cat probe3.txt
+      - name: Pool liquidity, deployment tx count, admin reach
+        run: bash audit/probe/probe4.sh > probe4.txt 2>&1 || true; cat probe4.txt
 
       - name: PostDeployCheck against the config AS COMMITTED
         run: |
@@ -90,7 +90,7 @@ jobs:
         with:
           name: audit-live-state
           path: |
-            probe3.txt
+            probe4.txt
             pdc-as-committed.txt
             pdc-repaired.txt
             attack-probes.txt
