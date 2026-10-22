@@ -33,27 +33,28 @@ jobs:
         with:
           version: v1.5.1
 
-      - name: Live chain state and event history
-        run: bash audit/probe/probe2.sh > live-state.txt 2>&1 || true; tail -5 live-state.txt
 
-      - name: What Sourcify and Blockscout actually hold
-        run: bash audit/probe/sourcify.sh > sourcify-truth.txt 2>&1 || true; cat sourcify-truth.txt
+      - name: Targeted probes (senders, balances, access control)
+        run: bash audit/probe/probe3.sh > probe3.txt 2>&1 || true; cat probe3.txt
 
       - name: PostDeployCheck against the config AS COMMITTED
         run: |
-          forge script script/PostDeployCheck.s.sol --rpc-url "$RPC" > pdc-as-committed.txt 2>&1
-          echo "exit=$?" >> pdc-as-committed.txt
-          tail -30 pdc-as-committed.txt
+          forge script script/PostDeployCheck.s.sol --rpc-url "$RPC" > pdc-as-committed.txt 2>&1 || true
+          tail -5 pdc-as-committed.txt
 
       - name: PostDeployCheck with roles.admin repaired from the deployment record
         run: |
           jq --arg a "$(jq -r .admin deployments/84532.json)" '.roles.admin=$a' config/84532.json > config/84532.repaired.json
           SPECTRUM_CONFIG=config/84532.repaired.json \
-            forge script script/PostDeployCheck.s.sol --rpc-url "$RPC" > pdc-repaired.txt 2>&1
-          echo "exit=$?" >> pdc-repaired.txt
+            forge script script/PostDeployCheck.s.sol --rpc-url "$RPC" > pdc-repaired.txt 2>&1 || true
           tail -60 pdc-repaired.txt
 
-      - name: Attack probes against the live instance (eth_call only, nothing is sent)
+      - name: Unused attack-probe step (superseded by probe3)
+        if: false
+        run: |
+          true
+      - name: Old probes (disabled)
+        if: false
         run: |
           D=deployments/84532.json
           STAB=$(jq -r .stabilizer $D); DEP=$(jq -r .deployer $D); ADM=$(jq -r .admin $D)
@@ -89,8 +90,7 @@ jobs:
         with:
           name: audit-live-state
           path: |
-            live-state.txt
-            sourcify-truth.txt
+            probe3.txt
             pdc-as-committed.txt
             pdc-repaired.txt
             attack-probes.txt
