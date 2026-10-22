@@ -108,17 +108,30 @@ jobs:
           ADDRS=$(jq -r '[.sUSD,.treasury,.oracle,.stabilizer,.wsUSD,.lens,.hook] | @tsv' "$D")
           [[ -f "$R" ]] && ADDRS="$ADDRS	$(jq -r '.router // empty' "$R")"
           : > sourcify-status.txt
+          : > sourcify-raw.txt
           exact=0; partial=0; absent=0
           for a in $ADDRS; do
             [[ "$a" == 0x* ]] || continue
-            body=$(curl -sS --max-time 30 \
-              "https://sourcify.dev/server/check-all-by-addresses?addresses=$a&chainIds=$CHAIN_ID" || echo '[]')
-            st=$(echo "$body" | jq -r --arg c "$CHAIN_ID" \
-              '(.[0].chainIds // []) | map(select(.chainId == $c)) | (.[0].status // "absent")' 2>/dev/null || echo absent)
-            case "$st" in
-              perfect) exact=$((exact+1));;
-              partial) partial=$((partial+1));;
-              *) st=absent; absent=$((absent+1));;
+            # Sourcify moved to a V2 API and deprecated check-all-by-addresses, so ask both and
+            # keep the raw answers. A disagreement between forge and one endpoint is not evidence
+            # of anything until the actual responses are on the table.
+            v2=$(curl -sS -w '\n<<HTTP:%{http_code}>>' --max-time 30 \
+                  "https://sourcify.dev/server/v2/contract/$CHAIN_ID/$a" 2>&1 || echo "curl-failed")
+            legacy=$(curl -sS -w '\n<<HTTP:%{http_code}>>' --max-time 30 \
+                  "https://sourcify.dev/server/check-all-by-addresses?addresses=$a&chainIds=$CHAIN_ID" 2>&1 || echo "curl-failed")
+            { echo "### $a"; echo "-- v2:"; echo "$v2" | head -c 600; echo;
+              echo "-- legacy:"; echo "$legacy" | head -c 400; echo; } >> sourcify-raw.txt
+
+            # V2 is authoritative: it reports match as "exact_match" or "match".
+            m=$(echo "$v2" | sed 's/<<HTTP:[0-9]*>>//' | jq -r '.match // empty' 2>/dev/null || true)
+            if [[ -z "$m" ]]; then
+              m=$(echo "$legacy" | sed 's/<<HTTP:[0-9]*>>//' | jq -r --arg c "$CHAIN_ID" \
+                   '(.[0].chainIds // []) | map(select(.chainId == $c)) | (.[0].status // "")' 2>/dev/null || true)
+            fi
+            case "$m" in
+              exact_match|perfect) st=exact; exact=$((exact+1));;
+              match|partial)       st=partial; partial=$((partial+1));;
+              *)                   st=absent; absent=$((absent+1));;
             esac
             printf '%s\t%s\n' "$st" "$a" >> sourcify-status.txt
             echo "$st  $a"
@@ -132,14 +145,17 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          [[ -f verify-results.txt || -f sourcify-status.txt ]] || exit 0
+          [[ -f verify-results.txt || -f sourcify-status.txt || -f sourcify-raw.txt ]] || exit 0
           mkdir -p deployments
           { echo "# Sourcify verification, Base Sepolia, run ${{ github.run_id }}"
             echo "# forge said: outcome  address  source:contract  reason"
             cat verify-results.txt 2>/dev/null || echo "(no forge results)"
             echo ""
-            echo "# sourcify holds: status  address   (perfect | partial | absent)"
+            echo "# sourcify holds: status  address   (exact | partial | absent)"
             cat sourcify-status.txt 2>/dev/null || echo "(no status query)"
+            echo ""
+            echo "# raw API responses, so a disagreement is diagnosable:"
+            cat sourcify-raw.txt 2>/dev/null || echo "(none)"
             echo ""
             echo "# totals: exact=${EXACT:-?} partial=${PARTIAL:-?} absent=${ABSENT:-?}"
           } > deployments/84532-verification.txt
