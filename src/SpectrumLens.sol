@@ -145,6 +145,11 @@ contract SpectrumLens {
         uint256 rate = stabilizer.mintFeeRate(oracle.smoothedEntropy());
         // Credited c pays out c - ceil(c * rate / WAD) <= c (1 - rate); c <= room / (1 - rate)
         // keeps that within the room.
+        // Dividing to whole reserve-asset units first is deliberate: `mint` takes units, not sUSD
+        // wei, so the truncated figure is the real ceiling and rounding down keeps it inside the
+        // room. Scaling it back up re-expresses that same truncated amount for the minimum check,
+        // so no precision is lost that the caller could have used.
+        // slither-disable-next-line divide-before-multiply
         uint256 assets = Math.mulDiv(room, WAD, WAD - rate) / scale;
         return assets * scale < stabilizer.minAmount() ? 0 : assets;
     }
