@@ -244,4 +244,105 @@ describe('facilitator state across requests', { skip }, () => {
     assert.equal((await (await fetch(`${url}/health`)).json()).ok, true);
     assert.equal((await w.f.settle(w.payment())).success, true);
   });
+
+  // ------------------------------------------------- audit observation 1: oversized body
+
+  test('an oversized body gets a 413, not a reset connection', async () => {
+    // readJson used to req.destroy() in the same tick as the rejection, so the handler wrote
+    // 413 to a dead socket and the caller saw ECONNRESET -- indistinguishable from the server
+    // falling over. The answer must arrive first; the connection closes after it.
+    const w = await world();
+    const url = await w.listen();
+    const port = Number(url.split(':').pop());
+    const body = 'x'.repeat(200_000);
+    const reply = await new Promise((resolve) => {
+      let got = '';
+      const s = net.connect(port, '127.0.0.1', () => {
+        s.write(`POST /settle HTTP/1.1\r\nHost: x\r\ncontent-type: application/json\r\ncontent-length: ${body.length}\r\n\r\n`);
+        s.write(body);
+      });
+      s.on('data', (d) => { got += d.toString(); });
+      s.on('close', () => resolve(got));
+      s.on('error', () => resolve(got));
+      setTimeout(() => { try { s.destroy(); } catch { /* gone */ } resolve(got); }, 3000);
+    });
+    assert.match(reply, /^HTTP\/1\.1 413 /, `expected a 413 status line, got: ${JSON.stringify(reply.slice(0, 120))}`);
+    assert.match(reply, /body too large/);
+    assert.equal((await (await fetch(`${url}/health`)).json()).ok, true, 'and the server is still up');
+  });
+
+  // --------------------------------------------- audit observation 2: ambiguous broadcast
+
+  test('a broadcast whose hash we never learned is never reported as unsent, and never retried', async () => {
+    // makeChain raises UnconfirmedError with an empty hash when the node may have accepted the
+    // transaction before the send call failed. The facilitator must record it and refuse to
+    // send again: re-broadcasting the same authorization is the one unacceptable outcome.
+    const w = await world({ send: () => { throw new UnconfirmedError('', new Error('connection reset')); } });
+    const b = w.payment();
+    const first = await w.f.settle(b);
+    assert.equal(first.success, false);
+    assert.equal(first.errorReason, 'settlement_unconfirmed', 'not a plain failure');
+
+    const before = w.chain.sends.length;
+    const again = await w.f.settle(b);
+    assert.equal(again.errorReason, 'settlement_unconfirmed');
+    assert.equal(w.chain.sends.length, before, 'the retry broadcast nothing');
+  });
+});
+
+// --------------------------------------- audit observation 2, at the makeChain level
+
+describe('makeChain.send decides sent-or-not from the nonce, not the error', () => {
+  const fakeCast = async (script) => {
+    const { mkdtemp, writeFile, chmod } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const dir = await mkdtemp(join(tmpdir(), 'fakecast-'));
+    const bin = join(dir, 'cast');
+    await writeFile(bin, script);
+    await chmod(bin, 0o755);
+    return bin;
+  };
+  // cast.mjs reads CAST_BIN once at module load, so each case imports a fresh copy.
+  const freshChain = async (bin) => {
+    process.env.CAST_BIN = bin;
+    const mod = await import(`../lib/cast.mjs?fake=${encodeURIComponent(bin)}`);
+    return { makeChain: mod.makeChain, UnconfirmedError: mod.UnconfirmedError };
+  };
+  const signer = { kind: 'unlocked', address: '0x' + '22'.repeat(20) };
+
+  test('send fails but the nonce advanced: the node took it, so UnconfirmedError', async () => {
+    const bin = await fakeCast(`#!/bin/sh
+case "$1" in
+  nonce)  if [ -f "$TMPDIR_N/bumped" ]; then echo 8; else echo 7; fi ;;
+  send)   touch "$TMPDIR_N/bumped"; echo "error sending request for url" >&2; exit 1 ;;
+  wallet) echo 0x2222222222222222222222222222222222222222 ;;
+  *)      echo 0 ;;
+esac
+`);
+    const { join: j } = await import('node:path');
+    const { mkdtemp } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    process.env.TMPDIR_N = await mkdtemp(j(tmpdir(), 'noncestate-'));
+    const { makeChain, UnconfirmedError: UE } = await freshChain(bin);
+    await assert.rejects(
+      makeChain('http://127.0.0.1:1').send('0x' + '33'.repeat(20), 'f()', [], signer),
+      (e) => e instanceof UE && e.hash === '',
+    );
+  });
+
+  test('send fails and the nonce did not move: nothing went out, so a plain failure', async () => {
+    const bin = await fakeCast(`#!/bin/sh
+case "$1" in
+  nonce)  echo 7 ;;
+  send)   echo "execution reverted" >&2; exit 1 ;;
+  wallet) echo 0x2222222222222222222222222222222222222222 ;;
+  *)      echo 0 ;;
+esac
+`);
+    const { makeChain, UnconfirmedError: UE } = await freshChain(bin);
+    await assert.rejects(
+      makeChain('http://127.0.0.1:1').send('0x' + '33'.repeat(20), 'f()', [], signer),
+      (e) => !(e instanceof UE),
+    );
+  });
 });

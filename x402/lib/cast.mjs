@@ -151,9 +151,11 @@ const STATUS = new Set(['0x1', '1', 'true', '0x0', '0', 'false']);
 /** Raised when a transaction was broadcast but its receipt could not be read. */
 export class UnconfirmedError extends Error {
   constructor(hash, cause) {
-    super(`transaction ${hash} sent but not confirmed: ${cause?.message || cause}`);
+    super(hash
+      ? `transaction ${hash} sent but not confirmed: ${cause?.message || cause}`
+      : `a transaction was broadcast but its hash is unknown: ${cause?.message || cause}`);
     this.name = 'UnconfirmedError';
-    this.hash = hash;
+    this.hash = hash || '';
   }
 }
 
@@ -180,9 +182,37 @@ export function makeChain(rpcUrl) {
      * here raises UnconfirmedError carrying the hash).
      */
     async send(to, sig, args, signer) {
-      const out = await cast(['send', ...rpc, '--async', ...signerArgs(signer), to, sig, ...args]);
+      // The sender's nonce before broadcasting. If the broadcast call fails we cannot tell from
+      // the error whether the node accepted the transaction first, and guessing "unsent" is the
+      // dangerous guess: the caller would retry and broadcast it a second time. The nonce is the
+      // chain's own answer to that question.
+      const sender = await signerAddress(signer);
+      let nonceBefore;
+      try {
+        nonceBefore = await this.nonce(sender);
+      } catch {
+        nonceBefore = null; // could not read it; fall back to treating a failure as ambiguous
+      }
+      let out;
+      try {
+        out = await cast(['send', ...rpc, '--async', ...signerArgs(signer), to, sig, ...args]);
+      } catch (e) {
+        let advanced = nonceBefore === null;
+        if (nonceBefore !== null) {
+          try {
+            advanced = (await this.nonce(sender)) > nonceBefore;
+          } catch {
+            advanced = true; // cannot tell: assume something went out
+          }
+        }
+        // Something was broadcast, or we cannot rule it out. UnconfirmedError with no hash, so
+        // the facilitator records it and answers settlement_unconfirmed rather than letting a
+        // retry send the same authorization again. Only a definite "nothing left" is a failure.
+        if (advanced) throw new UnconfirmedError('', e);
+        throw e;
+      }
       const hash = (String(out).match(/0x[0-9a-fA-F]{64}/) || [])[0];
-      if (!hash) throw new CastError('no transaction hash in cast output', out);
+      if (!hash) throw new UnconfirmedError('', new CastError('no transaction hash in cast output', out));
       let receipt;
       try {
         receipt = await this.receipt(hash);
@@ -209,6 +239,10 @@ export function makeChain(rpcUrl) {
         throw new CastError(`receipt for ${hash} carries no usable status`, out.slice(0, 500));
       }
       return r;
+    },
+    /** The sender's next transaction nonce. */
+    async nonce(address) {
+      return BigInt(first(await cast(['nonce', ...rpc, address], READ)));
     },
     async timestamp() {
       return BigInt(await cast(['block', 'latest', '--field', 'timestamp', ...rpc], READ));
