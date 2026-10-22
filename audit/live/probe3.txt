@@ -1,0 +1,68 @@
+## WHO SUBMITTED THE TWO x402 SETTLEMENTS (claim: the facilitator, not the agent)
+--- tx 0x41dba7120d788c054a4aeb4a2293109db39d38914fde2716012da6c401ca6242
+blockNumber          48884515
+from                 0x8ad87442D3c1c9499F5B43b4E97B5aBb6674ddDc
+to                   0x54De35aC7fd6756D49eA77ce7bbCd026faDC364a
+value                0
+  gasUsed/status: effectiveGasPrice    6000000 gasUsed              89973 status               1 (success) 
+--- tx 0xedd58590afd99285c2eee1540b2c5a34737d693704473fbd5c184a6432cf90ca
+blockNumber          48884552
+from                 0x8ad87442D3c1c9499F5B43b4E97B5aBb6674ddDc
+to                   0x1783d46C349224992A5A3ab4C84fc7EBf71c056e
+value                0
+  gasUsed/status: effectiveGasPrice    6000000 gasUsed              216976 status               1 (success) 
+
+## AGENT HELD NO ETH (claim: gasless)
+agent ETH   = 0
+agent nonce = 0   (0 => it never sent a transaction)
+agent sUSD  = 944283744717033035 [9.442e17]
+agent USDC  = 0
+merchant sUSD = 5000000000000000 [5e15]
+merchant USDC = 50000 [5e4]
+
+## DEPLOYER KEY (lives in a GitHub secret): what it still controls
+deployer ETH   = 7758007973576529
+deployer nonce = 40
+deployer USDC  = 4000000 [4e6]
+deployer sUSD  = 998600000000000000 [9.986e17]
+admin ETH      = 0
+admin nonce    = 0
+
+## ATTACK PROBES (eth_call only)
+-- pause() from deployer (want revert)
+Error: server returned an error response: error code 3: execution reverted, data: "0xe2517d3f0000000000000000000000009cd82de3a24bc33d45897f72da5966d8920fab4855435dd261a4b9b3364963f7738a7a662ad9c84396d64be3365284bb7f0a5041"
+-- setSupplyCap(max) from deployer (want revert)
+Error: server returned an error response: error code 3: execution reverted, data: "0xe2517d3f0000000000000000000000009cd82de3a24bc33d45897f72da5966d8920fab480000000000000000000000000000000000000000000000000000000000000000"
+-- proposeVault from deployer (want revert)
+Error: server returned an error response: error code 3: execution reverted, data: "0xe2517d3f0000000000000000000000009cd82de3a24bc33d45897f72da5966d8920fab480000000000000000000000000000000000000000000000000000000000000000"
+-- setLiquidityBuffer(10000) from deployer
+Error: server returned an error response: error code 3: execution reverted, data: "0xe2517d3f0000000000000000000000009cd82de3a24bc33d45897f72da5966d8920fab480000000000000000000000000000000000000000000000000000000000000000"
+-- pause() from ADMIN (want success)
+0x
+-- setSupplyCap(0) from ADMIN (want success)
+0x
+-- emergencyExitVault() from ADMIN (want success)
+6800000 [6.8e6]
+-- treasury.withdrawReserve from stranger
+Error: server returned an error response: error code 3: execution reverted, data: "0x4ada26ff"
+-- sUSD.mint from stranger
+Error: server returned an error response: error code 3: execution reverted, data: "0x4ada26ff"
+-- sUSD.setIndex from stranger
+Error: server returned an error response: error code 3: execution reverted, data: "0x4ada26ff"
+-- rebase() from stranger (permissionless)
+true
+-- sync() from stranger (permissionless)
+false
+-- rebalanceReserve() from stranger
+0x
+-- treasury.recoverLegacy() from stranger
+0
+-- router.pay with a bogus signature
+Error: server returned an error response: error code 3: execution reverted, data: "0x8baa579f"
+
+## HOW MANY TRANSACTIONS DID THE DEPLOYMENT COST? (claim: fourteen)
+deployer nonce now = 40 (nonce 0 at the start if the key was fresh)
+
+## POOL
+slot0 (extsload) = 0x00000000006400000004376400000000000f4240000000000000000000000000
+END-OF-PROBE3

@@ -1,0 +1,142 @@
+Compiling 93 files with Solc 0.8.26
+Solc 0.8.26 finished in 9.31s
+Compiler run successful!
+Traces:
+  [7028096] → new PostDeployCheck@0x9f7cF1d1F558E57ef88a59ac3D47214eF25B6A06
+    └─ ← [Return] 34985 bytes of code
+
+  [101401] PostDeployCheck::run()
+    ├─ [0] VM::toString(84532 [8.453e4]) [staticcall]
+    │   └─ ← [Return] "84532"
+    ├─ [0] VM::envOr("SPECTRUM_CONFIG", "config/84532.json") [staticcall]
+    │   └─ ← [Return] <env var value>
+    ├─ [0] VM::toString(84532 [8.453e4]) [staticcall]
+    │   └─ ← [Return] "84532"
+    ├─ [0] VM::envOr("SPECTRUM_DEPLOYMENT", "deployments/84532.json") [staticcall]
+    │   └─ ← [Return] <env var value>
+    ├─ [0] VM::readFile("config/84532.json") [staticcall]
+    │   └─ ← [Return] <file>
+    ├─ [0] VM::parseJsonUint("<stringified JSON>", ".chainId") [staticcall]
+    │   └─ ← [Return] 84532 [8.453e4]
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".external.poolManager") [staticcall]
+    │   └─ ← [Return] 0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".external.usdc") [staticcall]
+    │   └─ ← [Return] 0x036CbD53842c5426634e7929541eC2318f3dCF7e
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".external.vault") [staticcall]
+    │   └─ ← [Return] 0x0000000000000000000000000000000000000000
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".external.fallbackVault") [staticcall]
+    │   └─ ← [Return] 0x0000000000000000000000000000000000000000
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".roles.admin") [staticcall]
+    │   └─ ← [Return] 0x0000000000000000000000000000000000000000
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".roles.guardian") [staticcall]
+    │   └─ ← [Return] 0x0000000000000000000000000000000000000000
+    ├─ [0] VM::parseJsonBool("<stringified JSON>", ".roles.allowEoaAdmin") [staticcall]
+    │   └─ ← [Return] true
+    ├─ [0] VM::parseJsonUint("<stringified JSON>", ".params.poolFeePips") [staticcall]
+    │   └─ ← [Return] 100
+    ├─ [0] VM::parseJsonInt("<stringified JSON>", ".params.tickSpacing") [staticcall]
+    │   └─ ← [Return] 1
+    ├─ [0] VM::parseJsonUint("<stringified JSON>", ".params.minObservationWsUSD") [staticcall]
+    │   └─ ← [Return] 10
+    ├─ [0] VM::parseJsonUint("<stringified JSON>", ".params.emaAlphaMaxBps") [staticcall]
+    │   └─ ← [Return] 2500
+    ├─ [0] VM::parseJsonUint("<stringified JSON>", ".params.emaTauSeconds") [staticcall]
+    │   └─ ← [Return] 3600
+    ├─ [0] VM::parseJsonUint("<stringified JSON>", ".params.staleAfterSeconds") [staticcall]
+    │   └─ ← [Return] 3600
+    ├─ [0] VM::parseJsonUint("<stringified JSON>", ".params.bootstrapCapSUSD") [staticcall]
+    │   └─ ← [Return] 10000 [1e4]
+    ├─ [0] VM::parseJsonUint("<stringified JSON>", ".params.supplyCapSUSD") [staticcall]
+    │   └─ ← [Return] 25000 [2.5e4]
+    ├─ [0] VM::parseJsonUint("<stringified JSON>", ".params.liquidityBufferBps") [staticcall]
+    │   └─ ← [Return] 1500
+    ├─ [0] VM::parseJsonUint("<stringified JSON>", ".params.seedUSDC") [staticcall]
+    │   └─ ← [Return] 2
+    ├─ [0] VM::keyExistsJson("<JSON file>", ".params.seedCapitalUSDC") [staticcall]
+    │   └─ ← [Return] true
+    ├─ [0] VM::parseJsonUint("<stringified JSON>", ".params.seedCapitalUSDC") [staticcall]
+    │   └─ ← [Return] 5
+    ├─ [0] VM::keyExistsJson("<JSON file>", ".external.deployTestVaults") [staticcall]
+    │   └─ ← [Return] true
+    ├─ [0] VM::parseJsonBool("<stringified JSON>", ".external.deployTestVaults") [staticcall]
+    │   └─ ← [Return] true
+    ├─ [0] VM::readFile("deployments/84532.json") [staticcall]
+    │   └─ ← [Return] <file>
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".treasury") [staticcall]
+    │   └─ ← [Return] 0x1af57BA60edaEDF91F5925A3A79F346cb50F12a6
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".sUSD") [staticcall]
+    │   └─ ← [Return] 0x54De35aC7fd6756D49eA77ce7bbCd026faDC364a
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".oracle") [staticcall]
+    │   └─ ← [Return] 0xC7A4b9E9A7DAef0cF2bb531CCda1a3a4a744B4BB
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".stabilizer") [staticcall]
+    │   └─ ← [Return] 0x3940F5F444B1ec69bb0245062796896135B8f948
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".wsUSD") [staticcall]
+    │   └─ ← [Return] 0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".lens") [staticcall]
+    │   └─ ← [Return] 0x384768E8b0b9d992EE5F23701D21B1b880495285
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".hook") [staticcall]
+    │   └─ ← [Return] 0x7A4BB5720a158a22ae14297915aa21efbd1B6040
+    ├─ [0] VM::parseJsonBytes32("<stringified JSON>", ".hookSalt") [staticcall]
+    │   └─ ← [Return] 0x0000000000000000000000000000000000000000000000000000000000001ee9
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".currency0") [staticcall]
+    │   └─ ← [Return] 0x036CbD53842c5426634e7929541eC2318f3dCF7e
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".currency1") [staticcall]
+    │   └─ ← [Return] 0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8
+    ├─ [0] VM::parseJsonUint("<stringified JSON>", ".poolFee") [staticcall]
+    │   └─ ← [Return] 100
+    ├─ [0] VM::parseJsonInt("<stringified JSON>", ".tickSpacing") [staticcall]
+    │   └─ ← [Return] 1
+    ├─ [0] VM::readFile("deployments/84532.json") [staticcall]
+    │   └─ ← [Return] <file>
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".vault") [staticcall]
+    │   └─ ← [Return] 0x040510c0C29440B7D7Ad7beE00DfeFA938aD9C0b
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".fallbackVault") [staticcall]
+    │   └─ ← [Return] 0x630DDc417485Dd54Df47CfFc75926101e9f4618d
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".deployer") [staticcall]
+    │   └─ ← [Return] 0x9CD82de3A24bc33D45897f72da5966D8920fAB48
+    ├─ [434] 0x54De35aC7fd6756D49eA77ce7bbCd026faDC364a::stabilizer() [staticcall]
+    │   └─ ← [Return] 0x3940F5F444B1ec69bb0245062796896135B8f948
+    ├─ [324] 0x1af57BA60edaEDF91F5925A3A79F346cb50F12a6::stabilizer() [staticcall]
+    │   └─ ← [Return] 0x3940F5F444B1ec69bb0245062796896135B8f948
+    ├─ [192] 0x1af57BA60edaEDF91F5925A3A79F346cb50F12a6::asset() [staticcall]
+    │   └─ ← [Return] 0x036CbD53842c5426634e7929541eC2318f3dCF7e
+    ├─ [1792] 0x3940F5F444B1ec69bb0245062796896135B8f948::token() [staticcall]
+    │   └─ ← [Return] 0x54De35aC7fd6756D49eA77ce7bbCd026faDC364a
+    ├─ [758] 0x3940F5F444B1ec69bb0245062796896135B8f948::treasury() [staticcall]
+    │   └─ ← [Return] 0x1af57BA60edaEDF91F5925A3A79F346cb50F12a6
+    ├─ [934] 0x3940F5F444B1ec69bb0245062796896135B8f948::oracle() [staticcall]
+    │   └─ ← [Return] 0xC7A4b9E9A7DAef0cF2bb531CCda1a3a4a744B4BB
+    ├─ [516] 0x3940F5F444B1ec69bb0245062796896135B8f948::asset() [staticcall]
+    │   └─ ← [Return] 0x036CbD53842c5426634e7929541eC2318f3dCF7e
+    ├─ [324] 0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8::asset() [staticcall]
+    │   └─ ← [Return] 0x54De35aC7fd6756D49eA77ce7bbCd026faDC364a
+    ├─ [346] 0x384768E8b0b9d992EE5F23701D21B1b880495285::stabilizer() [staticcall]
+    │   └─ ← [Return] 0x3940F5F444B1ec69bb0245062796896135B8f948
+    ├─ [324] 0xC7A4b9E9A7DAef0cF2bb531CCda1a3a4a744B4BB::hook() [staticcall]
+    │   └─ ← [Return] 0x7A4BB5720a158a22ae14297915aa21efbd1B6040
+    ├─ [506] 0x7A4BB5720a158a22ae14297915aa21efbd1B6040::poolManager() [staticcall]
+    │   └─ ← [Return] 0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408
+    ├─ [349] 0x7A4BB5720a158a22ae14297915aa21efbd1B6040::oracle() [staticcall]
+    │   └─ ← [Return] 0xC7A4b9E9A7DAef0cF2bb531CCda1a3a4a744B4BB
+    ├─ [261] 0x7A4BB5720a158a22ae14297915aa21efbd1B6040::measuredCurrency() [staticcall]
+    │   └─ ← [Return] 0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8
+    ├─ [566] 0x7A4BB5720a158a22ae14297915aa21efbd1B6040::allowedPoolId() [staticcall]
+    │   └─ ← [Return] 0x39a0242cc8f346e14058df25a504292ea3e6c3907a454738f4f1303f9072a95a
+    ├─ [2375] 0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408::extsload(0xeba3a90d7ce6275b97b43c7be66720b08b86162da55fb6b05bff4d16e9f92f10) [staticcall]
+    │   └─ ← [Return] 0x00000000006400000004376400000000000f4240000000000000000000000000
+    ├─ [9464] 0x7A4BB5720a158a22ae14297915aa21efbd1B6040::priceWithinBand(79228162514264337593543950336000000 [7.922e34]) [staticcall]
+    │   ├─ [8011] 0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8::convertToAssets(1000000000000000000 [1e18]) [staticcall]
+    │   │   ├─ [4888] 0x54De35aC7fd6756D49eA77ce7bbCd026faDC364a::balanceOf(0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8) [staticcall]
+    │   │   │   └─ ← [Return] 1000000000000000000 [1e18]
+    │   │   └─ ← [Return] 1000000000000000000 [1e18]
+    │   └─ ← [Return] true
+    ├─ [1305] 0x3940F5F444B1ec69bb0245062796896135B8f948::DEFAULT_ADMIN_ROLE() [staticcall]
+    │   └─ ← [Return] 0x0000000000000000000000000000000000000000000000000000000000000000
+    ├─ [378] 0x3940F5F444B1ec69bb0245062796896135B8f948::GUARDIAN_ROLE() [staticcall]
+    │   └─ ← [Return] 0x55435dd261a4b9b3364963f7738a7a662ad9c84396d64be3365284bb7f0a5041
+    ├─ [3501] 0x3940F5F444B1ec69bb0245062796896135B8f948::hasRole(0x0000000000000000000000000000000000000000000000000000000000000000, 0x0000000000000000000000000000000000000000) [staticcall]
+    │   └─ ← [Return] false
+    └─ ← [Revert] check: admin role
+
+
+Error: script failed: check: admin role
