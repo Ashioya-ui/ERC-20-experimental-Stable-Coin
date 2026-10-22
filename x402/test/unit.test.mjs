@@ -44,6 +44,16 @@ test('cast output: JSON is found even with stray log lines around it (seen on a 
   assert.equal(parseJsonOutput(`${log}\n${receipt}`).status, '0x1');
   assert.throws(() => parseJsonOutput(log), /no JSON object/);
   assert.equal(first('5000000 [5e6]'), '5000000');
+
+  // A log line can itself be JSON, and then "the first JSON object" is not the answer that was
+  // asked for. makeChain.receipt passes a predicate so it cannot mistake one for a receipt:
+  // reading a log record as a receipt with no status would report a payment that went through
+  // as failed, and throw away the record that it was ever broadcast.
+  const jsonLog = '{"level":"ERROR","target":"alloy_provider","message":"failed to fetch block"}';
+  const isReceipt = (v) => 'transactionHash' in v;
+  assert.equal(parseJsonOutput(`${jsonLog}\n${receipt}`).level, 'ERROR', 'without a predicate, the log line wins');
+  assert.equal(parseJsonOutput(`${jsonLog}\n${receipt}`, isReceipt).status, '0x1');
+  assert.throws(() => parseJsonOutput(jsonLog, isReceipt), /no JSON object/);
 });
 
 test('signer specs', () => {

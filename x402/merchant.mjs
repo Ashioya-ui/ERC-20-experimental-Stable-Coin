@@ -143,7 +143,14 @@ export async function createMerchant({ rpcUrl, facilitatorUrl, payTo, marketFile
       });
       return res.end(result.body);
     } catch (e) {
-      return sendJson(res, 500, { error: 'internal error' });
+      // Answering must not throw in turn: an exception escaping this handler is an unhandled
+      // rejection, which Node 22 turns into a dead process.
+      try {
+        if (!res.headersSent) sendJson(res, 500, { error: 'internal error' });
+        else if (!res.writableEnded) res.end();
+      } catch {
+        /* the connection is already gone */
+      }
     }
   });
 

@@ -55,9 +55,9 @@ export function stubChain(hooks = {}) {
 }
 
 /** A facilitator on a stub chain, plus the helpers a test needs to talk to it. */
-export async function stubFacilitator(hooks = {}) {
+export async function stubFacilitator(hooks = {}, options = {}) {
   const chain = stubChain(hooks);
-  const f = await createFacilitator({ rpcUrl: 'stub://', signer: SIGNER, chain });
+  const f = await createFacilitator({ rpcUrl: 'stub://', signer: SIGNER, chain, ...options });
   const A = f.deployment.addresses;
   const PAYTO = '0x' + '11'.repeat(20);
 

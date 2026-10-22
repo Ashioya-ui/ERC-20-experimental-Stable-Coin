@@ -24,13 +24,28 @@ export class CastError extends Error {
 const BASE_ENV = { ...process.env, RUST_LOG: process.env.RUST_LOG ?? 'off' };
 const TRANSIENT = /error sending request|connection (reset|closed|refused)|timed out|operation timed out/i;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// No cast invocation may hang for ever. A `cast` whose RPC connection stops answering never
+// returns on its own, and the facilitator sends transactions one at a time through a promise
+// chain, so one hung subprocess would park every later settlement permanently. Killing it turns
+// the hang into an ordinary transient failure, which the callers above already know how to
+// handle (a read retries, a send becomes UnconfirmedError and is looked up again).
+const DEFAULT_TIMEOUT_MS = Number(process.env.CAST_TIMEOUT_MS || 120_000);
 
-function run(args, env) {
+function run(args, env, timeoutMs) {
   return new Promise((resolve, reject) => {
-    const opts = { maxBuffer: 16 * 1024 * 1024, env: env ? { ...BASE_ENV, ...env } : BASE_ENV };
+    const opts = {
+      maxBuffer: 16 * 1024 * 1024,
+      env: env ? { ...BASE_ENV, ...env } : BASE_ENV,
+      timeout: timeoutMs > 0 ? timeoutMs : undefined,
+      killSignal: 'SIGKILL',
+    };
     execFile(CAST, args.map(String), opts, (err, stdout, stderr) => {
       if (err) {
-        const line = String(stderr || '').split('\n').find((l) => /error/i.test(l)) || err.message;
+        // `killed` means the timeout fired. Say so in the message: TRANSIENT matches it, so a
+        // read retries and a send does not (sends are never given retries).
+        const line = err.killed
+          ? `cast ${args[0]} timed out after ${timeoutMs} ms`
+          : String(stderr || '').split('\n').find((l) => /error/i.test(l)) || err.message;
         reject(new CastError(line.trim(), String(stderr || '')));
       } else {
         resolve(String(stdout).trim());
@@ -45,10 +60,10 @@ function run(args, env) {
  * `retries` re-runs a command that failed on a transient connection error: only for reads,
  * never for anything that broadcasts.
  */
-export async function cast(args, { env, retries = 0 } = {}) {
+export async function cast(args, { env, retries = 0, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   for (let attempt = 0; ; attempt++) {
     try {
-      return await run(args, env);
+      return await run(args, env, timeoutMs);
     } catch (e) {
       if (attempt >= retries || !TRANSIENT.test(`${e.message}\n${e.stderr}`)) throw e;
       await sleep(150 * (attempt + 1));
@@ -56,23 +71,31 @@ export async function cast(args, { env, retries = 0 } = {}) {
   }
 }
 
-/** The first JSON object in `out` (tolerates stray log lines around it). */
-export function parseJsonOutput(out) {
+/**
+ * The first JSON object in `out` (tolerates stray log lines around it).
+ * `accept` narrows that to the first object the caller recognises: a provider's log line can
+ * itself be JSON, and then "the first JSON object" is not the answer that was asked for.
+ */
+export function parseJsonOutput(out, accept) {
   const text = String(out).trim();
+  const usable = (v) => v !== null && typeof v === 'object' && (!accept || accept(v));
   try {
-    return JSON.parse(text);
+    const whole = JSON.parse(text);
+    if (usable(whole)) return whole;
   } catch {
-    for (const line of text.split('\n')) {
-      const l = line.trim();
-      if (!l.startsWith('{')) continue;
-      try {
-        return JSON.parse(l);
-      } catch {
-        /* next line */
-      }
-    }
-    throw new CastError('no JSON object in cast output', text.slice(0, 500));
+    /* not one object: look line by line */
   }
+  for (const line of text.split('\n')) {
+    const l = line.trim();
+    if (!l.startsWith('{')) continue;
+    try {
+      const v = JSON.parse(l);
+      if (usable(v)) return v;
+    } catch {
+      /* next line */
+    }
+  }
+  throw new CastError('no JSON object in cast output', text.slice(0, 500));
 }
 
 /** First token of a `cast call` result line ("1000 [1e3]" -> "1000"). */
@@ -122,6 +145,9 @@ export async function signerAddress(signer) {
   return (await cast(['wallet', 'address', ...signerArgs(signer)])).toLowerCase();
 }
 
+// The statuses a receipt may carry, across cast versions and RPC providers.
+const STATUS = new Set(['0x1', '1', 'true', '0x0', '0', 'false']);
+
 /** Raised when a transaction was broadcast but its receipt could not be read. */
 export class UnconfirmedError extends Error {
   constructor(hash, cause) {
@@ -166,9 +192,23 @@ export function makeChain(rpcUrl) {
       const status = String(receipt.status);
       return { hash: hash.toLowerCase(), ok: status === '0x1' || status === '1' || status === 'true', receipt };
     },
-    /** The receipt of `hash`, waiting for it to be mined. */
+    /**
+     * The receipt of `hash`, waiting for it to be mined.
+     *
+     * The answer is checked to be the receipt that was asked for and to carry a status the
+     * chain actually reported. `cast` can print provider log lines next to the JSON, and a log
+     * line in JSON form parses into an object with no `status`; reading that as "no status, so
+     * the transaction failed" would report a payment that went through as failed and throw away
+     * the record that it was ever broadcast. Not knowing is an error, not a verdict.
+     */
     async receipt(hash) {
-      return parseJsonOutput(await cast(['receipt', ...rpc, '--json', hash], { retries: 5 }));
+      const want = String(hash).toLowerCase();
+      const out = await cast(['receipt', ...rpc, '--json', hash], { retries: 5 });
+      const r = parseJsonOutput(out, (v) => String(v.transactionHash ?? '').toLowerCase() === want);
+      if (!STATUS.has(String(r.status))) {
+        throw new CastError(`receipt for ${hash} carries no usable status`, out.slice(0, 500));
+      }
+      return r;
     },
     async timestamp() {
       return BigInt(await cast(['block', 'latest', '--field', 'timestamp', ...rpc], READ));
