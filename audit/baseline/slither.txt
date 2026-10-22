@@ -1,0 +1,179 @@
+'forge clean' running (wd: /home/claude/spectrum)
+'forge config --json' running
+'forge build --build-info --deny never --skip ./test/** ./script/** --force' running (wd: /home/claude/spectrum)
+
+Detector: divide-before-multiply
+SpectralMath.lnWad(uint256) (src/libraries/SpectralMath.sol#86-116) performs a multiplication on the result of a division:
+	- z = ((mi - IWAD) * E36) / (mi + IWAD) (src/libraries/SpectralMath.sol#103)
+	- z2 = (z * z) / E36 (src/libraries/SpectralMath.sol#104)
+SpectralMath.lnWad(uint256) (src/libraries/SpectralMath.sol#86-116) performs a multiplication on the result of a division:
+	- z = ((mi - IWAD) * E36) / (mi + IWAD) (src/libraries/SpectralMath.sol#103)
+	- sum = z (src/libraries/SpectralMath.sol#106)
+	- r = (k * LN2_E36 + 2 * sum) / IWAD (src/libraries/SpectralMath.sol#115)
+SpectralMath.lnWad(uint256) (src/libraries/SpectralMath.sol#86-116) performs a multiplication on the result of a division:
+	- z = ((mi - IWAD) * E36) / (mi + IWAD) (src/libraries/SpectralMath.sol#103)
+	- z2 = (z * z) / E36 (src/libraries/SpectralMath.sol#104)
+	- term = z (src/libraries/SpectralMath.sol#105)
+	- term = (term * z2) / E36 (src/libraries/SpectralMath.sol#111)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#divide-before-multiply
+
+Detector: incorrect-equality
+AutonomousTreasury._depositExcess() (src/AutonomousTreasury.sol#231-246) uses a dangerous strict equality:
+	- amount == 0 (src/AutonomousTreasury.sol#237)
+AutonomousTreasury.recoverLegacy() (src/AutonomousTreasury.sol#110-118) uses a dangerous strict equality:
+	- left == 0 (src/AutonomousTreasury.sol#116)
+AutonomousTreasury.reserveAssets() (src/AutonomousTreasury.sol#208-212) uses a dangerous strict equality:
+	- shares == 0 (src/AutonomousTreasury.sol#210)
+SpectralEntropyOracle.record(uint256) (src/SpectralEntropyOracle.sol#91-119) uses a dangerous strict equality:
+	- filled != 0 && block.number == currentBlock (src/SpectralEntropyOracle.sol#101)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#dangerous-strict-equalities
+
+Detector: reentrancy-no-eth
+Reentrancy in SpectralStabilizer.executeVaultMigration() (src/SpectralStabilizer.sol#379-390):
+	External calls:
+	- _syncLoss() (src/SpectralStabilizer.sol#386)
+		- token.setIndex(newIndex) (src/SpectralStabilizer.sol#481)
+	- treasury.migrateVault(v) (src/SpectralStabilizer.sol#387)
+	- _syncLoss() (src/SpectralStabilizer.sol#388)
+		- token.setIndex(newIndex) (src/SpectralStabilizer.sol#481)
+	State variables written after the call(s):
+	- _syncLoss() (src/SpectralStabilizer.sol#388)
+		- churnLength = 0 (src/SpectralStabilizer.sol#531)
+		- churnLength += newIndex - oldIndex (src/SpectralStabilizer.sol#535)
+		- churnLength += oldIndex - newIndex (src/SpectralStabilizer.sol#535)
+	SpectralStabilizer.churnLength (src/SpectralStabilizer.sol#129) can be used in cross function reentrancies:
+	- SpectralStabilizer.churnLength (src/SpectralStabilizer.sol#129)
+	- _syncLoss() (src/SpectralStabilizer.sol#388)
+		- churnMax = oldIndex (src/SpectralStabilizer.sol#532)
+		- churnMax = newIndex (src/SpectralStabilizer.sol#536)
+	SpectralStabilizer.churnMax (src/SpectralStabilizer.sol#130) can be used in cross function reentrancies:
+	- SpectralStabilizer.churnMax (src/SpectralStabilizer.sol#130)
+	- SpectralStabilizer.constructor(SpectralToken,AutonomousTreasury,ISpectralEntropyOracle,address,address,uint256,uint256) (src/SpectralStabilizer.sol#178-210)
+	- _syncLoss() (src/SpectralStabilizer.sol#388)
+		- churnMin = oldIndex (src/SpectralStabilizer.sol#533)
+		- churnMin = newIndex (src/SpectralStabilizer.sol#537)
+	SpectralStabilizer.churnMin (src/SpectralStabilizer.sol#131) can be used in cross function reentrancies:
+	- SpectralStabilizer.churnMin (src/SpectralStabilizer.sol#131)
+	- SpectralStabilizer.constructor(SpectralToken,AutonomousTreasury,ISpectralEntropyOracle,address,address,uint256,uint256) (src/SpectralStabilizer.sol#178-210)
+	- _syncLoss() (src/SpectralStabilizer.sol#388)
+		- churnWindowStart = uint64(block.timestamp) (src/SpectralStabilizer.sol#530)
+	SpectralStabilizer.churnWindowStart (src/SpectralStabilizer.sol#128) can be used in cross function reentrancies:
+	- SpectralStabilizer.churnWindowStart (src/SpectralStabilizer.sol#128)
+	- SpectralStabilizer.constructor(SpectralToken,AutonomousTreasury,ISpectralEntropyOracle,address,address,uint256,uint256) (src/SpectralStabilizer.sol#178-210)
+Reentrancy in AutonomousTreasury.migrateVault(IERC4626) (src/AutonomousTreasury.sol#183-202):
+	External calls:
+	- old.redeem(redeemable,address(this),address(this)) (src/AutonomousTreasury.sol#192)
+	State variables written after the call(s):
+	- legacyVault = old (src/AutonomousTreasury.sol#196)
+	AutonomousTreasury.legacyVault (src/AutonomousTreasury.sol#58) can be used in cross function reentrancies:
+	- AutonomousTreasury.legacyVault (src/AutonomousTreasury.sol#58)
+	- vault = newVault (src/AutonomousTreasury.sol#199)
+	AutonomousTreasury.vault (src/AutonomousTreasury.sol#54) can be used in cross function reentrancies:
+	- AutonomousTreasury.constructor(IERC4626,uint256) (src/AutonomousTreasury.sol#88-95)
+	- AutonomousTreasury.liquidAssets() (src/AutonomousTreasury.sol#215-217)
+	- AutonomousTreasury.reserveAssets() (src/AutonomousTreasury.sol#208-212)
+	- AutonomousTreasury.vault (src/AutonomousTreasury.sol#54)
+Reentrancy in SpectralStabilizer.rebase() (src/SpectralStabilizer.sol#282-311):
+	External calls:
+	- token.setIndex(newIndex) (src/SpectralStabilizer.sol#306)
+	State variables written after the call(s):
+	- lastRebaseAt = uint64(block.timestamp) (src/SpectralStabilizer.sol#307)
+	SpectralStabilizer.lastRebaseAt (src/SpectralStabilizer.sol#126) can be used in cross function reentrancies:
+	- SpectralStabilizer.lastRebaseAt (src/SpectralStabilizer.sol#126)
+Reentrancy in AutonomousTreasury.recoverLegacy() (src/AutonomousTreasury.sol#110-118):
+	External calls:
+	- recovered = legacy.redeem(shares,address(this),address(this)) (src/AutonomousTreasury.sol#114)
+	State variables written after the call(s):
+	- legacyVault = IERC4626(address(0)) (src/AutonomousTreasury.sol#116)
+	AutonomousTreasury.legacyVault (src/AutonomousTreasury.sol#58) can be used in cross function reentrancies:
+	- AutonomousTreasury.legacyVault (src/AutonomousTreasury.sol#58)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#reentrancy-vulnerabilities-2
+
+Detector: uninitialized-local
+SpectralMath.spectralEntropy8(uint256[8]).hRaw (src/libraries/SpectralMath.sol#153) is a local variable never initialized
+SpectralMath.spectralEntropy8(uint256[8]).total (src/libraries/SpectralMath.sol#143) is a local variable never initialized
+SpectralMath.spectralEntropy8(uint256[8]).pw (src/libraries/SpectralMath.sol#142) is a local variable never initialized
+SpectralMath.spectralEntropy8(uint256[8]).x (src/libraries/SpectralMath.sol#134) is a local variable never initialized
+SpectralMath.spectralEntropy8(uint256[8]).vmax (src/libraries/SpectralMath.sol#126) is a local variable never initialized
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#uninitialized-local-variables
+
+Detector: unused-return
+AutonomousTreasury.rebalance() (src/AutonomousTreasury.sol#131-143) ignores return value by vault.withdraw(amount,address(this),address(this)) (src/AutonomousTreasury.sol#140)
+AutonomousTreasury.withdrawReserve(uint256,address) (src/AutonomousTreasury.sol#151-164) ignores return value by vault.withdraw(need,to,address(this)) (src/AutonomousTreasury.sol#161)
+AutonomousTreasury.migrateVault(IERC4626) (src/AutonomousTreasury.sol#183-202) ignores return value by old.redeem(redeemable,address(this),address(this)) (src/AutonomousTreasury.sol#192)
+SpectralStabilizer.mint(uint256,address,uint256) (src/SpectralStabilizer.sol#218-246) ignores return value by treasury.sweep() (src/SpectralStabilizer.sol#228)
+SpectralStabilizer.mint(uint256,address,uint256) (src/SpectralStabilizer.sol#218-246) ignores return value by treasury.depositReserve() (src/SpectralStabilizer.sol#231)
+SpectralStabilizer.mint(uint256,address,uint256) (src/SpectralStabilizer.sol#218-246) ignores return value by token.mint(receiver,out) (src/SpectralStabilizer.sol#243)
+SpectralStabilizer.redeem(uint256,address,uint256) (src/SpectralStabilizer.sol#256-275) ignores return value by token.burn(msg.sender,amount) (src/SpectralStabilizer.sol#271)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#unused-return
+
+Detector: reentrancy-benign
+Reentrancy in SpectralStabilizer.mint(uint256,address,uint256) (src/SpectralStabilizer.sol#218-246):
+	External calls:
+	- _syncLoss() (src/SpectralStabilizer.sol#225)
+		- token.setIndex(newIndex) (src/SpectralStabilizer.sol#481)
+	- treasury.sweep() (src/SpectralStabilizer.sol#228)
+	- treasury.depositReserve() (src/SpectralStabilizer.sol#231)
+	State variables written after the call(s):
+	- _consumeExpansion(out,h) (src/SpectralStabilizer.sol#239)
+		- epochStart = uint64(block.timestamp) (src/SpectralStabilizer.sol#488)
+	- _consumeExpansion(out,h) (src/SpectralStabilizer.sol#239)
+		- epochSupply = token.totalSupply() (src/SpectralStabilizer.sol#489)
+	- _consumeExpansion(out,h) (src/SpectralStabilizer.sol#239)
+		- mintedInEpoch = 0 (src/SpectralStabilizer.sol#490)
+		- mintedInEpoch = used + out (src/SpectralStabilizer.sol#494)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#reentrancy-vulnerabilities-3
+
+Detector: reentrancy-events
+Reentrancy in SpectralHook.afterSwap(address,PoolKey,SwapParams,BalanceDelta,bytes) (src/SpectralHook.sol#133-153):
+	External calls:
+	- oracle.record(amount) (src/SpectralHook.sol#146-150)
+	Event emitted after the call(s):
+	- OracleRecordFailed(reason) (src/SpectralHook.sol#149)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#reentrancy-vulnerabilities-4
+
+Detector: timestamp
+SpectralEntropyOracle.smoothedEntropy() (src/SpectralEntropyOracle.sol#133-136) uses timestamp for comparisons
+	Dangerous comparisons:
+	- filled < WINDOW || isStale() (src/SpectralEntropyOracle.sol#134)
+SpectralEntropyOracle.isStale() (src/SpectralEntropyOracle.sol#150-152) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp > uint256(lastObservationTime) + staleAfter (src/SpectralEntropyOracle.sol#151)
+SpectralStabilizer.rebase() (src/SpectralStabilizer.sol#282-311) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp < uint256(lastRebaseAt) + REBASE_INTERVAL (src/SpectralStabilizer.sol#284)
+SpectralStabilizer.executeVaultMigration() (src/SpectralStabilizer.sol#379-390) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp < pendingVaultEta (src/SpectralStabilizer.sol#382)
+SpectralStabilizer._consumeExpansion(uint256,uint256) (src/SpectralStabilizer.sol#486-495) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp >= uint256(epochStart) + EPOCH (src/SpectralStabilizer.sol#487)
+SpectralStabilizer._epochState(uint256) (src/SpectralStabilizer.sol#497-502) uses timestamp for comparisons
+	Dangerous comparisons:
+	- expired = block.timestamp >= uint256(epochStart) + EPOCH (src/SpectralStabilizer.sol#498)
+SpectralStabilizer._churnAfter(uint256,uint256) (src/SpectralStabilizer.sol#505-526) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp >= uint256(churnWindowStart) + CHURN_WINDOW (src/SpectralStabilizer.sol#512)
+SpectralStabilizer._commitChurn(uint256,uint256) (src/SpectralStabilizer.sol#528-538) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp >= uint256(churnWindowStart) + CHURN_WINDOW (src/SpectralStabilizer.sol#529)
+SpectralToken.permit(address,address,uint256,uint256,bytes) (src/SpectralToken.sol#186-195) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp > deadline (src/SpectralToken.sol#189)
+SpectralToken._useAuthorization(bytes32,address,address,uint256,uint256,uint256,bytes32,bytes) (src/SpectralToken.sol#290-308) uses timestamp for comparisons
+	Dangerous comparisons:
+	- block.timestamp <= validAfter (src/SpectralToken.sol#300)
+	- block.timestamp >= validBefore (src/SpectralToken.sol#301)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#block-timestamp
+
+Detector: assembly
+SpectralMath.fwht8(int256[8]) (src/libraries/SpectralMath.sol#48-74) uses assembly
+	- INLINE ASM (src/libraries/SpectralMath.sol#49-73)
+SpectralMath.fwht8.asm_0.bf() (src/libraries/SpectralMath.sol#50-57) uses assembly
+	- INLINE ASM (src/libraries/SpectralMath.sol#50-57)
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#assembly-usage
+
+Detector: naming-convention
+Function SpectralToken.DOMAIN_SEPARATOR() (src/SpectralToken.sol#204-206) is not in mixedCase
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#conformance-to-solidity-naming-conventions
+. analyzed (60 contracts with 102 detectors), 38 result(s) found

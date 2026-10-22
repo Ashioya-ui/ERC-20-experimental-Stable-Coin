@@ -1,0 +1,197 @@
+name: deploy-sepolia-rail
+
+# One-shot Base Sepolia deployment of Spectrum + the x402 pay router, followed by a REAL x402
+# payment on the public chain. Testnet only: valueless tokens, free faucets, no legal exposure.
+#
+# Why this exists alongside deploy-x402-router.yml: that one is workflow_dispatch-only, which
+# needs the Actions UI or the dispatch API. This one also runs on a push to the `deploy-sepolia`
+# branch, so the deployment can be driven by a commit alone.
+#
+# SETUP (once, about five minutes):
+#   1. A throwaway wallet. Fund it on Base Sepolia with a little test ETH (any faucet) and at
+#      least 8 test USDC from faucet.circle.com -- 7 goes into the seed and protocol capital,
+#      the rest funds the smoke-test payment.
+#   2. Settings -> Secrets and variables -> Actions -> New repository secret:
+#        DEPLOYER_PRIVATE_KEY   that wallet's private key
+#   3. Same page, Variables tab -> New repository variable:
+#        SEPOLIA_ADMIN          any OTHER address you control (your normal wallet is fine).
+#                               The deploy script refuses to let the deployer keep admin, which
+#                               is deliberate -- do not try to set them to the same address.
+#   Optional variable ETHERSCAN_API_KEY_SET=true plus secret ETHERSCAN_API_KEY to verify sources.
+#
+# RUN: push anything to the `deploy-sepolia` branch, or use Run workflow once this file is on
+# the default branch. Addresses land in the job summary and in the uploaded artifact.
+
+on:
+  push:
+    branches: [deploy-sepolia]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-sepolia-rail
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  deploy:
+    name: Deploy to Base Sepolia and pay a real x402 invoice
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      CHAIN_ID: "84532"
+      RPC: https://sepolia.base.org
+      ADMIN: ${{ vars.SEPOLIA_ADMIN }}
+      HAS_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY != '' }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+
+      - name: Check the setup is complete
+        run: |
+          set -euo pipefail
+          miss=0
+          [[ "$HAS_KEY" == "true" ]] || { echo "::error::missing repository secret DEPLOYER_PRIVATE_KEY (see the header of this workflow)"; miss=1; }
+          [[ -n "$ADMIN" ]] || { echo "::error::missing repository variable SEPOLIA_ADMIN (any address you control, not the deployer)"; miss=1; }
+          [[ $miss -eq 0 ]] || exit 1
+          [[ "$(cast chain-id --rpc-url "$RPC")" == "$CHAIN_ID" ]] || { echo "::error::$RPC is not Base Sepolia"; exit 1; }
+
+      - name: Funding check (the faucets, not us, decide whether this can proceed)
+        env:
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          KEY="$DEPLOYER_PRIVATE_KEY"; unset DEPLOYER_PRIVATE_KEY
+          DEPLOYER=$(cast wallet address --private-key "$KEY")
+          USDC=$(jq -r .external.usdc "config/$CHAIN_ID.json")
+          ETH=$(cast balance "$DEPLOYER" --rpc-url "$RPC")
+          BAL=$(cast call "$USDC" 'balanceOf(address)(uint256)' "$DEPLOYER" --rpc-url "$RPC" | awk '{print $1}')
+          echo "deployer $DEPLOYER"
+          echo "  ETH  $(cast from-wei "$ETH")"
+          echo "  USDC $(cast from-wei "$BAL" mwei)"
+          [[ "$ETH" != "0" ]] || { echo "::error::deployer has no Base Sepolia ETH"; exit 1; }
+          [[ "$BAL" -ge 8000000 ]] || { echo "::error::deployer needs at least 8 test USDC (has $(cast from-wei "$BAL" mwei)); get them from faucet.circle.com"; exit 1; }
+          [[ "$(cast to-check-sum-address "$DEPLOYER")" != "$(cast to-check-sum-address "$ADMIN")" ]] || { echo "::error::SEPOLIA_ADMIN must differ from the deployer"; exit 1; }
+          echo "DEPLOYER=$DEPLOYER" >> "$GITHUB_ENV"
+
+      - name: Write roles into the config
+        run: |
+          set -euo pipefail
+          jq --arg a "$(cast to-check-sum-address "$ADMIN")" '.roles.admin=$a' "config/$CHAIN_ID.json" > c.tmp && mv c.tmp "config/$CHAIN_ID.json"
+          jq '.roles' "config/$CHAIN_ID.json"
+
+      - name: Simulate against live Base Sepolia state
+        run: forge script script/DeployBaseMainnet.s.sol --rpc-url "$RPC" --sender "$DEPLOYER"
+
+      - name: Deploy Spectrum
+        env:
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          KEY="$DEPLOYER_PRIVATE_KEY"; unset DEPLOYER_PRIVATE_KEY
+          forge script script/DeployBaseMainnet.s.sol --rpc-url "$RPC" \
+            --private-key "$KEY" --sender "$DEPLOYER" --broadcast --slow
+
+      - name: Deploy the x402 pay router
+        env:
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          KEY="$DEPLOYER_PRIVATE_KEY"; unset DEPLOYER_PRIVATE_KEY
+          forge script script/DeployPayRouter.s.sol --rpc-url "$RPC" \
+            --private-key "$KEY" --sender "$DEPLOYER" --broadcast --slow
+
+      - name: Post-deploy check (read-only, live chain)
+        run: forge script script/PostDeployCheck.s.sol --rpc-url "$RPC"
+
+      - name: Pay a real x402 invoice on Base Sepolia
+        env:
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          D="deployments/$CHAIN_ID.json"
+          STAB=$(jq -r .stabilizer "$D"); SUSD=$(jq -r .sUSD "$D"); USDC=$(jq -r .usdc "$D")
+          ROUTER=$(jq -r .router "deployments/$CHAIN_ID-router.json")
+
+          # Keystores for this run only; the runner is destroyed afterwards.
+          mkdir -p .ci-wallets && chmod 700 .ci-wallets
+          ( umask 077; head -c 32 /dev/urandom | base64 | tr -d '\n' > .ci-wallets/pw )
+          mk() { CAST_PASSWORD="$(cat .ci-wallets/pw)" cast wallet new .ci-wallets "$1" --json | jq -r '.[0].address'; chmod 600 ".ci-wallets/$1"; }
+          AGENT=$(mk agent); MERCHANT=$(mk merchant); FACILITATOR=$(mk facilitator)
+          echo "agent $AGENT   merchant $MERCHANT   facilitator $FACILITATOR"
+
+          # Give the agent 1 USDC worth of sUSD, and the facilitator its own gas. The facilitator
+          # runs on a wallet of its own rather than the deployer's: that is what the design calls
+          # for, and it keeps the deployer key out of any keystore. The agent gets no ETH at all,
+          # which is the point -- its payments are gasless.
+          KEY="$DEPLOYER_PRIVATE_KEY"; unset DEPLOYER_PRIVATE_KEY
+          cast send "$FACILITATOR" --value 0.004ether --rpc-url "$RPC" --private-key "$KEY" >/dev/null
+          cast send "$USDC" "approve(address,uint256)" "$STAB" 1000000 --rpc-url "$RPC" --private-key "$KEY" >/dev/null
+          cast send "$STAB" "mint(uint256,address,uint256)" 1000000 "$AGENT" 0 --rpc-url "$RPC" --private-key "$KEY" >/dev/null
+          unset KEY
+          echo "agent sUSD:       $(cast call "$SUSD" 'balanceOf(address)(uint256)' "$AGENT" --rpc-url "$RPC")"
+          echo "facilitator ETH:  $(cast balance "$FACILITATOR" --rpc-url "$RPC")"
+          echo "agent ETH:        $(cast balance "$AGENT" --rpc-url "$RPC")  (must be 0)"
+
+          export RPC_URL="$RPC" FACILITATOR_URL=http://127.0.0.1:4020 MERCHANT_URL=http://127.0.0.1:4021
+          FACILITATOR_SIGNER="keystore:$PWD/.ci-wallets/facilitator" \
+          FACILITATOR_PASSWORD_FILE="$PWD/.ci-wallets/pw" \
+            node x402/facilitator.mjs > facilitator.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf "$FACILITATOR_URL/health" >/dev/null && break; sleep 1; done
+          MERCHANT_PAYTO="$MERCHANT" node x402/merchant.mjs > merchant.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf "$MERCHANT_URL/health" >/dev/null && break; sleep 1; done
+          cat facilitator.log merchant.log
+
+          # sUSD-priced invoice, then a USDC-priced one paid out of sUSD through the router.
+          export AGENT_KEYSTORE="$PWD/.ci-wallets/agent" AGENT_PASSWORD_FILE="$PWD/.ci-wallets/pw"
+          node x402/agent.mjs pay "$MERCHANT_URL/api/v1/compute" | tee pay-susd.json
+          node x402/agent.mjs pay "$MERCHANT_URL/api/v1/premium" | tee pay-router.json
+          echo "merchant sUSD $(cast call "$SUSD" 'balanceOf(address)(uint256)' "$MERCHANT" --rpc-url "$RPC")"
+          echo "merchant USDC $(cast call "$USDC" 'balanceOf(address)(uint256)' "$MERCHANT" --rpc-url "$RPC")"
+          rm -rf .ci-wallets
+
+      - name: Summary with live addresses
+        if: always()
+        run: |
+          set -euo pipefail
+          D="deployments/$CHAIN_ID.json"
+          [[ -f "$D" ]] || { echo "no deployment written" >> "$GITHUB_STEP_SUMMARY"; exit 0; }
+          B=https://sepolia.basescan.org/address
+          {
+            echo "## Spectrum + x402 rail live on Base Sepolia"
+            echo ""
+            echo "| contract | address |"
+            echo "|---|---|"
+            for k in sUSD stabilizer treasury lens oracle hook wsUSD; do
+              a=$(jq -r ".$k // empty" "$D"); [[ -n "$a" ]] && echo "| $k | [\`$a\`]($B/$a) |"
+            done
+            r=$(jq -r .router "deployments/$CHAIN_ID-router.json" 2>/dev/null || echo "")
+            [[ -n "$r" ]] && echo "| SpectrumPayRouter | [\`$r\`]($B/$r) |"
+            echo ""
+            if [[ -f pay-router.json ]]; then
+              echo "### Real x402 payments on a public network"
+              echo '```json'; cat pay-susd.json pay-router.json; echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        if: always()
+        with:
+          name: base-sepolia-deployment
+          path: |
+            deployments/84532.json
+            deployments/84532-router.json
+            pay-susd.json
+            pay-router.json
+            facilitator.log
+            merchant.log

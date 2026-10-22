@@ -1,0 +1,7 @@
+| AutonomousTreasury                                                              | 9,271            | 9,691             | 15,305             | 39,461              |
+| SpectralEntropyOracle                                                           | 5,957            | 6,328             | 18,619             | 42,824              |
+| SpectralHook                                                                    | 3,841            | 4,801             | 20,735             | 44,351              |
+| SpectralMath                                                                    | 16               | 44                | 24,560             | 49,108              |
+| SpectralStabilizer                                                              | 18,072           | 19,550            | 6,504              | 29,602              |
+| SpectralToken                                                                   | 9,534            | 10,663            | 15,042             | 38,489              |
+| WrappedSUSD                                                                     | 5,352            | 6,474             | 19,224             | 42,678              |

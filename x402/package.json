@@ -1,0 +1,14 @@
+{
+  "name": "spectrum-x402",
+  "version": "0.1.0",
+  "private": true,
+  "description": "x402 v2 facilitator, merchant and agent client for sUSD (Spectrum Agentic USD), with the sUSD-to-USDC pay router. No dependencies: Node 22 built-ins plus Foundry's cast.",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "facilitator": "node facilitator.mjs",
+    "merchant": "node merchant.mjs",
+    "agent": "node agent.mjs",
+    "test": "node --test --test-concurrency=1 \"test/*.test.mjs\""
+  }
+}

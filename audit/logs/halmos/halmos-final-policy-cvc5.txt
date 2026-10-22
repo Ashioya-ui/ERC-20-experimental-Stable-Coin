@@ -1,0 +1,13 @@
+No files changed, compilation skipped
+
+Running 9 tests for test/halmos/Properties.t.sol:HalmosPolicy
+[PASS] check_bufferBoundedAndFloored(uint256) (paths: 5, time: 0.16s, bounds: [])
+[PASS] check_bufferLocallyMonotone(uint64) (paths: 10, time: 0.28s, bounds: [])
+[PASS] check_churnStepNeverRevertsAndIsExact(uint128,uint128,uint128,uint128,uint128) (paths: 49, time: 0.89s, bounds: [])
+[PASS] check_curvesClampAboveOne(uint256) (paths: 1, time: 0.01s, bounds: [])
+[PASS] check_expansionCapBounded(uint64) (paths: 4, time: 0.16s, bounds: [])
+[PASS] check_expansionCapLocallyMonotone(uint64) (paths: 6, time: 0.16s, bounds: [])
+[PASS] check_monotonePathNeverDeferred(uint128,uint128,uint128) (paths: 23, time: 0.67s, bounds: [])
+[PASS] check_rebaseStepBounded(uint64) (paths: 4, time: 0.17s, bounds: [])
+[PASS] check_rebaseStepLocallyMonotone(uint64) (paths: 6, time: 0.17s, bounds: [])
+Symbolic test result: 9 passed; 0 failed; time: 2.70s

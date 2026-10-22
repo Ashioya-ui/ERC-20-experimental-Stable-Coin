@@ -1,0 +1,162 @@
+name: deploy-x402-router
+
+# Deploys the x402 pay router (src/periphery/SpectrumPayRouter.sol) next to an existing
+# Spectrum deployment on Base Sepolia, from GitHub's runners. Testnet only: the x402 rail has
+# had an independent review but no professional audit, and sUSD's yield is not lawful to offer
+# to the public in the EU or the US as designed (RUNBOOK_MAINNET.md §7, REPORT_X402.md).
+#
+# Before running:
+#   1. Deploy Spectrum on Base Sepolia with the deploy-base-mainnet workflow (network
+#      base-sepolia) and commit its deployments/84532.json to the branch you run this from.
+#   2. Reuse the `base-sepolia` environment of that workflow: secrets RPC_URL,
+#      ETHERSCAN_API_KEY and DEPLOYER_PRIVATE_KEY (a throwaway key with a little test ETH; the
+#      router needs no USDC), variable DEPLOYER (its address).
+#
+# Run: Actions -> deploy-x402-router -> Run workflow, mode dry-run, then broadcast with confirm
+# = DEPLOY. Commit the deployments/84532-router.json it produces (artifact below). Then run the
+# facilitator, merchant and agents against Base Sepolia (DEPLOY_AND_TEST.md, "The x402 rail on
+# Base Sepolia").
+#
+# The router has no owner and no settings: the deployer key holds no role afterwards.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run = simulate on live chain state; broadcast = deploy for real"
+        required: true
+        default: dry-run
+        type: choice
+        options: [dry-run, broadcast]
+      confirm:
+        description: "Type DEPLOY to allow a broadcast"
+        required: false
+        default: ""
+        type: string
+
+concurrency:
+  group: deploy-x402-router
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  test:
+    name: Router tests (no secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
+      - name: Dependency pins
+        run: script/check-deps.sh
+      - name: Router tests
+        run: forge test --match-path "test/x402/*"
+
+  deploy:
+    name: Deploy the pay router (base-sepolia, ${{ inputs.mode }})
+    needs: test
+    runs-on: ubuntu-latest
+    environment: base-sepolia
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      CHAIN_ID: "84532"
+      MODE: ${{ inputs.mode }}
+      CONFIRM: ${{ inputs.confirm }}
+      DEPLOYER_ADDRESS: ${{ vars.DEPLOYER }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
+
+      - name: Check the chain, the Spectrum deployment and the inputs
+        env:
+          RPC_URL: ${{ secrets.RPC_URL }}
+          HAS_DEPLOYER_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY != '' }}
+          HAS_ETHERSCAN_KEY: ${{ secrets.ETHERSCAN_API_KEY != '' }}
+        run: |
+          set -euo pipefail
+          D="deployments/$CHAIN_ID.json"
+          [[ -n "$RPC_URL" ]] || { echo "::error::set the RPC_URL secret in the base-sepolia environment"; exit 1; }
+          [[ "$(cast chain-id --rpc-url "$RPC_URL")" == "$CHAIN_ID" ]] || { echo "::error::the RPC is not Base Sepolia ($CHAIN_ID)"; exit 1; }
+          [[ -f "$D" ]] || { echo "::error::$D is missing: deploy Spectrum on base-sepolia and commit the file first"; exit 1; }
+          STAB=$(jq -r .stabilizer "$D")
+          [[ "$(cast code "$STAB" --rpc-url "$RPC_URL")" != "0x" ]] || { echo "::error::no stabilizer at $STAB on Base Sepolia"; exit 1; }
+          if [[ "$MODE" == "broadcast" ]]; then
+            [[ "$CONFIRM" == "DEPLOY" ]] || { echo "::error::type DEPLOY in 'confirm' to broadcast"; exit 1; }
+            [[ -n "$DEPLOYER_ADDRESS" ]] || { echo "::error::set the DEPLOYER variable in the base-sepolia environment"; exit 1; }
+            [[ "$HAS_DEPLOYER_KEY" == "true" ]] || { echo "::error::set the DEPLOYER_PRIVATE_KEY secret"; exit 1; }
+            [[ "$HAS_ETHERSCAN_KEY" == "true" ]] || { echo "::error::set the ETHERSCAN_API_KEY secret"; exit 1; }
+            DEPLOYER=$(cast to-check-sum-address "$DEPLOYER_ADDRESS")
+          else
+            DEPLOYER=0x000000000000000000000000000000000000bEEF   # unfunded dry-run sender
+          fi
+          echo "DEPLOYER=$DEPLOYER" >> "$GITHUB_ENV"
+          echo "stabilizer $STAB; sUSD $(jq -r .sUSD "$D"); USDC $(jq -r .usdc "$D")"
+
+      - name: Simulate against live chain state
+        env:
+          RPC_URL: ${{ secrets.RPC_URL }}
+        run: forge script script/DeployPayRouter.s.sol --rpc-url "$RPC_URL" --sender "$DEPLOYER"
+
+      - name: Broadcast and verify on the explorer
+        if: inputs.mode == 'broadcast'
+        env:
+          RPC_URL: ${{ secrets.RPC_URL }}
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
+        run: |
+          set -euo pipefail
+          # Out of the environment before forge starts: dependency code can read environment
+          # variables, not command-line arguments (review S-02).
+          KEY="$DEPLOYER_PRIVATE_KEY"; unset DEPLOYER_PRIVATE_KEY
+          SCAN="$ETHERSCAN_API_KEY"; unset ETHERSCAN_API_KEY
+          RPC="$RPC_URL"; unset RPC_URL
+          KEY_ADDRESS=$(cast wallet address --private-key "$KEY")
+          [[ "$(cast to-check-sum-address "$KEY_ADDRESS")" == "$DEPLOYER" ]] || {
+            echo "::error::DEPLOYER_PRIVATE_KEY does not match the DEPLOYER variable"; exit 1; }
+          forge script script/DeployPayRouter.s.sol --rpc-url "$RPC" \
+            --private-key "$KEY" --sender "$DEPLOYER" \
+            --broadcast --slow --verify --etherscan-api-key "$SCAN"
+
+      - name: Check the deployed router (read-only)
+        if: inputs.mode == 'broadcast'
+        env:
+          RPC_URL: ${{ secrets.RPC_URL }}
+        run: |
+          set -euo pipefail
+          R=$(jq -r .router "deployments/$CHAIN_ID-router.json")
+          [[ "$(cast call "$R" 'stabilizer()(address)' --rpc-url "$RPC_URL" | tr A-F a-f)" == "$(jq -r .stabilizer "deployments/$CHAIN_ID.json" | tr A-F a-f)" ]]
+          echo "router $R: sUSD needed for 0.05 USDC = $(cast call "$R" 'sUSDFor(uint256)(uint256)' 50000 --rpc-url "$RPC_URL")"
+
+      - name: Summary
+        if: inputs.mode == 'broadcast'
+        run: |
+          {
+            echo "## SpectrumPayRouter deployed on Base Sepolia"
+            echo '```json'
+            cat "deployments/$CHAIN_ID-router.json"
+            echo '```'
+            echo "Commit deployments/$CHAIN_ID-router.json (artifact below) to the repository."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        if: always() && inputs.mode == 'broadcast'
+        with:
+          name: x402-router-base-sepolia
+          path: |
+            deployments/84532-router.json
+            broadcast/DeployPayRouter.s.sol/84532/run-latest.json

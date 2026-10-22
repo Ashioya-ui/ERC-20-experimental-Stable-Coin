@@ -1,0 +1,99 @@
+name: test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  FOUNDRY_PROFILE: ci
+
+jobs:
+  forge:
+    name: Build, tests (10k fuzz, invariants 1,024 x 256), mainnet and x402 rehearsals
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
+      - name: Dependencies at their reviewed commits (audit/dependencies.md)
+        run: script/check-deps.sh
+      - name: Build (sizes)
+        run: forge build --sizes
+      - name: Test
+        run: forge test -vv
+      - name: Test in isolated mode (per-call gas budgets)
+        run: forge test --isolate
+      - name: Gas snapshot unchanged
+        env:
+          FOUNDRY_PROFILE: default
+        run: forge snapshot --check --tolerance 1 --no-match-contract "Invariant|BaseMainnetFork"
+      - name: Mainnet rehearsal on anvil (exact mainnet script + runbook commands)
+        env:
+          FOUNDRY_PROFILE: default
+        run: script/rehearsal/run.sh
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+      - name: x402 rail on anvil (pay router, facilitator, merchant, agent; Node end-to-end tests)
+        env:
+          FOUNDRY_PROFILE: default
+        run: script/rehearsal/x402.sh
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        if: always()
+        with:
+          name: rehearsal-log
+          path: |
+            rehearsal/latest.log
+            rehearsal/x402.log
+
+  base-fork:
+    name: Mainnet scenarios on a live Base fork
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      # Your secret if set, otherwise a public Base RPC (may be rate limited).
+      BASE_RPC_URL: ${{ secrets.BASE_RPC_URL || 'https://base-rpc.publicnode.com' }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
+      - name: Fork tests against Base mainnet (USDC, v4 PoolManager, Aave waBasUSDC, Gauntlet USDC Prime)
+        run: forge test --match-contract BaseMainnetForkTest -vv
+
+  analysis:
+    name: Slither
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.11"
+      - name: Install Slither
+        run: pip install slither-analyzer==0.11.6
+      - name: Slither (fails on a new medium or high finding; triage in audit/slither.md)
+        run: slither . --filter-paths "lib/|test/|script/" --exclude-dependencies --triage-database audit/slither.db.json --fail-medium

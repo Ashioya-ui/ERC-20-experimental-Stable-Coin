@@ -1,0 +1,14 @@
+Compiling 6 files with Solc 0.8.26
+Solc 0.8.26 finished in 15.28s
+Compiler run successful!
+
+Running 4 tests for test/halmos/Properties.t.sol:HalmosPolicy
+[32m[PASS][0m check_curvesClampAboveOne(uint256) (paths: 1, time: 0.03s, bounds: [])
+[32m[PASS][0m check_expansionCapBounded(uint64) (paths: 5, time: 1.82s, bounds: [])
+[32m[PASS][0m check_expansionCapLocallyMonotone(uint64) (paths: 9, time: 0.38s, bounds: [])
+[32m[PASS][0m check_expansionCapNeverAboveNeutral(uint256) (paths: 4, time: 0.16s, bounds: [])
+Symbolic test result: 4 passed; 0 failed; time: 3.56s
+
+real	0m23.472s
+user	0m15.552s
+sys	0m3.981s
