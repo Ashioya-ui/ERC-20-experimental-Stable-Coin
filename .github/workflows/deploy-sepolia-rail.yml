@@ -126,24 +126,25 @@ jobs:
           # Keystores for this run only; the runner is destroyed afterwards.
           mkdir -p .ci-wallets && chmod 700 .ci-wallets
           ( umask 077; head -c 32 /dev/urandom | base64 | tr -d '\n' > .ci-wallets/pw )
-          AGENT=$(CAST_PASSWORD="$(cat .ci-wallets/pw)" cast wallet new .ci-wallets agent --json | jq -r '.[0].address')
-          MERCHANT=$(CAST_PASSWORD="$(cat .ci-wallets/pw)" cast wallet new .ci-wallets merchant --json | jq -r '.[0].address')
-          chmod 600 .ci-wallets/agent .ci-wallets/merchant
-          echo "agent $AGENT   merchant $MERCHANT"
+          mk() { CAST_PASSWORD="$(cat .ci-wallets/pw)" cast wallet new .ci-wallets "$1" --json | jq -r '.[0].address'; chmod 600 ".ci-wallets/$1"; }
+          AGENT=$(mk agent); MERCHANT=$(mk merchant); FACILITATOR=$(mk facilitator)
+          echo "agent $AGENT   merchant $MERCHANT   facilitator $FACILITATOR"
 
-          # Give the agent 1 USDC worth of sUSD. The deployer pays gas and settles.
+          # Give the agent 1 USDC worth of sUSD, and the facilitator its own gas. The facilitator
+          # runs on a wallet of its own rather than the deployer's: that is what the design calls
+          # for, and it keeps the deployer key out of any keystore. The agent gets no ETH at all,
+          # which is the point -- its payments are gasless.
           KEY="$DEPLOYER_PRIVATE_KEY"; unset DEPLOYER_PRIVATE_KEY
+          cast send "$FACILITATOR" --value 0.004ether --rpc-url "$RPC" --private-key "$KEY" >/dev/null
           cast send "$USDC" "approve(address,uint256)" "$STAB" 1000000 --rpc-url "$RPC" --private-key "$KEY" >/dev/null
           cast send "$STAB" "mint(uint256,address,uint256)" 1000000 "$AGENT" 0 --rpc-url "$RPC" --private-key "$KEY" >/dev/null
-          echo "agent sUSD: $(cast call "$SUSD" 'balanceOf(address)(uint256)' "$AGENT" --rpc-url "$RPC")"
-
-          # The facilitator needs a keystore signer (no raw keys on a command line in the servers).
-          cast wallet import ci-facilitator --keystore-dir .ci-wallets --private-key "$KEY" \
-            --unsafe-password "$(cat .ci-wallets/pw)" >/dev/null
           unset KEY
+          echo "agent sUSD:       $(cast call "$SUSD" 'balanceOf(address)(uint256)' "$AGENT" --rpc-url "$RPC")"
+          echo "facilitator ETH:  $(cast balance "$FACILITATOR" --rpc-url "$RPC")"
+          echo "agent ETH:        $(cast balance "$AGENT" --rpc-url "$RPC")  (must be 0)"
 
           export RPC_URL="$RPC" FACILITATOR_URL=http://127.0.0.1:4020 MERCHANT_URL=http://127.0.0.1:4021
-          FACILITATOR_SIGNER="keystore:$PWD/.ci-wallets/ci-facilitator" \
+          FACILITATOR_SIGNER="keystore:$PWD/.ci-wallets/facilitator" \
           FACILITATOR_PASSWORD_FILE="$PWD/.ci-wallets/pw" \
             node x402/facilitator.mjs > facilitator.log 2>&1 &
           for i in $(seq 1 60); do curl -sf "$FACILITATOR_URL/health" >/dev/null && break; sleep 1; done
