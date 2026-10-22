@@ -1,0 +1,22 @@
+# Sourcify verification, Base Sepolia, run 39853237030
+# forge said: outcome  address  source:contract  reason
+ok	0x54De35aC7fd6756D49eA77ce7bbCd026faDC364a	src/SpectralToken.sol:SpectralToken	Contract source code already verified;
+ok	0x1af57BA60edaEDF91F5925A3A79F346cb50F12a6	src/AutonomousTreasury.sol:AutonomousTreasury	Contract source code already verified;
+ok	0xC7A4b9E9A7DAef0cF2bb531CCda1a3a4a744B4BB	src/SpectralEntropyOracle.sol:SpectralEntropyOracle	Contract source code already verified;
+ok	0x3940F5F444B1ec69bb0245062796896135B8f948	src/SpectralStabilizer.sol:SpectralStabilizer	Contract source code already verified;
+ok	0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8	src/WrappedSUSD.sol:WrappedSUSD	Contract source code already verified;
+ok	0x384768E8b0b9d992EE5F23701D21B1b880495285	src/SpectrumLens.sol:SpectrumLens	Contract source code already verified;
+ok	0x7A4BB5720a158a22ae14297915aa21efbd1B6040	src/SpectralHook.sol:SpectralHook	Contract source code already verified;
+ok	0x1783d46C349224992A5A3ab4C84fc7EBf71c056e	src/periphery/SpectrumPayRouter.sol:SpectrumPayRouter	Contract source code already verified;
+
+# sourcify holds: status  address   (perfect | partial | absent)
+absent	0x54De35aC7fd6756D49eA77ce7bbCd026faDC364a
+absent	0x1af57BA60edaEDF91F5925A3A79F346cb50F12a6
+absent	0xC7A4b9E9A7DAef0cF2bb531CCda1a3a4a744B4BB
+absent	0x3940F5F444B1ec69bb0245062796896135B8f948
+absent	0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8
+absent	0x384768E8b0b9d992EE5F23701D21B1b880495285
+absent	0x7A4BB5720a158a22ae14297915aa21efbd1B6040
+absent	0x1783d46C349224992A5A3ab4C84fc7EBf71c056e
+
+# totals: exact=0 partial=0 absent=8
