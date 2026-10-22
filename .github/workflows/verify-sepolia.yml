@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      contents: read
+      contents: write
     env:
       CHAIN_ID: "84532"
       RPC: https://sepolia.base.org
@@ -37,7 +37,6 @@ jobs:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           submodules: recursive
-          persist-credentials: false
       - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
           version: v1.5.1
@@ -65,16 +64,18 @@ jobs:
             "hook       src/SpectralHook.sol          SpectralHook"
           )
           ok=0; fail=0
+          : > verify-results.txt
           verify_one() {
-            local addr="$1" target="$2"
+            local addr="$1" target="$2" outcome=fail
             echo "::group::$target  $addr"
             if forge verify-contract "$addr" "$target" \
                  --chain-id "$CHAIN_ID" --verifier sourcify \
                  --verifier-url https://sourcify.dev/server --watch 2>&1 | tail -20; then
-              ok=$((ok+1))
+              ok=$((ok+1)); outcome=ok
             else
               fail=$((fail+1)); echo "sourcify did not accept $target"
             fi
+            printf '%s\t%s\t%s\n' "$outcome" "$addr" "$target" >> verify-results.txt
             if [[ "$HAS_SCAN" == "true" ]]; then
               forge verify-contract "$addr" "$target" --chain-id "$CHAIN_ID" \
                 --etherscan-api-key "$ETHERSCAN_API_KEY" --watch 2>&1 | tail -5 || true
@@ -94,6 +95,21 @@ jobs:
           echo "SOURCIFY_OK=$ok" >> "$GITHUB_ENV"
           echo "SOURCIFY_FAIL=$fail" >> "$GITHUB_ENV"
           echo "verified $ok, not accepted $fail"
+
+      - name: Commit the verification results
+        if: always()
+        run: |
+          set -euo pipefail
+          [[ -f verify-results.txt ]] || exit 0
+          mkdir -p deployments
+          { echo "# Sourcify verification, Base Sepolia, run ${{ github.run_id }}"
+            echo "# outcome  address  source:contract"
+            cat verify-results.txt; } > deployments/84532-verification.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f deployments/84532-verification.txt
+          git commit -q -m "verify(base-sepolia): sourcify results from run ${{ github.run_id }}" || exit 0
+          git push origin "HEAD:refs/heads/deployments/verify-${{ github.run_id }}"
 
       - name: Summary
         if: always()
