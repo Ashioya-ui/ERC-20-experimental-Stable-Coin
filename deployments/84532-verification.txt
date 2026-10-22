@@ -1,0 +1,136 @@
+# Sourcify verification, Base Sepolia, run 39854745595
+# forge said: outcome  address  source:contract  reason
+ok	0x54De35aC7fd6756D49eA77ce7bbCd026faDC364a	src/SpectralToken.sol:SpectralToken	Contract source code already verified;
+ok	0x1af57BA60edaEDF91F5925A3A79F346cb50F12a6	src/AutonomousTreasury.sol:AutonomousTreasury	Contract source code already verified;
+ok	0xC7A4b9E9A7DAef0cF2bb531CCda1a3a4a744B4BB	src/SpectralEntropyOracle.sol:SpectralEntropyOracle	Contract source code already verified;
+ok	0x3940F5F444B1ec69bb0245062796896135B8f948	src/SpectralStabilizer.sol:SpectralStabilizer	Contract source code already verified;
+ok	0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8	src/WrappedSUSD.sol:WrappedSUSD	Contract source code already verified;
+ok	0x384768E8b0b9d992EE5F23701D21B1b880495285	src/SpectrumLens.sol:SpectrumLens	Contract source code already verified;
+ok	0x7A4BB5720a158a22ae14297915aa21efbd1B6040	src/SpectralHook.sol:SpectralHook	Contract source code already verified;
+ok	0x1783d46C349224992A5A3ab4C84fc7EBf71c056e	src/periphery/SpectrumPayRouter.sol:SpectrumPayRouter	Contract source code already verified;
+
+# sourcify holds: status  address   (exact | partial | absent)
+partial	0x54De35aC7fd6756D49eA77ce7bbCd026faDC364a
+partial	0x1af57BA60edaEDF91F5925A3A79F346cb50F12a6
+partial	0xC7A4b9E9A7DAef0cF2bb531CCda1a3a4a744B4BB
+partial	0x3940F5F444B1ec69bb0245062796896135B8f948
+partial	0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8
+partial	0x384768E8b0b9d992EE5F23701D21B1b880495285
+partial	0x7A4BB5720a158a22ae14297915aa21efbd1B6040
+partial	0x1783d46C349224992A5A3ab4C84fc7EBf71c056e
+
+# raw API responses, so a disagreement is diagnosable:
+### 0x54De35aC7fd6756D49eA77ce7bbCd026faDC364a
+-- v2:
+{"matchId":"56733770","creationMatch":"match","runtimeMatch":"match","verifiedAt":"2026-10-22T20:47:48Z","match":"match","chainId":"84532","address":"0x54De35aC7fd6756D49eA77ce7bbCd026faDC364a"}
+<<HTTP:200>>
+
+-- legacy:
+{
+  "type": "https://sourcify.dev/server/api-docs/",
+  "title": "API v1 is removed",
+  "status": 404,
+  "detail": "This path was part of the Sourcify API v1. API v1 is removed. Use API v2.",
+  "replacements": {
+    "/files/..., /repository/contracts/...": "GET /v2/contract/{chainId}/{address}?fields=sources,metadata",
+    "/check-by-addresses, /check-all-by-addresses": "GET /v2/contract/{chainId}/
+### 0x1af57BA60edaEDF91F5925A3A79F346cb50F12a6
+-- v2:
+{"matchId":"56733776","creationMatch":"match","runtimeMatch":"match","verifiedAt":"2026-10-22T20:48:05Z","match":"match","chainId":"84532","address":"0x1af57BA60edaEDF91F5925A3A79F346cb50F12a6"}
+<<HTTP:200>>
+
+-- legacy:
+{
+  "type": "https://sourcify.dev/server/api-docs/",
+  "title": "API v1 is removed",
+  "status": 404,
+  "detail": "This path was part of the Sourcify API v1. API v1 is removed. Use API v2.",
+  "replacements": {
+    "/files/..., /repository/contracts/...": "GET /v2/contract/{chainId}/{address}?fields=sources,metadata",
+    "/check-by-addresses, /check-all-by-addresses": "GET /v2/contract/{chainId}/
+### 0xC7A4b9E9A7DAef0cF2bb531CCda1a3a4a744B4BB
+-- v2:
+{"matchId":"56733785","creationMatch":"match","runtimeMatch":"match","verifiedAt":"2026-10-22T20:48:21Z","match":"match","chainId":"84532","address":"0xC7A4b9E9A7DAef0cF2bb531CCda1a3a4a744B4BB"}
+<<HTTP:200>>
+
+-- legacy:
+{
+  "type": "https://sourcify.dev/server/api-docs/",
+  "title": "API v1 is removed",
+  "status": 404,
+  "detail": "This path was part of the Sourcify API v1. API v1 is removed. Use API v2.",
+  "replacements": {
+    "/files/..., /repository/contracts/...": "GET /v2/contract/{chainId}/{address}?fields=sources,metadata",
+    "/check-by-addresses, /check-all-by-addresses": "GET /v2/contract/{chainId}/
+### 0x3940F5F444B1ec69bb0245062796896135B8f948
+-- v2:
+{"matchId":"56733797","creationMatch":"match","runtimeMatch":"match","verifiedAt":"2026-10-22T20:48:40Z","match":"match","chainId":"84532","address":"0x3940F5F444B1ec69bb0245062796896135B8f948"}
+<<HTTP:200>>
+
+-- legacy:
+{
+  "type": "https://sourcify.dev/server/api-docs/",
+  "title": "API v1 is removed",
+  "status": 404,
+  "detail": "This path was part of the Sourcify API v1. API v1 is removed. Use API v2.",
+  "replacements": {
+    "/files/..., /repository/contracts/...": "GET /v2/contract/{chainId}/{address}?fields=sources,metadata",
+    "/check-by-addresses, /check-all-by-addresses": "GET /v2/contract/{chainId}/
+### 0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8
+-- v2:
+{"matchId":"56733798","creationMatch":"match","runtimeMatch":"match","verifiedAt":"2026-10-22T20:48:54Z","match":"match","chainId":"84532","address":"0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8"}
+<<HTTP:200>>
+
+-- legacy:
+{
+  "type": "https://sourcify.dev/server/api-docs/",
+  "title": "API v1 is removed",
+  "status": 404,
+  "detail": "This path was part of the Sourcify API v1. API v1 is removed. Use API v2.",
+  "replacements": {
+    "/files/..., /repository/contracts/...": "GET /v2/contract/{chainId}/{address}?fields=sources,metadata",
+    "/check-by-addresses, /check-all-by-addresses": "GET /v2/contract/{chainId}/
+### 0x384768E8b0b9d992EE5F23701D21B1b880495285
+-- v2:
+{"matchId":"56733801","creationMatch":"match","runtimeMatch":"match","verifiedAt":"2026-10-22T20:49:10Z","match":"match","chainId":"84532","address":"0x384768E8b0b9d992EE5F23701D21B1b880495285"}
+<<HTTP:200>>
+
+-- legacy:
+{
+  "type": "https://sourcify.dev/server/api-docs/",
+  "title": "API v1 is removed",
+  "status": 404,
+  "detail": "This path was part of the Sourcify API v1. API v1 is removed. Use API v2.",
+  "replacements": {
+    "/files/..., /repository/contracts/...": "GET /v2/contract/{chainId}/{address}?fields=sources,metadata",
+    "/check-by-addresses, /check-all-by-addresses": "GET /v2/contract/{chainId}/
+### 0x7A4BB5720a158a22ae14297915aa21efbd1B6040
+-- v2:
+{"matchId":"56733817","creationMatch":"match","runtimeMatch":"match","verifiedAt":"2026-10-22T20:49:27Z","match":"match","chainId":"84532","address":"0x7A4BB5720a158a22ae14297915aa21efbd1B6040"}
+<<HTTP:200>>
+
+-- legacy:
+{
+  "type": "https://sourcify.dev/server/api-docs/",
+  "title": "API v1 is removed",
+  "status": 404,
+  "detail": "This path was part of the Sourcify API v1. API v1 is removed. Use API v2.",
+  "replacements": {
+    "/files/..., /repository/contracts/...": "GET /v2/contract/{chainId}/{address}?fields=sources,metadata",
+    "/check-by-addresses, /check-all-by-addresses": "GET /v2/contract/{chainId}/
+### 0x1783d46C349224992A5A3ab4C84fc7EBf71c056e
+-- v2:
+{"matchId":"56733820","creationMatch":"match","runtimeMatch":"match","verifiedAt":"2026-10-22T20:49:43Z","match":"match","chainId":"84532","address":"0x1783d46C349224992A5A3ab4C84fc7EBf71c056e"}
+<<HTTP:200>>
+
+-- legacy:
+{
+  "type": "https://sourcify.dev/server/api-docs/",
+  "title": "API v1 is removed",
+  "status": 404,
+  "detail": "This path was part of the Sourcify API v1. API v1 is removed. Use API v2.",
+  "replacements": {
+    "/files/..., /repository/contracts/...": "GET /v2/contract/{chainId}/{address}?fields=sources,metadata",
+    "/check-by-addresses, /check-all-by-addresses": "GET /v2/contract/{chainId}/
+
+# totals: exact=0 partial=8 absent=0
