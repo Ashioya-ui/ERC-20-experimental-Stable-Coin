@@ -1,0 +1,116 @@
+name: verify-sepolia
+
+# Publishes verified source for the live Base Sepolia deployment.
+#
+# Sourcify is the primary verifier because it needs no API key: it matches the compiled bytecode
+# and metadata against the submitted sources, and the result is public at repo.sourcify.dev and
+# rendered by Blockscout (base-sepolia.blockscout.com). BaseScan verification runs too, but only
+# if an ETHERSCAN_API_KEY secret exists; its absence does not fail the job.
+#
+# Addresses come from deployments/84532.json in the repository.
+#
+# RUN: push to the `verify-sepolia` branch, or Run workflow.
+
+on:
+  push:
+    branches: [verify-sepolia]
+  workflow_dispatch:
+
+concurrency:
+  group: verify-sepolia
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  verify:
+    name: Verify sources on Sourcify (and BaseScan if a key exists)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      CHAIN_ID: "84532"
+      RPC: https://sepolia.base.org
+      HAS_SCAN: ${{ secrets.ETHERSCAN_API_KEY != '' }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
+
+      - name: Build with the same settings the deployment used
+        run: forge build
+
+      - name: Verify on Sourcify
+        env:
+          ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
+        run: |
+          set -uo pipefail
+          D="deployments/$CHAIN_ID.json"
+          R="deployments/$CHAIN_ID-router.json"
+          [[ -f "$D" ]] || { echo "::error::$D missing"; exit 1; }
+
+          # key  source-file  contract-name, in deployment order.
+          TARGETS=(
+            "sUSD       src/SpectralToken.sol         SpectralToken"
+            "treasury   src/AutonomousTreasury.sol    AutonomousTreasury"
+            "oracle     src/SpectralEntropyOracle.sol SpectralEntropyOracle"
+            "stabilizer src/SpectralStabilizer.sol    SpectralStabilizer"
+            "wsUSD      src/WrappedSUSD.sol           WrappedSUSD"
+            "lens       src/SpectrumLens.sol          SpectrumLens"
+            "hook       src/SpectralHook.sol          SpectralHook"
+          )
+          ok=0; fail=0
+          verify_one() {
+            local addr="$1" target="$2"
+            echo "::group::$target  $addr"
+            if forge verify-contract "$addr" "$target" \
+                 --chain-id "$CHAIN_ID" --verifier sourcify \
+                 --verifier-url https://sourcify.dev/server --watch 2>&1 | tail -20; then
+              ok=$((ok+1))
+            else
+              fail=$((fail+1)); echo "sourcify did not accept $target"
+            fi
+            if [[ "$HAS_SCAN" == "true" ]]; then
+              forge verify-contract "$addr" "$target" --chain-id "$CHAIN_ID" \
+                --etherscan-api-key "$ETHERSCAN_API_KEY" --watch 2>&1 | tail -5 || true
+            fi
+            echo "::endgroup::"
+          }
+          for row in "${TARGETS[@]}"; do
+            read -r key file name <<< "$row"
+            addr=$(jq -r ".$key // empty" "$D")
+            [[ "$addr" == 0x* ]] || { echo "no address for $key"; continue; }
+            verify_one "$addr" "$file:$name"
+          done
+          if [[ -f "$R" ]]; then
+            raddr=$(jq -r '.router // empty' "$R")
+            [[ "$raddr" == 0x* ]] && verify_one "$raddr" "src/periphery/SpectrumPayRouter.sol:SpectrumPayRouter"
+          fi
+          echo "SOURCIFY_OK=$ok" >> "$GITHUB_ENV"
+          echo "SOURCIFY_FAIL=$fail" >> "$GITHUB_ENV"
+          echo "verified $ok, not accepted $fail"
+
+      - name: Summary
+        if: always()
+        run: |
+          D="deployments/$CHAIN_ID.json"
+          {
+            echo "## Verified source — Base Sepolia"
+            echo ""
+            echo "Sourcify accepted **${SOURCIFY_OK:-0}**, rejected **${SOURCIFY_FAIL:-0}**."
+            echo "BaseScan verification ran: ${HAS_SCAN}."
+            echo ""
+            echo "| contract | sourcify | blockscout |"
+            echo "|---|---|---|"
+            for k in sUSD treasury oracle stabilizer wsUSD lens hook; do
+              a=$(jq -r ".$k // empty" "$D"); [[ -n "$a" ]] || continue
+              echo "| $k | [repo](https://repo.sourcify.dev/contracts/full_match/$CHAIN_ID/$a/) | [view](https://base-sepolia.blockscout.com/address/$a?tab=contract) |"
+            done
+            r=$(jq -r '.router // empty' "deployments/$CHAIN_ID-router.json" 2>/dev/null || true)
+            [[ -n "$r" ]] && echo "| SpectrumPayRouter | [repo](https://repo.sourcify.dev/contracts/full_match/$CHAIN_ID/$r/) | [view](https://base-sepolia.blockscout.com/address/$r?tab=contract) |"
+          } >> "$GITHUB_STEP_SUMMARY"
