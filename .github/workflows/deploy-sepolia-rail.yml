@@ -135,7 +135,7 @@ jobs:
           # for, and it keeps the deployer key out of any keystore. The agent gets no ETH at all,
           # which is the point -- its payments are gasless.
           KEY="$DEPLOYER_PRIVATE_KEY"; unset DEPLOYER_PRIVATE_KEY
-          cast send "$FACILITATOR" --value 0.004ether --rpc-url "$RPC" --private-key "$KEY" >/dev/null
+          cast send "$FACILITATOR" --value 0.001ether --rpc-url "$RPC" --private-key "$KEY" >/dev/null
           cast send "$USDC" "approve(address,uint256)" "$STAB" 1000000 --rpc-url "$RPC" --private-key "$KEY" >/dev/null
           cast send "$STAB" "mint(uint256,address,uint256)" 1000000 "$AGENT" 0 --rpc-url "$RPC" --private-key "$KEY" >/dev/null
           unset KEY
