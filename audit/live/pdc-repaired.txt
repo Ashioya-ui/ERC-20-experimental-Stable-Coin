@@ -1,0 +1,18 @@
+No files changed, compilation skipped
+Script ran successfully.
+
+== Logs ==
+  == Spectrum state ==
+  sUSD supply (wei)         2947883744717033035
+  reserve value (wei)       7950000000000000000
+  reserve ratio (1e18 = 1)  2696849906054595593
+  idle USDC                 1150000
+  liquid USDC               7950000
+  liquidity buffer (bps)    1500
+  supply cap (wei)          25000000000000000000000
+  smoothed entropy (1e18)   500000000000000000
+  oracle blocks filled      0
+  index (1e18)              1000000000000000000
+  protocol capital (wei)    5000000000000000000
+  distributable now (wei)   2116255282966965
+  POST-DEPLOY CHECK PASSED

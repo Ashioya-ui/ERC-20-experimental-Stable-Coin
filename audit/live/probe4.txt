@@ -1,0 +1,26 @@
+pool state slot base = 0xeba3a90d7ce6275b97b43c7be66720b08b86162da55fb6b05bff4d16e9f92f10
+slot0        = 0x00000000006400000004376400000000000f4240000000000000000000000000
+feeGrowth0   = 0x0000000000000000000000000000000000000000000000000000000000000000
+liquidity slot 0xeba3a90d7ce6275b97b43c7be66720b08b86162da55fb6b05bff4d16e9f92f13
+POOL LIQUIDITY = 0
+
+## deployer nonce across the deployment run (claim: fourteen transactions)
+  nonce at block 48884150 = 20
+  nonce at block 48884200 = 25
+  nonce at block 48884250 = 30
+  nonce at block 48884300 = 36
+  nonce at block 48884400 = 37
+  nonce at block 48884500 = 40
+  nonce at block 48884600 = 40
+  nonce at block 48884700 = 40
+  nonce now = 40
+
+## admin can it actually act? (it has 0 ETH, nonce 0)
+  admin ETH = 0
+
+## can an admin drain the reserve anywhere? try the obvious calls from the admin
+  treasury.withdrawReserve from admin (want NotStabilizer): Error: server returned an error response: error code 3: execution reverted, data: "0x4ada26ff"
+  treasury.setLiquidityBuffer from admin direct (want NotStabilizer): Error: server returned an error response: error code 3: execution reverted, data: "0x4ada26ff"
+  treasury.migrateVault from admin direct (want NotStabilizer): Error: server returned an error response: error code 3: execution reverted, data: "0x4ada26ff"
+  stabilizer.executeVaultMigration from admin (want NoPendingVault): Error: server returned an error response: error code 3: execution reverted, data: "0x3923349e"
+END-OF-PROBE4
