@@ -66,16 +66,20 @@ jobs:
           ok=0; fail=0
           : > verify-results.txt
           verify_one() {
-            local addr="$1" target="$2" outcome=fail
+            local addr="$1" target="$2" outcome=fail out reason
             echo "::group::$target  $addr"
-            if forge verify-contract "$addr" "$target" \
-                 --chain-id "$CHAIN_ID" --verifier sourcify \
-                 --verifier-url https://sourcify.dev/server --watch 2>&1 | tail -20; then
-              ok=$((ok+1)); outcome=ok
-            else
-              fail=$((fail+1)); echo "sourcify did not accept $target"
-            fi
-            printf '%s\t%s\t%s\n' "$outcome" "$addr" "$target" >> verify-results.txt
+            # bytecode_hash = "none" in foundry.toml, so there is no metadata hash in the
+            # deployed code and Sourcify can only ever award a partial match. That is expected
+            # and still publishes readable source; it is not a failure.
+            out=$(forge verify-contract "$addr" "$target" \
+                   --chain-id "$CHAIN_ID" --verifier sourcify \
+                   --verifier-url https://sourcify.dev/server --watch 2>&1) && outcome=ok
+            echo "$out" | tail -25
+            [[ "$outcome" == ok ]] && ok=$((ok+1)) || fail=$((fail+1))
+            # keep why, so a rejection is diagnosable without the run log
+            reason=$(echo "$out" | grep -iE "error|cannot|fail|already|perfect|partial|match|invalid" \
+                     | tail -3 | tr '\n' ';' | cut -c1-300)
+            printf '%s\t%s\t%s\t%s\n' "$outcome" "$addr" "$target" "${reason:-no output}" >> verify-results.txt
             if [[ "$HAS_SCAN" == "true" ]]; then
               forge verify-contract "$addr" "$target" --chain-id "$CHAIN_ID" \
                 --etherscan-api-key "$ETHERSCAN_API_KEY" --watch 2>&1 | tail -5 || true
@@ -96,15 +100,49 @@ jobs:
           echo "SOURCIFY_FAIL=$fail" >> "$GITHUB_ENV"
           echo "verified $ok, not accepted $fail"
 
+      - name: Ask Sourcify what it actually holds
+        if: always()
+        run: |
+          set -uo pipefail
+          D="deployments/$CHAIN_ID.json"; R="deployments/$CHAIN_ID-router.json"
+          ADDRS=$(jq -r '[.sUSD,.treasury,.oracle,.stabilizer,.wsUSD,.lens,.hook] | @tsv' "$D")
+          [[ -f "$R" ]] && ADDRS="$ADDRS	$(jq -r '.router // empty' "$R")"
+          : > sourcify-status.txt
+          exact=0; partial=0; absent=0
+          for a in $ADDRS; do
+            [[ "$a" == 0x* ]] || continue
+            body=$(curl -sS --max-time 30 \
+              "https://sourcify.dev/server/check-all-by-addresses?addresses=$a&chainIds=$CHAIN_ID" || echo '[]')
+            st=$(echo "$body" | jq -r --arg c "$CHAIN_ID" \
+              '(.[0].chainIds // []) | map(select(.chainId == $c)) | (.[0].status // "absent")' 2>/dev/null || echo absent)
+            case "$st" in
+              perfect) exact=$((exact+1));;
+              partial) partial=$((partial+1));;
+              *) st=absent; absent=$((absent+1));;
+            esac
+            printf '%s\t%s\n' "$st" "$a" >> sourcify-status.txt
+            echo "$st  $a"
+          done
+          echo "EXACT=$exact" >> "$GITHUB_ENV"
+          echo "PARTIAL=$partial" >> "$GITHUB_ENV"
+          echo "ABSENT=$absent" >> "$GITHUB_ENV"
+          echo "sourcify holds: $exact exact, $partial partial, $absent absent"
+
       - name: Commit the verification results
         if: always()
         run: |
           set -euo pipefail
-          [[ -f verify-results.txt ]] || exit 0
+          [[ -f verify-results.txt || -f sourcify-status.txt ]] || exit 0
           mkdir -p deployments
           { echo "# Sourcify verification, Base Sepolia, run ${{ github.run_id }}"
-            echo "# outcome  address  source:contract"
-            cat verify-results.txt; } > deployments/84532-verification.txt
+            echo "# forge said: outcome  address  source:contract  reason"
+            cat verify-results.txt 2>/dev/null || echo "(no forge results)"
+            echo ""
+            echo "# sourcify holds: status  address   (perfect | partial | absent)"
+            cat sourcify-status.txt 2>/dev/null || echo "(no status query)"
+            echo ""
+            echo "# totals: exact=${EXACT:-?} partial=${PARTIAL:-?} absent=${ABSENT:-?}"
+          } > deployments/84532-verification.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -f deployments/84532-verification.txt
@@ -118,15 +156,19 @@ jobs:
           {
             echo "## Verified source — Base Sepolia"
             echo ""
-            echo "Sourcify accepted **${SOURCIFY_OK:-0}**, rejected **${SOURCIFY_FAIL:-0}**."
-            echo "BaseScan verification ran: ${HAS_SCAN}."
+            echo "Sourcify holds: **${EXACT:-0} exact**, **${PARTIAL:-0} partial**, **${ABSENT:-0} absent**."
+            echo "forge accepted ${SOURCIFY_OK:-0}, rejected ${SOURCIFY_FAIL:-0}. BaseScan ran: ${HAS_SCAN}."
+            echo ""
+            echo "A partial match is the expected best result here: foundry.toml sets"
+            echo "\`bytecode_hash = \"none\"\`, so the deployed code carries no metadata hash for"
+            echo "Sourcify to pin an exact match to. Source is published and readable either way."
             echo ""
             echo "| contract | sourcify | blockscout |"
             echo "|---|---|---|"
             for k in sUSD treasury oracle stabilizer wsUSD lens hook; do
               a=$(jq -r ".$k // empty" "$D"); [[ -n "$a" ]] || continue
-              echo "| $k | [repo](https://repo.sourcify.dev/contracts/full_match/$CHAIN_ID/$a/) | [view](https://base-sepolia.blockscout.com/address/$a?tab=contract) |"
+              echo "| $k | [lookup](https://sourcify.dev/server/check-all-by-addresses?addresses=$a&chainIds=$CHAIN_ID) | [view](https://base-sepolia.blockscout.com/address/$a?tab=contract) |"
             done
             r=$(jq -r '.router // empty' "deployments/$CHAIN_ID-router.json" 2>/dev/null || true)
-            [[ -n "$r" ]] && echo "| SpectrumPayRouter | [repo](https://repo.sourcify.dev/contracts/full_match/$CHAIN_ID/$r/) | [view](https://base-sepolia.blockscout.com/address/$r?tab=contract) |"
+            [[ -n "$r" ]] && echo "| SpectrumPayRouter | [lookup](https://sourcify.dev/server/check-all-by-addresses?addresses=$r&chainIds=$CHAIN_ID) | [view](https://base-sepolia.blockscout.com/address/$r?tab=contract) |"
           } >> "$GITHUB_STEP_SUMMARY"
