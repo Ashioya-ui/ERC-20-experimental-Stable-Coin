@@ -1,0 +1,104 @@
+=== 0x54De35aC7fd6756D49eA77ce7bbCd026faDC364a
+  v1 check-all-by-addresses: {
+  "type": "https://sourcify.dev/server/api-docs/",
+  "title": "API v1 is removed",
+  "status": 404,
+  "detail": "This path was part of the Sourcify API v1. API v1 is removed. Use API v2.",
+  "replacements": {
+    "/files/..., /repository/contracts/...": "GET /v2/contract/{chainId}/{address}?fields=sources,metadata",
+    "/check-by-addresses, /check-all-by-addresses": "GET /v2/contract/{chainId}/
+  v2 /v2/contract/84532/:     {"matchId":"56733770","creationMatch":"match","runtimeMatch":"match","verifiedAt":"2026-10-22T20:47:48Z","match":"match","chainId":"84532","address":"0x54De35aC7fd6756D49eA77ce7bbCd026faDC364a"}
+  v1 /files/any/84532/:       403
+  blockscout verified?:       {"conflicting_implementations":null,"creation_bytecode":"0x61018080604052346101d9576020816128cd803803809161002082856101dd565b8339810103126101d957516001600160a01b038116908181036101d95760405161004b6040826101dd565b6014815260208101907f537065637472756d204167656e7469632055534400000000000000000000000082526curl: (23) Failure writing output to destination
+
+=== 0x1af57BA60edaEDF91F5925A3A79F346cb50F12a6
+  v1 check-all-by-addresses: {
+  "type": "https://sourcify.dev/server/api-docs/",
+  "title": "API v1 is removed",
+  "status": 404,
+  "detail": "This path was part of the Sourcify API v1. API v1 is removed. Use API v2.",
+  "replacements": {
+    "/files/..., /repository/contracts/...": "GET /v2/contract/{chainId}/{address}?fields=sources,metadata",
+    "/check-by-addresses, /check-all-by-addresses": "GET /v2/contract/{chainId}/
+  v2 /v2/contract/84532/:     {"matchId":"56733776","creationMatch":"match","runtimeMatch":"match","verifiedAt":"2026-10-22T20:48:05Z","match":"match","chainId":"84532","address":"0x1af57BA60edaEDF91F5925A3A79F346cb50F12a6"}
+  v1 /files/any/84532/:       403
+  blockscout verified?:       {"conflicting_implementations":null,"creation_bytecode":"0x60c08060405234610194576060816128d1803803809161001f82856101da565b8339810103126101945780516001600160a01b03811691908290036101945761004f604060208301519201610211565b91801580156101c9575b6101ba5761271082116101ab575f80546001600160a01b031916821790556curl: (23) Failure writing output to destination
+
+=== 0xC7A4b9E9A7DAef0cF2bb531CCda1a3a4a744B4BB
+  v1 check-all-by-addresses: {
+  "type": "https://sourcify.dev/server/api-docs/",
+  "title": "API v1 is removed",
+  "status": 404,
+  "detail": "This path was part of the Sourcify API v1. API v1 is removed. Use API v2.",
+  "replacements": {
+    "/files/..., /repository/contracts/...": "GET /v2/contract/{chainId}/{address}?fields=sources,metadata",
+    "/check-by-addresses, /check-all-by-addresses": "GET /v2/contract/{chainId}/
+  v2 /v2/contract/84532/:     {"matchId":"56733785","creationMatch":"match","runtimeMatch":"match","verifiedAt":"2026-10-22T20:48:21Z","match":"match","chainId":"84532","address":"0xC7A4b9E9A7DAef0cF2bb531CCda1a3a4a744B4BB"}
+  v1 /files/any/84532/:       403
+  blockscout verified?:       {"conflicting_implementations":null,"creation_bytecode":"0x6101203461019b57601f61177638819003918201601f19168301916001600160401b0383118484101761019f5780849260a09460405283398101031261019b5780516001600160a01b0381169182820361019b5760208101516040820151906080606084015193015193851561018c578215801561017b575curl: (23) Failure writing output to destination
+
+=== 0x3940F5F444B1ec69bb0245062796896135B8f948
+  v1 check-all-by-addresses: {
+  "type": "https://sourcify.dev/server/api-docs/",
+  "title": "API v1 is removed",
+  "status": 404,
+  "detail": "This path was part of the Sourcify API v1. API v1 is removed. Use API v2.",
+  "replacements": {
+    "/files/..., /repository/contracts/...": "GET /v2/contract/{chainId}/{address}?fields=sources,metadata",
+    "/check-by-addresses, /check-all-by-addresses": "GET /v2/contract/{chainId}/
+  v2 /v2/contract/84532/:     {"matchId":"56733797","creationMatch":"match","runtimeMatch":"match","verifiedAt":"2026-10-22T20:48:40Z","match":"match","chainId":"84532","address":"0x3940F5F444B1ec69bb0245062796896135B8f948"}
+  v1 /files/any/84532/:       403
+  blockscout verified?:       {"conflicting_implementations":null,"creation_bytecode":"0x61014080604052346104fd57615fd6803803809161001d8285610827565b8339810190610100818303126104fd5780516001600160a01b038116908181036104fd5760208301516001600160a01b038116918282036104fd5760408501516001600160a01b03811693908481036104fd5761007c606088016curl: (23) Failure writing output to destination
+
+=== 0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8
+  v1 check-all-by-addresses: {
+  "type": "https://sourcify.dev/server/api-docs/",
+  "title": "API v1 is removed",
+  "status": 404,
+  "detail": "This path was part of the Sourcify API v1. API v1 is removed. Use API v2.",
+  "replacements": {
+    "/files/..., /repository/contracts/...": "GET /v2/contract/{chainId}/{address}?fields=sources,metadata",
+    "/check-by-addresses, /check-all-by-addresses": "GET /v2/contract/{chainId}/
+  v2 /v2/contract/84532/:     {"matchId":"56733798","creationMatch":"match","runtimeMatch":"match","verifiedAt":"2026-10-22T20:48:54Z","match":"match","chainId":"84532","address":"0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8"}
+  v1 /files/any/84532/:       403
+  blockscout verified?:       {"conflicting_implementations":null,"creation_bytecode":"0x60c080604052346103885760208161194a803803809161001f828561038c565b83398101031261038857516001600160a01b03811681036103885760409081519161004a818461038c565b601c83527f5772617070656420537065637472756d204167656e746963205553440000000060208401528051916curl: (23) Failure writing output to destination
+
+=== 0x384768E8b0b9d992EE5F23701D21B1b880495285
+  v1 check-all-by-addresses: {
+  "type": "https://sourcify.dev/server/api-docs/",
+  "title": "API v1 is removed",
+  "status": 404,
+  "detail": "This path was part of the Sourcify API v1. API v1 is removed. Use API v2.",
+  "replacements": {
+    "/files/..., /repository/contracts/...": "GET /v2/contract/{chainId}/{address}?fields=sources,metadata",
+    "/check-by-addresses, /check-all-by-addresses": "GET /v2/contract/{chainId}/
+  v2 /v2/contract/84532/:     {"matchId":"56733801","creationMatch":"match","runtimeMatch":"match","verifiedAt":"2026-10-22T20:49:10Z","match":"match","chainId":"84532","address":"0x384768E8b0b9d992EE5F23701D21B1b880495285"}
+  v1 /files/any/84532/:       403
+  blockscout verified?:       {"conflicting_implementations":null,"creation_bytecode":"0x6101208060405234610217576020816125e6803803809161002082856102f5565b83398101031261021757516001600160a01b0381169081810361021757608052604051637e062a3560e11b8152602081600481855afa908115610223575f916102b3575b5060a0526040516361d027b360e01b815260208curl: (23) Failure writing output to destination
+
+=== 0x7A4BB5720a158a22ae14297915aa21efbd1B6040
+  v1 check-all-by-addresses: {
+  "type": "https://sourcify.dev/server/api-docs/",
+  "title": "API v1 is removed",
+  "status": 404,
+  "detail": "This path was part of the Sourcify API v1. API v1 is removed. Use API v2.",
+  "replacements": {
+    "/files/..., /repository/contracts/...": "GET /v2/contract/{chainId}/{address}?fields=sources,metadata",
+    "/check-by-addresses, /check-all-by-addresses": "GET /v2/contract/{chainId}/
+  v2 /v2/contract/84532/:     {"matchId":"56733817","creationMatch":"match","runtimeMatch":"match","verifiedAt":"2026-10-22T20:49:27Z","match":"match","chainId":"84532","address":"0x7A4BB5720a158a22ae14297915aa21efbd1B6040"}
+  v1 /files/any/84532/:       403
+  blockscout verified?:       {"conflicting_implementations":null,"creation_bytecode":"0x6101c0806040523461048b5760c081611f22803803809161002082856104da565b83398101031261048b578051906001600160a01b038216820361048b576020810151916001600160a01b038316830361048b5761005f604083016104fd565b9161006c606082016104fd565b9260808201519462ffffff8curl: (23) Failure writing output to destination
+
+=== 0x1783d46C349224992A5A3ab4C84fc7EBf71c056e
+  v1 check-all-by-addresses: {
+  "type": "https://sourcify.dev/server/api-docs/",
+  "title": "API v1 is removed",
+  "status": 404,
+  "detail": "This path was part of the Sourcify API v1. API v1 is removed. Use API v2.",
+  "replacements": {
+    "/files/..., /repository/contracts/...": "GET /v2/contract/{chainId}/{address}?fields=sources,metadata",
+    "/check-by-addresses, /check-all-by-addresses": "GET /v2/contract/{chainId}/
+  v2 /v2/contract/84532/:     {"matchId":"56733820","creationMatch":"match","runtimeMatch":"match","verifiedAt":"2026-10-22T20:49:43Z","match":"match","chainId":"84532","address":"0x1783d46C349224992A5A3ab4C84fc7EBf71c056e"}
+  v1 /files/any/84532/:       403
+  blockscout verified?:       {"conflicting_implementations":null,"creation_bytecode":"0x61014080604052346101e3576020816114bb80380380916100208285610312565b8339810103126101e357516001600160a01b038116908181036101e357811561030357608052604051637e062a3560e11b8152602081600481855afa9081156101ef575f916102c1575b5060a0526040516338d52e0f60ecurl: (23) Failure writing output to destination
+
