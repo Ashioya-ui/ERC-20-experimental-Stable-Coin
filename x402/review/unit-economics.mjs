@@ -15,11 +15,26 @@ const rpc = (m, ...p) => import('../lib/cast.mjs').then(({ cast }) => cast(['rpc
 const agent = await createAgent({ rpcUrl: E.RPC_URL, facilitatorUrl: E.FACILITATOR_URL,
   signer: { kind: 'keystore', path: `${E.X402_WALLETS}/client`, passwordFile: E.AGENT_PASSWORD_FILE } });
 
+// Fees and yield are only comparable if the yield measured is ONE day's interest and not a
+// backlog. Surplus accumulates whenever nobody calls rebase, so drain it first: without this the
+// measurement silently reports whatever had piled up and the break-even comes out several times
+// too generous.
+async function drain(maxHours = 96) {
+  let n = 0;
+  while (n < maxHours && (await chain.uint(A.lens, 'distributable()(uint256)')) > 0n) {
+    await rpc('evm_increaseTime', 3600); await rpc('evm_mine');
+    try { await send(A.stabilizer, 'rebase()'); n++; } catch { break; }
+  }
+  return n;
+}
+
 const INVOICE = 50_000n;           // the price /api/v1/premium actually charges
 const N = 12;                      // payments in the measured window
 const bal = () => chain.uint(A.sUSD, 'balanceOf(address)(uint256)', [agent.address]);
 const usdc = () => chain.uint(A.usdc, 'balanceOf(address)(uint256)', [agent.address]);
 
+const drained = await drain();
+console.log(`drained ${drained} hourly rebase(s) of accumulated surplus first, so the day below is interest alone\n`);
 const t0 = await bal(), u0 = await usdc();
 let routed = 0, paidUsdc = 0;
 for (let i = 0; i < N; i++) {
