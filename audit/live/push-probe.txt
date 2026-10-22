@@ -1,0 +1,14 @@
+## git remote / config
+origin	https://github.com/Ashioya-ui/ERC-20-experimental-Stable-Coin (fetch)
+origin	https://github.com/Ashioya-ui/ERC-20-experimental-Stable-Coin (push)
+http.https://github.com/.extraheader AUTHORIZATION: <redacted>
+## shallow? true
+commit exit=0
+## push attempt to refs/heads/deployments/verify-probe-39855252056
+remote: 
+remote: Create a pull request for 'deployments/verify-probe-39855252056' on GitHub by visiting:        
+remote:      https://github.com/Ashioya-ui/ERC-20-experimental-Stable-Coin/pull/new/deployments/verify-probe-39855252056        
+remote: 
+To https://github.com/Ashioya-ui/ERC-20-experimental-Stable-Coin
+ * [new branch]      HEAD -> deployments/verify-probe-39855252056
+PUSH EXIT=0

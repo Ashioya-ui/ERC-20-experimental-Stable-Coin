@@ -1,0 +1,33 @@
+### audit-live-state, run 39855252056, 2026-10-22T21:12:15Z
+chain id = 84532   latest block = 48908332
+
+## code present
+SUSD 0x54De35aC7fd6756D49eA77ce7bbCd026faDC364a codesize=18391
+STAB 0x3940F5F444B1ec69bb0245062796896135B8f948 codesize=44093
+TREAS 0x1af57BA60edaEDF91F5925A3A79F346cb50F12a6 codesize=19801
+ORACLE 0xC7A4b9E9A7DAef0cF2bb531CCda1a3a4a744B4BB codesize=11143
+HOOK 0x7A4BB5720a158a22ae14297915aa21efbd1B6040 codesize=13223
+LENS 0x384768E8b0b9d992EE5F23701D21B1b880495285 codesize=17781
+WSUSD 0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8 codesize=10707
+ROUTER 0x1783d46C349224992A5A3ab4C84fc7EBf71c056e codesize=8933
+VA 0x040510c0C29440B7D7Ad7beE00DfeFA938aD9C0b codesize=10707
+VB 0x630DDc417485Dd54Df47CfFc75926101e9f4618d codesize=10707
+ADMIN 0x83927691e3c917273B790e6eeB0FD2bc125E371b codesize=3
+DEPLOYER 0x9CD82de3A24bc33D45897f72da5966D8920fAB48 codesize=3
+
+## stabilizer roles
+hasRole(ADMIN, deployer) = false 
+hasRole(GUARD, deployer) = false 
+hasRole(ADMIN, admin) = true 
+hasRole(GUARD, admin) = true 
+hasRole(ADMIN, stabilizer) = false 
+defaultAdmin = 0x83927691e3c917273B790e6eeB0FD2bc125E371b 
+owner = 0x83927691e3c917273B790e6eeB0FD2bc125E371b 
+pendingDefaultAdmin = 0x0000000000000000000000000000000000000000 0 
+defaultAdminDelay = 259200 [2.592e5] 
+pendingDefaultAdminDelay = 0 0 
+ADMIN_TRANSFER_DELAY = 259200 [2.592e5] 
+getRoleAdmin(GUARD) = 0x0000000000000000000000000000000000000000000000000000000000000000 
+
+## every RoleGranted / RoleRevoked ever emitted by the stabilizer
+Error: HTTP error 413 with body: {"jsonrpc":"2.0","id":0,"error":{"code":-32614,"message":"eth_getLogs is limited to a 200 range"}}
