@@ -25,6 +25,18 @@ v4's PoolManager, then used to pay two real x402 invoices on the public chain. E
 The hook address ends `6040` because Uniswap v4 encodes a hook's permissions in its address; it
 was CREATE2-mined to land on exactly `beforeInitialize | afterSwap` on a live network.
 
+**Source is verified.** All eight contracts are published on Sourcify, creation *and* runtime
+bytecode matched, verified 2026-10-22T20:47:48Z (`verify-sepolia.yml`; results committed per run
+to `deployments/84532-verification.txt`). Readable at
+`https://base-sepolia.blockscout.com/address/<address>?tab=contract` and queryable at
+`https://sourcify.dev/server/v2/contract/84532/<address>`.
+
+Sourcify reports `match`, not `exact_match`, and that is the ceiling for this build:
+`foundry.toml` sets `bytecode_hash = "none"`, so the deployed code carries no metadata hash to
+pin an exact match to. The source still compiles to the deployed bytecode, which is what
+verification is for. BaseScan verification needs an Etherscan API key and runs from the same
+workflow once one exists.
+
 The run paid an sUSD-priced invoice and a USDC-priced invoice routed out of sUSD. The agent held
 no ETH: the facilitator submitted both and paid the gas. The whole deployment, the router, the
 facilitator's gas float and both settlements came out of a single 0.01 test-ETH faucet drip.
