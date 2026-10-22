@@ -39,7 +39,11 @@ export class PolicyError extends Error {
 }
 
 const SCALE = 10n ** 12n; // sUSD has 18 decimals, USDC 6
-const MODES = ['sUSD', 'router', 'USDC', 'convert'];
+// Preference order. USDC the agent already holds is spent before the router is used: that
+// change is idle, non-earning money, and spending it costs no redeem fee, whereas routing
+// redeems more of the earning balance and hands back yet more idle change. Routing comes before
+// convert because it is one transaction instead of two (A-04).
+const MODES = ['sUSD', 'USDC', 'router', 'convert'];
 
 /** "1.25" (US dollars) -> 1_250_000n (6 decimals). */
 export function parseUsd(s) {

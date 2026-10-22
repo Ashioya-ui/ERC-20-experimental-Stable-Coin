@@ -308,6 +308,25 @@ describe('x402 rail', { skip }, () => {
     assert.equal((await w.post('/verify', { x402Version: 2, paymentPayload: pp, paymentRequirements: o.r })).isValid, true);
   });
 
+  test('idle USDC is spent before redeeming more sUSD, so micropayment change does not strand (A-04)', async () => {
+    // Holding both, a USDC-priced invoice must come out of the USDC the agent already has:
+    // that costs no redeem fee and leaves the earning balance untouched.
+    const a = await w.agent({ sUSD: 10_000_000n, usdc: 1_000_000n });
+    const s0 = await w.bal.sUSD(a.address);
+    const u0 = await w.bal.usdc(a.address);
+    const r = await a.pay(url('/api/v1/premium'));
+    assert.equal(r.paid, true, r.error);
+    assert.equal(r.mode, 'USDC', 'spent idle USDC rather than routing');
+    assert.equal(u0 - (await w.bal.usdc(a.address)), PREMIUM, 'exactly the price, no fee');
+    assert.equal(await w.bal.sUSD(a.address), s0, 'the earning balance was not touched');
+
+    // With no USDC, the same invoice still routes out of sUSD.
+    const b = await w.agent({ sUSD: 10_000_000n });
+    const r2 = await b.pay(url('/api/v1/premium'));
+    assert.equal(r2.paid, true, r2.error);
+    assert.equal(r2.mode, 'router');
+  });
+
   test('a merchant-supplied router address is ignored by the agent', async () => {
     const a = await w.agent({ sUSD: 1_000_000n });
     const premium = decode((await fetch(url('/api/v1/premium'))).headers.get(HEADER.required)).accepts[0];
