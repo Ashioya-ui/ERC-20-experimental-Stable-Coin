@@ -23,6 +23,10 @@ import { loadDeployment } from './lib/config.mjs';
 import { X402_VERSION, lc, isAddress, isBytes32, isHex, isUint, readJson, sendJson } from './lib/protocol.mjs';
 
 const SKEW = 6n; // seconds of clock slack allowed beyond maxTimeoutSeconds
+// A requirement comes from the resource server, which is not trusted: its maxTimeoutSeconds is
+// validated like any other input, and capped, so a hostile or careless merchant cannot talk the
+// facilitator into accepting an authorization that stays spendable for days (A-02).
+const MAX_TIMEOUT = 3600n;
 
 export async function createFacilitator({ rpcUrl, signer, chain: chainOverride }) {
   const chain = chainOverride || makeChain(rpcUrl); // tests may pass a wrapped chain
@@ -113,7 +117,9 @@ export async function createFacilitator({ rpcUrl, signer, chain: chainOverride }
     const now = await chain.timestamp();
     if (BigInt(auth.validAfter) > now) return bad('invalid_exact_evm_payload_authorization_valid_after', payer);
     if (!(now + SKEW < BigInt(auth.validBefore))) return bad('invalid_exact_evm_payload_authorization_valid_before', payer);
-    const timeout = BigInt(r.maxTimeoutSeconds ?? 60);
+    const rawTimeout = r.maxTimeoutSeconds ?? 60;
+    if (!isUint(rawTimeout)) return bad('invalid_payment_requirements', payer);
+    const timeout = BigInt(rawTimeout) > MAX_TIMEOUT ? MAX_TIMEOUT : BigInt(rawTimeout);
     if (BigInt(auth.validBefore) > now + timeout + SKEW) {
       return bad('invalid_exact_evm_payload_authorization_valid_before', payer);
     }

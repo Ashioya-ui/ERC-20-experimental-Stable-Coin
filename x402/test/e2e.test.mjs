@@ -281,6 +281,33 @@ describe('x402 rail', { skip }, () => {
     assert.equal((await w.post('/verify', { x402Version: 2, paymentPayload: { ...pp, accepted: r }, paymentRequirements: r })).invalidReason, 'invalid_network');
   });
 
+  test('a hostile maxTimeoutSeconds is rejected cleanly, never a 500, and cannot stretch the window (A-02)', async () => {
+    const a = await w.agent({ sUSD: 10_000_000n });
+    const { paymentPayload: pp, o } = await w.signedFor(a, url('/api/v1/compute'));
+    for (const t of ['abc', 1.5, -1, '1e9', {}, [], '0x3c']) {
+      const r = { ...o.r, maxTimeoutSeconds: t };
+      const v = await w.post('/verify', { x402Version: 2, paymentPayload: { ...pp, accepted: r }, paymentRequirements: r });
+      assert.equal(v.isValid, false, `maxTimeoutSeconds=${JSON.stringify(t)}`);
+      assert.ok(v.invalidReason, `no invalidReason for ${JSON.stringify(t)} (a 500 leaked instead)`);
+    }
+    // null and undefined mean "not specified", so they fall back to the 60 s default.
+    for (const t of [null, undefined]) {
+      const r = { ...o.r, maxTimeoutSeconds: t };
+      assert.equal((await w.post('/verify', { x402Version: 2, paymentPayload: { ...pp, accepted: r }, paymentRequirements: r })).isValid, true);
+    }
+    // An absurd timeout must not let a far-future authorization through: it is capped.
+    const far = JSON.parse(JSON.stringify(pp));
+    const now = await w.now();
+    far.payload.authorization.validBefore = String(now + 86_400n);
+    far.payload.authorization.nonce = '0x' + randomBytes(32).toString('hex');
+    far.payload.signature = await w.signAuthorization(a.key, { token: w.A.sUSD, message: far.payload.authorization });
+    const wide = { ...o.r, maxTimeoutSeconds: '99999999999' };
+    const v = await w.post('/verify', { x402Version: 2, paymentPayload: { ...far, accepted: wide }, paymentRequirements: wide });
+    assert.equal(v.invalidReason, 'invalid_exact_evm_payload_authorization_valid_before');
+    // The honest requirement still verifies.
+    assert.equal((await w.post('/verify', { x402Version: 2, paymentPayload: pp, paymentRequirements: o.r })).isValid, true);
+  });
+
   test('a merchant-supplied router address is ignored by the agent', async () => {
     const a = await w.agent({ sUSD: 1_000_000n });
     const premium = decode((await fetch(url('/api/v1/premium'))).headers.get(HEADER.required)).accepts[0];
