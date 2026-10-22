@@ -1,8 +1,7 @@
 name: audit-live-state
 
-# Independent audit probe: read-only inspection of the live Base Sepolia deployment, plus a
-# diagnosis of why verify-sepolia.yml's "Commit the verification results" step fails.
-# Holds no secrets. RUN: push to the `audit-live-state` branch.
+# Independent audit probe: read-only inspection of the live Base Sepolia deployment and of
+# what Sourcify actually holds. Holds no secrets. RUN: push to the `audit-live-state` branch.
 
 on:
   push:
@@ -34,170 +33,54 @@ jobs:
         with:
           version: v1.5.1
 
-      - name: Read every role, parameter and balance off the live chain
-        run: |
-          set -uo pipefail
-          D=deployments/84532.json
-          SUSD=$(jq -r .sUSD $D);        STAB=$(jq -r .stabilizer $D)
-          TREAS=$(jq -r .treasury $D);   ORACLE=$(jq -r .oracle $D)
-          HOOK=$(jq -r .hook $D);        LENS=$(jq -r .lens $D)
-          WSUSD=$(jq -r .wsUSD $D);      USDC=$(jq -r .usdc $D)
-          VA=$(jq -r .vault $D);         VB=$(jq -r .fallbackVault $D)
-          DEPLOYER=$(jq -r .deployer $D);ADMIN=$(jq -r .admin $D)
-          ROUTER=$(jq -r .router deployments/84532-router.json)
-          PM=$(jq -r .poolManager $D)
-          ADMIN_ROLE=0x0000000000000000000000000000000000000000000000000000000000000000
-          GUARD_ROLE=0x55435dd261a4b9b3364963f7738a7a662ad9c84396d64be3365284bb7f0a5041
-          q() { echo -n "$1 = "; cast call "$2" "$3" "${@:4}" --rpc-url "$RPC" 2>&1 | tr '\n' ' '; echo; }
+      - name: Live chain state and event history
+        run: bash audit/probe/probe2.sh > live-state.txt 2>&1 || true; tail -5 live-state.txt
 
-          exec > >(tee live-state.txt) 2>&1
-          echo "### audit-live-state, run ${{ github.run_id }}, $(date -u +%FT%TZ)"
-          echo "chain id = $(cast chain-id --rpc-url $RPC)   latest block = $(cast block-number --rpc-url $RPC)"
-          echo
-          echo "## code present"
-          for n in SUSD STAB TREAS ORACLE HOOK LENS WSUSD ROUTER VA VB ADMIN DEPLOYER; do
-            a=$(eval echo \$$n); echo "$n $a codesize=$(cast code "$a" --rpc-url "$RPC" | wc -c)"
-          done
-          echo
-          echo "## stabilizer roles"
-          q "hasRole(ADMIN, deployer)"   "$STAB" 'hasRole(bytes32,address)(bool)' "$ADMIN_ROLE" "$DEPLOYER"
-          q "hasRole(GUARD, deployer)"   "$STAB" 'hasRole(bytes32,address)(bool)' "$GUARD_ROLE" "$DEPLOYER"
-          q "hasRole(ADMIN, admin)"      "$STAB" 'hasRole(bytes32,address)(bool)' "$ADMIN_ROLE" "$ADMIN"
-          q "hasRole(GUARD, admin)"      "$STAB" 'hasRole(bytes32,address)(bool)' "$GUARD_ROLE" "$ADMIN"
-          q "hasRole(ADMIN, stabilizer)" "$STAB" 'hasRole(bytes32,address)(bool)' "$ADMIN_ROLE" "$STAB"
-          q "defaultAdmin"               "$STAB" 'defaultAdmin()(address)'
-          q "owner"                      "$STAB" 'owner()(address)'
-          q "pendingDefaultAdmin"        "$STAB" 'pendingDefaultAdmin()(address,uint48)'
-          q "defaultAdminDelay"          "$STAB" 'defaultAdminDelay()(uint48)'
-          q "pendingDefaultAdminDelay"   "$STAB" 'pendingDefaultAdminDelay()(uint48,uint48)'
-          q "ADMIN_TRANSFER_DELAY"       "$STAB" 'ADMIN_TRANSFER_DELAY()(uint48)'
-          q "getRoleAdmin(GUARD)"        "$STAB" 'getRoleAdmin(bytes32)(bytes32)' "$GUARD_ROLE"
-          echo
-          echo "## every RoleGranted / RoleRevoked ever emitted by the stabilizer"
-          cast logs --from-block 48880000 --to-block latest --address "$STAB" \
-            'RoleGranted(bytes32,address,address)' --rpc-url "$RPC" | sed -n '1,200p'
-          echo "--- revoked ---"
-          cast logs --from-block 48880000 --to-block latest --address "$STAB" \
-            'RoleRevoked(bytes32,address,address)' --rpc-url "$RPC" | sed -n '1,200p'
-          echo
-          echo "## stabilizer state"
-          q "paused"            "$STAB" 'paused()(bool)'
-          q "supplyCap"         "$STAB" 'supplyCap()(uint256)'
-          q "bootstrapCap"      "$STAB" 'bootstrapCap()(uint256)'
-          q "protocolCapital"   "$STAB" 'protocolCapital()(uint256)'
-          q "reserveValue"      "$STAB" 'reserveValue()(uint256)'
-          q "allowedVaults"     "$STAB" 'allowedVaults()(address[])'
-          q "pendingVault"      "$STAB" 'pendingVault()(address)'
-          q "pendingVaultEta"   "$STAB" 'pendingVaultEta()(uint64)'
-          q "token"             "$STAB" 'token()(address)'
-          q "treasury"          "$STAB" 'treasury()(address)'
-          q "oracle"            "$STAB" 'oracle()(address)'
-          q "asset"             "$STAB" 'asset()(address)'
-          q "minAmount"         "$STAB" 'minAmount()(uint256)'
-          q "epochSupply"       "$STAB" 'epochSupply()(uint128)'
-          q "mintedInEpoch"     "$STAB" 'mintedInEpoch()(uint128)'
-          echo
-          echo "## token"
-          q "totalSupply"  "$SUSD" 'totalSupply()(uint256)'
-          q "totalShares"  "$SUSD" 'totalShares()(uint256)'
-          q "index"        "$SUSD" 'index()(uint256)'
-          q "stabilizer"   "$SUSD" 'stabilizer()(address)'
-          q "bal(deployer)" "$SUSD" 'balanceOf(address)(uint256)' "$DEPLOYER"
-          q "bal(admin)"    "$SUSD" 'balanceOf(address)(uint256)' "$ADMIN"
-          q "bal(router)"   "$SUSD" 'balanceOf(address)(uint256)' "$ROUTER"
-          echo
-          echo "## treasury"
-          q "stabilizer"   "$TREAS" 'stabilizer()(address)'
-          q "vault"        "$TREAS" 'vault()(address)'
-          q "legacyVault"  "$TREAS" 'legacyVault()(address)'
-          q "asset"        "$TREAS" 'asset()(address)'
-          q "reserveAssets" "$TREAS" 'reserveAssets()(uint256)'
-          q "idleAssets"   "$TREAS" 'idleAssets()(uint256)'
-          q "liquidAssets" "$TREAS" 'liquidAssets()(uint256)'
-          q "liquidityBufferBps" "$TREAS" 'liquidityBufferBps()(uint256)'
-          echo
-          echo "## oracle / hook / lens / wsUSD / router"
-          q "oracle.hook"     "$ORACLE" 'hook()(address)'
-          q "smoothedEntropy" "$ORACLE" 'smoothedEntropy()(uint256)'
-          q "filled"          "$ORACLE" 'filled()(uint256)'
-          q "WINDOW"          "$ORACLE" 'WINDOW()(uint256)'
-          q "minObservation"  "$ORACLE" 'minObservation()(uint256)'
-          q "staleAfter"      "$ORACLE" 'staleAfter()(uint256)'
-          q "hook.oracle"     "$HOOK" 'oracle()(address)'
-          q "hook.poolManager" "$HOOK" 'poolManager()(address)'
-          q "hook.allowedPoolId" "$HOOK" 'allowedPoolId()(bytes32)'
-          q "lens.stabilizer" "$LENS" 'stabilizer()(address)'
-          q "lens.reserveRatio" "$LENS" 'reserveRatio()(uint256)'
-          q "wsUSD.asset"     "$WSUSD" 'asset()(address)'
-          q "wsUSD.totalAssets" "$WSUSD" 'totalAssets()(uint256)'
-          q "wsUSD.totalSupply" "$WSUSD" 'totalSupply()(uint256)'
-          q "router.stabilizer" "$ROUTER" 'stabilizer()(address)'
-          q "router.sUSD"     "$ROUTER" 'sUSD()(address)'
-          q "router.usdc"     "$ROUTER" 'usdc()(address)'
-          q "router.treasury" "$ROUTER" 'treasury()(address)'
-          q "router.scale"    "$ROUTER" 'scale()(uint256)'
-          q "routerUSDCbal"   "$USDC" 'balanceOf(address)(uint256)' "$ROUTER"
-          echo
-          echo "## testnet vaults (anyone may deposit: they are plain ERC-4626)"
-          for V in "$VA" "$VB"; do
-            q "vault $V name"        "$V" 'name()(string)'
-            q "vault $V totalAssets" "$V" 'totalAssets()(uint256)'
-            q "vault $V totalSupply" "$V" 'totalSupply()(uint256)'
-            q "vault $V treasuryShares" "$V" 'balanceOf(address)(uint256)' "$TREAS"
-          done
-          echo
-          echo "## pool"
-          q "poolLiquidity" "$PM" 'getLiquidity(bytes32)(uint128)' "$(jq -r .poolId $D)"
-          echo
-          echo "## PROOF OF THE TWO x402 PAYMENTS: router PaidWithSUSD logs"
-          cast logs --from-block 48880000 --to-block latest --address "$ROUTER" \
-            'PaidWithSUSD(address,address,bytes32,uint256,uint256,uint256,uint256)' --rpc-url "$RPC" | sed -n '1,120p'
-          echo "## stabilizer Minted logs"
-          cast logs --from-block 48880000 --to-block latest --address "$STAB" \
-            'Minted(address,address,uint256,uint256,uint256,uint256)' --rpc-url "$RPC" | sed -n '1,200p'
-          echo "## stabilizer Redeemed logs"
-          cast logs --from-block 48880000 --to-block latest --address "$STAB" \
-            'Redeemed(address,address,uint256,uint256,uint256,uint256)' --rpc-url "$RPC" | sed -n '1,200p'
-          echo "## sUSD AuthorizationUsed logs (EIP-3009 settlements)"
-          cast logs --from-block 48880000 --to-block latest --address "$SUSD" \
-            'AuthorizationUsed(address,bytes32)' --rpc-url "$RPC" | sed -n '1,200p'
-          echo "## Rebased logs"
-          cast logs --from-block 48880000 --to-block latest --address "$SUSD" \
-            'Rebased(uint256,uint256,uint256)' --rpc-url "$RPC" | sed -n '1,120p'
-          echo "END-OF-STATE"
-          sleep 2
+      - name: What Sourcify and Blockscout actually hold
+        run: bash audit/probe/sourcify.sh > sourcify-truth.txt 2>&1 || true; cat sourcify-truth.txt
 
       - name: PostDeployCheck against the config AS COMMITTED
         run: |
-          set -uo pipefail
           forge script script/PostDeployCheck.s.sol --rpc-url "$RPC" > pdc-as-committed.txt 2>&1
           echo "exit=$?" >> pdc-as-committed.txt
-          tail -40 pdc-as-committed.txt
+          tail -30 pdc-as-committed.txt
 
       - name: PostDeployCheck with roles.admin repaired from the deployment record
         run: |
-          set -uo pipefail
-          mkdir -p /tmp/cfg
           jq --arg a "$(jq -r .admin deployments/84532.json)" '.roles.admin=$a' config/84532.json > config/84532.repaired.json
           SPECTRUM_CONFIG=config/84532.repaired.json \
             forge script script/PostDeployCheck.s.sol --rpc-url "$RPC" > pdc-repaired.txt 2>&1
           echo "exit=$?" >> pdc-repaired.txt
           tail -60 pdc-repaired.txt
 
-      - name: Can an outsider still mint? (static call as a random address)
+      - name: Attack probes against the live instance (eth_call only, nothing is sent)
         run: |
-          set -uo pipefail
           D=deployments/84532.json
-          STAB=$(jq -r .stabilizer $D)
-          { echo "## mint(1e6) simulated from a random unfunded address (expect allowance/balance revert, not a cap revert)"
-            cast call "$STAB" 'mint(uint256,address,uint256)(uint256)' 1000000 0x000000000000000000000000000000000000beef 0 \
-              --from 0x00000000000000000000000000000000DeaDBeef --rpc-url "$RPC" 2>&1 | head -5
-            echo "## pause() simulated from the deployer (expect AccessControl revert)"
-            cast call "$STAB" 'pause()' --from "$(jq -r .deployer $D)" --rpc-url "$RPC" 2>&1 | head -5
-            echo "## setSupplyCap(0) simulated from the deployer (expect AccessControl revert)"
-            cast call "$STAB" 'setSupplyCap(uint256)' 0 --from "$(jq -r .deployer $D)" --rpc-url "$RPC" 2>&1 | head -5
-            echo "## redeem simulated while paused? paused ="
-            cast call "$STAB" 'paused()(bool)' --rpc-url "$RPC" 2>&1 | head -2
+          STAB=$(jq -r .stabilizer $D); DEP=$(jq -r .deployer $D); ADM=$(jq -r .admin $D)
+          TRE=$(jq -r .treasury $D);    VA=$(jq -r .vault $D); USDC=$(jq -r .usdc $D)
+          { echo "## pause() from the deployer (want: AccessControlUnauthorizedAccount)"
+            cast call "$STAB" 'pause()' --from "$DEP" --rpc-url "$RPC" 2>&1 | head -3
+            echo "## setSupplyCap(uint256 max) from the deployer (want: revert)"
+            cast call "$STAB" 'setSupplyCap(uint256)' 115792089237316195423570985008687907853269984665640564039457584007913129639935 --from "$DEP" --rpc-url "$RPC" 2>&1 | head -3
+            echo "## proposeVault from the deployer (want: revert)"
+            cast call "$STAB" 'proposeVault(address)' "$VA" --from "$DEP" --rpc-url "$RPC" 2>&1 | head -3
+            echo "## pause() from the admin (want: success -> admin CAN pause)"
+            cast call "$STAB" 'pause()' --from "$ADM" --rpc-url "$RPC" 2>&1 | head -3
+            echo "## setSupplyCap(0) from the admin (want: success -> admin CAN freeze mints)"
+            cast call "$STAB" 'setSupplyCap(uint256)' 0 --from "$ADM" --rpc-url "$RPC" 2>&1 | head -3
+            echo "## treasury.withdrawReserve from a stranger (want: NotStabilizer)"
+            cast call "$TRE" 'withdrawReserve(uint256,address)(uint256)' 1 0x00000000000000000000000000000000DeaDBeef --from 0x00000000000000000000000000000000DeaDBeef --rpc-url "$RPC" 2>&1 | head -3
+            echo "## token.mint from a stranger (want: NotStabilizer)"
+            cast call "$(jq -r .sUSD $D)" 'mint(address,uint256)(uint256)' 0x00000000000000000000000000000000DeaDBeef 1000000000000000000 --from 0x00000000000000000000000000000000DeaDBeef --rpc-url "$RPC" 2>&1 | head -3
+            echo "## rebase() from a stranger (permissionless by design)"
+            cast call "$STAB" 'rebase()(bool)' --from 0x00000000000000000000000000000000DeaDBeef --rpc-url "$RPC" 2>&1 | head -3
+            echo "## sync() from a stranger (permissionless by design)"
+            cast call "$STAB" 'sync()(bool)' --from 0x00000000000000000000000000000000DeaDBeef --rpc-url "$RPC" 2>&1 | head -3
+            echo "## deployer USDC / ETH left on the CI key"
+            cast call "$USDC" 'balanceOf(address)(uint256)' "$DEP" --rpc-url "$RPC" 2>&1 | head -2
+            cast balance "$DEP" --rpc-url "$RPC" 2>&1 | head -2
+            echo "## deployer tx count (nonce)"
+            cast nonce "$DEP" --rpc-url "$RPC" 2>&1 | head -2
           } > attack-probes.txt 2>&1
           cat attack-probes.txt
 
@@ -207,12 +90,13 @@ jobs:
           name: audit-live-state
           path: |
             live-state.txt
+            sourcify-truth.txt
             pdc-as-committed.txt
             pdc-repaired.txt
             attack-probes.txt
 
-  diagnose-and-publish:
-    name: Diagnose the verify-sepolia push failure and publish
+  publish:
+    name: Publish the findings to a branch
     needs: inspect
     if: always()
     runs-on: ubuntu-latest
@@ -220,48 +104,20 @@ jobs:
     permissions:
       contents: write
     steps:
-      # Checked out exactly as verify-sepolia.yml does it, so the push probe below is a
-      # faithful replica of the step that fails there.
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          submodules: recursive
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         if: always()
         continue-on-error: true
         with:
           name: audit-live-state
           path: incoming
-
-      - name: Replica of verify-sepolia's commit-and-push, with the error captured
-        run: |
-          set -uo pipefail
-          : > push-probe.txt
-          echo "## git remote / config" >> push-probe.txt
-          git remote -v >> push-probe.txt 2>&1
-          git config --get-regexp '^http\.' | sed 's#AUTHORIZATION:.*#AUTHORIZATION: <redacted>#' >> push-probe.txt 2>&1 || echo "(no http.* config -> NO CREDENTIAL PERSISTED)" >> push-probe.txt
-          echo "## shallow? $(git rev-parse --is-shallow-repository)" >> push-probe.txt
-          mkdir -p deployments
-          echo "probe ${{ github.run_id }}" > deployments/84532-verification.txt
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f deployments/84532-verification.txt
-          git commit -q -m "probe: replica of verify-sepolia commit from run ${{ github.run_id }}" >> push-probe.txt 2>&1
-          echo "commit exit=$?" >> push-probe.txt
-          echo "## push attempt to refs/heads/deployments/verify-probe-${{ github.run_id }}" >> push-probe.txt
-          git push origin "HEAD:refs/heads/deployments/verify-probe-${{ github.run_id }}" >> push-probe.txt 2>&1
-          echo "PUSH EXIT=$?" >> push-probe.txt
-          sed -i 's#x-access-token:[^@]*@#x-access-token:<redacted>@#g' push-probe.txt
-          cat push-probe.txt
-
-      - name: Publish everything to a branch
+      - name: Commit and push
         if: always()
         run: |
-          set -uo pipefail
           mkdir -p audit/live
           cp -f incoming/*.txt audit/live/ 2>/dev/null || true
-          cp -f push-probe.txt audit/live/ 2>/dev/null || true
-          ls -la audit/live || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -f audit/live
-          git commit -q -m "audit: live Base Sepolia state and push diagnosis from run ${{ github.run_id }}" || true
-          git push origin "HEAD:refs/heads/deployments/audit-${{ github.run_id }}" 
-          echo "PUBLISH EXIT=$?"
+          git commit -q -m "audit: live Base Sepolia state, run ${{ github.run_id }}" || true
+          git push origin "HEAD:refs/heads/deployments/audit-${{ github.run_id }}"
