@@ -20,7 +20,7 @@
 import http from 'node:http';
 import { cast, first, makeChain, parseSigner, signerAddress, UnconfirmedError } from './lib/cast.mjs';
 import { loadDeployment } from './lib/config.mjs';
-import { X402_VERSION, lc, isAddress, isBytes32, isHex, isUint, readJson, sendJson } from './lib/protocol.mjs';
+import { X402_VERSION, lc, isAddress, isBytes32, isHex, isUint, readJson, sendJson, closeAfter } from './lib/protocol.mjs';
 
 const SKEW = 6n; // seconds of clock slack allowed beyond maxTimeoutSeconds
 // A requirement comes from the resource server, which is not trusted: its maxTimeoutSeconds is
@@ -265,6 +265,12 @@ export async function createFacilitator({ rpcUrl, signer, chain: chainOverride, 
     const work = prior
       ? (async () => {
           // A transaction was sent for this request but its receipt was lost: look again.
+          // Unless we never learned its hash -- an ambiguous broadcast, where the node may have
+          // accepted the transaction before the send call failed. There is nothing to look up,
+          // and the one thing that must not happen is a retry broadcasting it again, so the
+          // record is kept and the answer stays unconfirmed until an operator reconciles it
+          // against the facilitator's account nonce.
+          if (!prior.hash) return fail('settlement_unconfirmed', prior.payer);
           let receipt;
           try {
             receipt = await chain.receipt(prior.hash);
@@ -372,6 +378,7 @@ export async function createFacilitator({ rpcUrl, signer, chain: chainOverride, 
       // rejection, and Node 22 ends the process on one, so a single awkward request would take
       // the facilitator down for everybody.
       try {
+        if (e.status === 413) closeAfter(req, res); // answer first, then close the connection
         if (!res.headersSent) sendJson(res, e.status || 500, { error: e.status ? e.message : 'internal error' });
         else if (!res.writableEnded) res.end();
       } catch {

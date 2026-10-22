@@ -63,12 +63,19 @@ export function sameRequirement(a, b) {
 export function readJson(req, limit = 64 * 1024) {
   return new Promise((resolve, reject) => {
     let size = 0;
+    let over = false;
     const chunks = [];
     req.on('data', (c) => {
+      if (over) return; // already rejected: drop the rest rather than buffer it
       size += c.length;
       if (size > limit) {
+        // Do NOT destroy the socket here. Destroying in the same tick as the rejection means
+        // the handler writes 413 to a dead socket and the caller sees ECONNRESET instead of the
+        // status, which is indistinguishable from the server having fallen over. Stop buffering,
+        // let the handler answer, and close once the answer is out (see closeAfter).
+        over = true;
+        chunks.length = 0;
         reject(Object.assign(new Error('body too large'), { status: 413 }));
-        req.destroy();
       } else chunks.push(c);
     });
     req.on('end', () => {
@@ -80,6 +87,19 @@ export function readJson(req, limit = 64 * 1024) {
     });
     req.on('error', reject);
   });
+}
+
+/**
+ * End `req` once `res` has been flushed. For a request whose body was refused: the caller gets
+ * its status, and only then is the connection closed, so an attacker still uploading does not
+ * get to keep the socket either.
+ */
+export function closeAfter(req, res) {
+  const shut = () => {
+    if (!req.destroyed) req.destroy();
+  };
+  res.on('finish', shut);
+  res.on('close', shut);
 }
 
 export function sendJson(res, status, body, headers = {}) {

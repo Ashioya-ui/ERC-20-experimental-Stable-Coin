@@ -226,12 +226,20 @@ exit code checked), `the server keeps serving after an awkward request`.
 
 ## Observations not patched
 
-- **An oversized body gets no answer.** `readJson` calls `req.destroy()` in the same tick as the
+> **Both of the defects below were patched after this report was written** (47 tests, see
+> `an oversized body gets a 413, not a reset connection` and the two ambiguous-broadcast tests).
+> The two SOUND entries that follow them stand as written.
+
+- **An oversized body gets no answer.** *(PATCHED.)* `readJson` calls `req.destroy()` in the same tick as the
   413 rejection, so the handler writes the response to a dead socket and the client sees
   `ECONNRESET`, not `413`. Confirmed with a raw socket. Cosmetic, no state consequence; fixing it
   properly means either draining an attacker's body or closing the connection deliberately, and
   neither belongs in a state-audit patch.
-- **An ambiguous broadcast is still reported as unsent.** If `cast send --async` fails *after* the
+- **An ambiguous broadcast is still reported as unsent.** *(PATCHED: `makeChain.send` now reads
+  the sender's nonce before broadcasting and again if the call fails. If it advanced — or cannot
+  be read — the transaction may exist, so it raises `UnconfirmedError` with an empty hash and the
+  facilitator answers `settlement_unconfirmed` and refuses to send again. Only a nonce that
+  definitely did not move is reported as a plain failure.)* If `cast send --async` fails *after* the
   node accepted the transaction, `makeChain.send` throws a `CastError`, not an `UnconfirmedError`,
   and `settle` answers `unexpected_settle_error` with no hash — a transaction may exist that the
   facilitator has no record of. Unlike §5 this cannot be fixed from the error alone; it needs a
