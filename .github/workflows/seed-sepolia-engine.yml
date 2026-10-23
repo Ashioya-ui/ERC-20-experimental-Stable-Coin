@@ -99,7 +99,8 @@ jobs:
           # wsUSD minted is the swap inventory (one leg).
           FEE=$(jq -r .poolFee "deployments/$CHAIN_ID.json")
           SS="${SEED_SINGLE_SIDED:-true}"
-          NEED=$(python3 -c 'm=$MINOBS;s=$HAVE;f=$FEE;n=${SEED_SWAPS:-9};ss="$SS"=="true";l=m*101//100;lu=l//10**12;r=lu*f*n*2//10**6+10000;b=s-r-64 if s>r+64 else 0;p=min((b-lu)//2 if b>lu else 0,lu);w=0 if ss else p*10**12;mt=(l+w)//10**12+2;lp=(s-mt-r if ss and s>mt+lu+r else (lu+1 if ss else p+1));print(mt+lp+r)')
+          NEED=$(MINOBS="$MINOBS" HAVE="$HAVE" FEE="$FEE" SW="${SEED_SWAPS:-9}" SS="$SS" \
+            python3 -c 'import os; m=int(os.environ["MINOBS"]);s=int(os.environ["HAVE"]);f=int(os.environ["FEE"]); n=int(os.environ["SW"]);ss=os.environ["SS"]=="true"; l=m*101//100;lu=l//10**12;r=lu*f*n*2//10**6+10000; b=s-r-64 if s>r+64 else 0; p=min((b-lu)//2 if b>lu else 0,lu); w=0 if ss else p*10**12; mt=(l+w)//10**12+2; lp=(s-mt-r if ss and s>mt+lu+r else (lu+1 if ss else p+1)); print(mt+lp+r)')
           SHORT=$(( NEED > HAVE ? NEED - HAVE : 0 ))
           { echo "## Seeding the spectral engine"; echo ""
             echo "| | USDC (6dp) |"; echo "|---|---|"
@@ -225,7 +226,8 @@ jobs:
           SS=${SEED_SINGLE_SIDED:-true}
           FEE=$(jq -r .poolFee "$D")
           HAVE=${HAVE:-0}
-          NEED=$(python3 -c 'm=$MINOBS;s=$HAVE;f=$FEE;n=${SEED_SWAPS:-9};ss="$SS"=="true";l=m*101//100;lu=l//10**12;r=lu*f*n*2//10**6+10000;b=s-r-64 if s>r+64 else 0;p=min((b-lu)//2 if b>lu else 0,lu);w=0 if ss else p*10**12;mt=(l+w)//10**12+2;lp=(s-mt-r if ss and s>mt+lu+r else (lu+1 if ss else p+1));print(mt+lp+r)')
+          NEED=$(MINOBS="$MINOBS" HAVE="$HAVE" FEE="$FEE" SW="${SEED_SWAPS:-9}" SS="$SS" \
+            python3 -c 'import os; m=int(os.environ["MINOBS"]);s=int(os.environ["HAVE"]);f=int(os.environ["FEE"]); n=int(os.environ["SW"]);ss=os.environ["SS"]=="true"; l=m*101//100;lu=l//10**12;r=lu*f*n*2//10**6+10000; b=s-r-64 if s>r+64 else 0; p=min((b-lu)//2 if b>lu else 0,lu); w=0 if ss else p*10**12; mt=(l+w)//10**12+2; lp=(s-mt-r if ss and s>mt+lu+r else (lu+1 if ss else p+1)); print(mt+lp+r)')
           mkdir -p deployments
           { echo "# Spectral engine state on Base Sepolia, run ${{ github.run_id }}"
             echo "oracle.filled          $(g "$O" 'filled()(uint8)')  of 8"
