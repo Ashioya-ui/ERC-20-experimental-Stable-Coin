@@ -39,6 +39,11 @@ jobs:
       CHAIN_ID: "84532"
       RPC: https://sepolia.base.org
       SEED_SWAPS: ${{ inputs.swaps || '9' }}
+      # Minimum viable capital: one leg of depth in a tight range. minObservation is 10e18 and
+      # immutable, so the swap leg has a hard floor; the only lever is how much depth sits
+      # behind it, and concentrating the range buys depth far more cheaply than widening it.
+      SEED_LP_LEGS: "1"
+      SEED_TICKS: "60"
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -72,7 +77,7 @@ jobs:
           # and not only in a log.
           # Mirrors the script's own sizing so the number appears in the summary, not only in
           # a log. minObservation exceeds 64 bits, so bash arithmetic cannot do this.
-          NEED=$(python3 -c "m=$MINOBS;l=m*11//10;w=l*${SEED_LP_LEGS:-2};print((w//10**12+1)+((l+w)//10**12+2))")
+          NEED=$(python3 -c "m=$MINOBS;l=m*11//10;w=l*${SEED_LP_LEGS:-1};print((w//10**12+1)+((l+w)//10**12+2))")
           SHORT=$(( NEED > HAVE ? NEED - HAVE : 0 ))
           { echo "## Seeding the spectral engine"; echo ""
             echo "| | USDC (6dp) |"; echo "|---|---|"
