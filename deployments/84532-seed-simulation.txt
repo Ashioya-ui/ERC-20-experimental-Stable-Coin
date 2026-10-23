@@ -1,0 +1,82 @@
+Compiling 104 files with Solc 0.8.26
+Solc 0.8.26 finished in 8.70s
+Compiler run successful!
+Traces:
+  [5433855] → new SeedPoolSepolia@0x5b73C5498c1E3b4dbA84de0F1833c4a029d90519
+    └─ ← [Return] 27026 bytes of code
+
+  [43188] SeedPoolSepolia::run()
+    ├─ [0] VM::toString(84532 [8.453e4]) [staticcall]
+    │   └─ ← [Return] "84532"
+    ├─ [0] VM::readFile("deployments/84532.json") [staticcall]
+    │   └─ ← [Return] <file>
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".treasury") [staticcall]
+    │   └─ ← [Return] 0x1af57BA60edaEDF91F5925A3A79F346cb50F12a6
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".sUSD") [staticcall]
+    │   └─ ← [Return] 0x54De35aC7fd6756D49eA77ce7bbCd026faDC364a
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".oracle") [staticcall]
+    │   └─ ← [Return] 0xC7A4b9E9A7DAef0cF2bb531CCda1a3a4a744B4BB
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".stabilizer") [staticcall]
+    │   └─ ← [Return] 0x3940F5F444B1ec69bb0245062796896135B8f948
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".wsUSD") [staticcall]
+    │   └─ ← [Return] 0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".lens") [staticcall]
+    │   └─ ← [Return] 0x384768E8b0b9d992EE5F23701D21B1b880495285
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".hook") [staticcall]
+    │   └─ ← [Return] 0x7A4BB5720a158a22ae14297915aa21efbd1B6040
+    ├─ [0] VM::parseJsonBytes32("<stringified JSON>", ".hookSalt") [staticcall]
+    │   └─ ← [Return] 0x<redacted-32-bytes>
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".currency0") [staticcall]
+    │   └─ ← [Return] 0x036CbD53842c5426634e7929541eC2318f3dCF7e
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".currency1") [staticcall]
+    │   └─ ← [Return] 0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8
+    ├─ [0] VM::parseJsonUint("<stringified JSON>", ".poolFee") [staticcall]
+    │   └─ ← [Return] 100
+    ├─ [0] VM::parseJsonInt("<stringified JSON>", ".tickSpacing") [staticcall]
+    │   └─ ← [Return] 1
+    ├─ [0] VM::readFile("deployments/84532.json") [staticcall]
+    │   └─ ← [Return] <file>
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".usdc") [staticcall]
+    │   └─ ← [Return] 0x036CbD53842c5426634e7929541eC2318f3dCF7e
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".poolManager") [staticcall]
+    │   └─ ← [Return] 0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408
+    ├─ [0] VM::envOr("SEED_SWAPS", 9) [staticcall]
+    │   └─ ← [Return] <env var value>
+    ├─ [230] 0xC7A4b9E9A7DAef0cF2bb531CCda1a3a4a744B4BB::minObservation() [staticcall]
+    │   └─ ← [Return] 10000000000000000000 [1e19]
+    ├─ [0] VM::envOr("SEED_SINGLE_SIDED", true) [staticcall]
+    │   └─ ← [Return] <env var value>
+    ├─ [0] VM::envOr("SEED_LP_LEGS", 1) [staticcall]
+    │   └─ ← [Return] <env var value>
+    ├─ [9750] 0x036CbD53842c5426634e7929541eC2318f3dCF7e::balanceOf(0x9CD82de3A24bc33D45897f72da5966D8920fAB48) [staticcall]
+    │   ├─ [2553] 0xd74cc5d436923b8ba2c179b4bCA2841D8A52C5B5::balanceOf(0x9CD82de3A24bc33D45897f72da5966D8920fAB48) [delegatecall]
+    │   │   └─ ← [Return] 10104581 [1.01e7]
+    │   └─ ← [Return] 10104581 [1.01e7]
+    ├─ [0] console::log("minObservation (wsUSD wei)", 10000000000000000000 [1e19]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("USDC needed (6dp)         ", 20200003 [2.02e7]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("USDC for depth (6dp)      ", 10100001 [1.01e7]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("USDC held back for fees   ", 28180 [2.818e4]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("USDC held   (6dp)         ", 10104581 [1.01e7]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("SHORTFALL (6dp)           ", 10095422 [1.009e7]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("Get test USDC from faucet.circle.com (20 per claim) and run again.") [staticcall]
+    │   └─ ← [Stop]
+    └─ ← [Revert] SeedPoolSepolia: not enough test USDC
+
+
+
+== Logs ==
+  minObservation (wsUSD wei) 10000000000000000000
+  USDC needed (6dp)          20200003
+  USDC for depth (6dp)       10100001
+  USDC held back for fees    28180
+  USDC held   (6dp)          10104581
+  SHORTFALL (6dp)            10095422
+  Get test USDC from faucet.circle.com (20 per claim) and run again.
+Error: script failed: SeedPoolSepolia: not enough test USDC
+exit=1
