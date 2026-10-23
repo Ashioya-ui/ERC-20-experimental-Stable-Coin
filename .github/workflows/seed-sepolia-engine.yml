@@ -1,0 +1,202 @@
+name: seed-sepolia-engine
+
+# Makes the spectral engine run on Base Sepolia. Audit finding L-10: the wsUSD/USDC v4 pool has
+# no liquidity, so the hook has recorded nothing, the oracle sits at its neutral warm-up
+# constant, and no rebase has ever happened on a public chain. Seeding the pool and swapping
+# fixes that, and until it is done the white paper has to say the engine is local-only.
+#
+# Needs the same DEPLOYER_PRIVATE_KEY as the deploy workflow and more test USDC than a single
+# faucet claim provides. The script sizes itself from the deployer's actual balance and prints
+# the exact shortfall instead of guessing, so run it and read the number.
+#
+# RUN: push to `seed-sepolia`, or Run workflow.
+
+on:
+  push:
+    branches: [seed-sepolia]
+  workflow_dispatch:
+    inputs:
+      swaps:
+        description: "How many swaps (8 fills the oracle window)"
+        required: false
+        default: "9"
+
+concurrency:
+  group: seed-sepolia-engine
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  seed:
+    name: Seed the pool and fill the entropy oracle
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: base-sepolia
+    permissions:
+      contents: read
+    env:
+      CHAIN_ID: "84532"
+      RPC: https://sepolia.base.org
+      SEED_SWAPS: ${{ inputs.swaps || '9' }}
+      # Minimum viable capital: one leg of depth in a tight range. minObservation is 10e18 and
+      # immutable, so the swap leg has a hard floor; the only lever is how much depth sits
+      # behind it, and concentrating the range buys depth far more cheaply than widening it.
+      SEED_LP_LEGS: "1"
+      SEED_TICKS: "60"
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
+
+      - name: State before
+        run: |
+          set -euo pipefail
+          D="deployments/$CHAIN_ID.json"
+          O=$(jq -r .oracle "$D"); T=$(jq -r .sUSD "$D")
+          echo "oracle filled    $(cast call "$O" 'filled()(uint8)' --rpc-url "$RPC")"
+          echo "smoothedEntropy  $(cast call "$O" 'smoothedEntropy()(uint256)' --rpc-url "$RPC")"
+          echo "index            $(cast call "$T" 'index()(uint256)' --rpc-url "$RPC")"
+
+      - name: What this run needs, and what is on hand
+        env:
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          D="deployments/$CHAIN_ID.json"
+          O=$(jq -r .oracle "$D"); U=$(jq -r .usdc "$D")
+          KEY="$DEPLOYER_PRIVATE_KEY"; unset DEPLOYER_PRIVATE_KEY
+          DEPLOYER=$(cast wallet address --private-key "$KEY"); unset KEY
+          MINOBS=$(cast call "$O" 'minObservation()(uint256)' --rpc-url "$RPC" | awk '{print $1}')
+          HAVE=$(cast call "$U" 'balanceOf(address)(uint256)' "$DEPLOYER" --rpc-url "$RPC" | awk '{print $1}')
+          # Mirrors the script's own sizing, in bash, so the number is visible in the summary
+          # and not only in a log.
+          # Mirrors the script's own sizing so the number appears in the summary, not only in
+          # a log. minObservation exceeds 64 bits, so bash arithmetic cannot do this.
+          NEED=$(python3 -c "m=$MINOBS;l=m*11//10;w=l*${SEED_LP_LEGS:-1};print((w//10**12+1)+((l+w)//10**12+2))")
+          SHORT=$(( NEED > HAVE ? NEED - HAVE : 0 ))
+          { echo "## Seeding the spectral engine"; echo ""
+            echo "| | USDC (6dp) |"; echo "|---|---|"
+            echo "| minObservation | $MINOBS wsUSD wei |"
+            echo "| needed | $NEED |"
+            echo "| held | $HAVE |"
+            echo "| **shortfall** | **$SHORT** |"
+            [ "$SHORT" -gt 0 ] && echo "" && echo "Get test USDC at faucet.circle.com (20 per claim, every 2 hours)."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "NEED=$NEED HAVE=$HAVE SHORT=$SHORT"
+          echo "SEED_NEED=$NEED" >> "$GITHUB_ENV"
+          echo "SEED_HAVE=$HAVE" >> "$GITHUB_ENV"
+          echo "SEED_SHORT=$SHORT" >> "$GITHUB_ENV"
+
+      - name: Seed the pool and swap
+        if: env.SEED_SHORT == '0'
+        env:
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          KEY="$DEPLOYER_PRIVATE_KEY"; unset DEPLOYER_PRIVATE_KEY
+          DEPLOYER=$(cast wallet address --private-key "$KEY")
+          echo "deployer $DEPLOYER"
+          echo "  ETH  $(cast balance "$DEPLOYER" --rpc-url "$RPC")"
+          echo "  USDC $(cast call "$(jq -r .usdc "deployments/$CHAIN_ID.json")" \
+                   'balanceOf(address)(uint256)' "$DEPLOYER" --rpc-url "$RPC")"
+          forge script script/SeedPoolSepolia.s.sol --rpc-url "$RPC" \
+            --private-key "$KEY" --sender "$DEPLOYER" --broadcast --slow
+
+      # Not gated on the funding check: rebase() needs gas and nothing else, and there is
+      # already distributable surplus from the mint fees the two x402 payments generated. This
+      # moves the index on a public chain whether or not the pool ever gets seeded.
+      - name: Rebase (needs no USDC, only gas)
+        env:
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+        run: |
+          set -uo pipefail
+          D="deployments/$CHAIN_ID.json"
+          S=$(jq -r .stabilizer "$D"); L=$(jq -r .lens "$D"); T=$(jq -r .sUSD "$D")
+          echo "distributable $(cast call "$L" 'distributable()(uint256)' --rpc-url "$RPC")"
+          KEY="$DEPLOYER_PRIVATE_KEY"; unset DEPLOYER_PRIVATE_KEY
+          # rebase() is permissionless. It reverts when there is nothing to distribute, which is
+          # not a failure of this job.
+          cast send "$S" "rebase()" --rpc-url "$RPC" --private-key "$KEY" >/dev/null \
+            && echo "rebased" || echo "rebase reverted (nothing distributable yet)"
+          echo "index after $(cast call "$T" 'index()(uint256)' --rpc-url "$RPC")"
+
+      - name: State after
+        if: always()
+        run: |
+          set -uo pipefail
+          D="deployments/$CHAIN_ID.json"
+          O=$(jq -r .oracle "$D"); T=$(jq -r .sUSD "$D")
+          F=$(cast call "$O" 'filled()(uint8)' --rpc-url "$RPC")
+          H=$(cast call "$O" 'smoothedEntropy()(uint256)' --rpc-url "$RPC")
+          I=$(cast call "$T" 'index()(uint256)' --rpc-url "$RPC")
+          { echo "## Spectral engine on Base Sepolia"
+            echo ""
+            echo "| | |"; echo "|---|---|"
+            echo "| oracle filled | $F of 8 |"
+            echo "| smoothedEntropy | $H |"
+            echo "| sUSD index | $I |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "filled=$F H=$H index=$I"
+
+  publish-state:
+    name: Publish the measured state
+    needs: seed
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      CHAIN_ID: "84532"
+      RPC: https://sepolia.base.org
+    steps:
+      # No deployment secrets in this job: it only reads public chain state and pushes a record.
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
+      - name: Read the engine's state and the funding requirement
+        run: |
+          set -euo pipefail
+          D="deployments/$CHAIN_ID.json"
+          O=$(jq -r .oracle "$D"); T=$(jq -r .sUSD "$D"); U=$(jq -r .usdc "$D")
+          L=$(jq -r .lens "$D"); PM=$(jq -r .poolManager "$D"); PID=$(jq -r .poolId "$D")
+          DEP=$(jq -r .deployer "$D"); ADM=$(jq -r .admin "$D")
+          g() { cast call "$1" "$2" ${3:+"$3"} --rpc-url "$RPC" 2>/dev/null | awk '{print $1}'; }
+          MINOBS=$(g "$O" 'minObservation()(uint256)')
+          HAVE=$(g "$U" 'balanceOf(address)(uint256)' "$DEP")
+          NEED=$(python3 -c "m=$MINOBS;l=m*11//10;w=l*2;print((w//10**12+1)+((l+w)//10**12+2))")
+          mkdir -p deployments
+          { echo "# Spectral engine state on Base Sepolia, run ${{ github.run_id }}"
+            echo "oracle.filled          $(g "$O" 'filled()(uint8)')  of 8"
+            echo "oracle.smoothedEntropy $(g "$O" 'smoothedEntropy()(uint256)')"
+            echo "sUSD.index             $(g "$T" 'index()(uint256)')"
+            echo "sUSD.totalSupply       $(g "$T" 'totalSupply()(uint256)')"
+            echo "lens.distributable     $(g "$L" 'distributable()(uint256)')"
+            echo "pool liquidity         $(cast call "$PM" 'getLiquidity(bytes32)(uint128)' "$PID" --rpc-url "$RPC" 2>/dev/null | awk '{print $1}')"
+            echo ""
+            echo "# funding, USDC 6dp"
+            echo "minObservation (wsUSD wei) $MINOBS"
+            echo "needed                     $NEED"
+            echo "deployer holds             $HAVE"
+            echo "shortfall                  $(( NEED > HAVE ? NEED - HAVE : 0 ))"
+            echo ""
+            echo "# accounts"
+            echo "deployer ETH $(cast balance "$DEP" --rpc-url "$RPC")"
+            echo "admin    ETH $(cast balance "$ADM" --rpc-url "$RPC")   (0 means emergency powers cannot be exercised)"
+          } > deployments/84532-engine-state.txt
+          cat deployments/84532-engine-state.txt
+      - name: Commit it
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f deployments/84532-engine-state.txt
+          git diff --cached --quiet && exit 0
+          git commit -q -m "engine(base-sepolia): measured state from run ${{ github.run_id }}"
+          git push origin "HEAD:refs/heads/deployments/engine-${{ github.run_id }}"

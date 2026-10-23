@@ -57,41 +57,51 @@ contract DeployCheckGapsTest is Test {
     /// @dev check() asserts bootstrapCap but never supplyCap, so the guarded-launch cap the
     ///      config and the README promise ("25,000 sUSD at launch") can be removed entirely and
     ///      PostDeployCheck still prints POST-DEPLOY CHECK PASSED.
-    function test_checkPassesAfterTheGuardedLaunchSupplyCapIsRemoved() public {
+    /// Was a gap (live audit L-05): check() ignored the supply cap, which is the number the
+    /// guarded launch is described by. Now a regression guard.
+    /// `check` is an internal library function; expectRevert needs an external call boundary.
+    function checkExternal() external view {
+        SpectrumDeploy.check(cfg, d, address(this));
+    }
+
+    function test_checkCatchesTheGuardedLaunchSupplyCapBeingRemoved() public {
         assertEq(d.stabilizer.supplyCap(), cfg.supplyCap, "the cap starts where the config says");
 
         vm.prank(admin);
         d.stabilizer.setSupplyCap(type(uint256).max);
 
-        assertTrue(d.stabilizer.supplyCap() != cfg.supplyCap, "the cap no longer matches the config");
-        SpectrumDeploy.check(cfg, d, address(this)); // and the post-deploy check is still happy
+        vm.expectRevert(bytes("check: supply cap"));
+        this.checkExternal();
     }
 
     /// @dev The same with the cap set to zero: minting is frozen for everyone and check() passes.
-    function test_checkPassesWithMintingFrozenByAZeroSupplyCap() public {
+    function test_checkCatchesMintingFrozenByAZeroSupplyCap() public {
         vm.prank(admin);
         d.stabilizer.setSupplyCap(0);
-        SpectrumDeploy.check(cfg, d, address(this));
+        vm.expectRevert(bytes("check: supply cap"));
+        this.callCheck(cfg);
     }
 
     /// @dev check() never reads `paused()`. A deployment whose minting and rebasing have been
     ///      halted indefinitely by the guardian reports as healthy.
-    function test_checkPassesWhileTheProtocolIsPaused() public {
+    function test_checkCatchesAPausedProtocol() public {
         vm.prank(admin); // admin holds GUARDIAN_ROLE too
         d.stabilizer.pause();
         assertTrue(d.stabilizer.paused(), "paused");
-        SpectrumDeploy.check(cfg, d, address(this));
+        vm.expectRevert(bytes("check: protocol is paused"));
+        this.callCheck(cfg);
     }
 
     /// @dev check() never reads the treasury's liquidity buffer, so the 15% the config asks for
     ///      can be set to anything (here 100%: the whole reserve pulled out of the vault, so it
     ///      earns nothing) and the check still passes.
-    function test_checkPassesAfterTheLiquidityBufferIsChanged() public {
+    function test_checkCatchesAChangedLiquidityBuffer() public {
         assertEq(d.treasury.liquidityBufferBps(), cfg.liquidityBufferBps);
         vm.prank(admin);
         d.stabilizer.setLiquidityBuffer(10_000);
         assertEq(d.treasury.liquidityBufferBps(), 10_000);
-        SpectrumDeploy.check(cfg, d, address(this));
+        vm.expectRevert(bytes("check: liquidity buffer"));
+        this.callCheck(cfg);
     }
 
     /// @dev With `roles.guardian` left at the zero address - which is what the live Base Sepolia
@@ -119,16 +129,12 @@ contract DeployCheckGapsTest is Test {
     ///      roles.admin = address(0), because the deploy workflow writes the admin into the file
     ///      on the runner and never commits it. Running PostDeployCheck from a clean clone
     ///      therefore fails on a deployment that is in fact correct.
-    function test_theCommittedConfigCannotCheckTheLiveDeployment() public {
+    /// Was a gap (live audit L-06): the committed config named no admin, so the one command an
+    /// auditor would run against the live deployment failed on a deployment that was correct.
+    /// The config now records the admin the deployment granted. Guard against it regressing.
+    function test_theCommittedConfigNamesTheLiveAdmin() public view {
         SpectrumDeploy.Config memory asCommitted = SpectrumDeploy.loadConfig("config/84532.json");
-        assertEq(asCommitted.admin, address(0), "the committed config names no admin");
-        assertEq(asCommitted.guardian, address(0), "nor a guardian");
-        asCommitted.poolManager = cfg.poolManager;
-        asCommitted.usdc = cfg.usdc;
-        asCommitted.vault = cfg.vault;
-        asCommitted.fallbackVault = cfg.fallbackVault;
-        vm.expectRevert(bytes("check: admin role"));
-        this.callCheck(asCommitted);
+        assertTrue(asCommitted.admin != address(0), "the committed config must name the live admin");
     }
 
     function callCheck(SpectrumDeploy.Config memory c) external view {

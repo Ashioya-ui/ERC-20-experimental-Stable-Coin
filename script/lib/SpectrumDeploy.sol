@@ -290,6 +290,11 @@ library SpectrumDeploy {
         require(d.stabilizer.hasRole(guardianRole, c.admin), "check: admin guardian role");
         if (c.guardian != address(0)) {
             require(d.stabilizer.hasRole(guardianRole, c.guardian), "check: guardian role");
+        } else {
+            // Accepted, but not silently: with no second guardian the emergency controls exist
+            // only on the admin key, and if that key cannot pay for gas they cannot be used at
+            // all (live audit, L-04).
+            console2.log("warning: no independent guardian is configured; emergency powers rest on the admin key alone");
         }
         if (deployer != c.admin && deployer != c.guardian) {
             require(!d.stabilizer.hasRole(adminRole, deployer), "check: deployer kept admin");
@@ -306,6 +311,13 @@ library SpectrumDeploy {
         require(d.stabilizer.defaultAdminDelay() == d.stabilizer.ADMIN_TRANSFER_DELAY(), "check: admin delay");
         if (address(d.treasury.vault()) != c.vault) console2.log("note: treasury vault was migrated");
         require(d.stabilizer.bootstrapCap() == c.bootstrapCap, "check: bootstrap cap");
+        // The supply cap is the number the guarded launch is described by, the pause state
+        // decides whether anyone can mint at all, and the liquidity buffer decides whether a
+        // redemption can be paid. check() asserted none of them, so "the post-deploy check
+        // passed" claimed less than the runbook implied (live audit, L-05).
+        require(d.stabilizer.supplyCap() == c.supplyCap, "check: supply cap");
+        require(!d.stabilizer.paused(), "check: protocol is paused");
+        require(d.treasury.liquidityBufferBps() == c.liquidityBufferBps, "check: liquidity buffer");
         require(d.oracle.minObservation() == c.minObservation, "check: oracle dust");
         require(d.oracle.emaAlphaMax() == c.emaAlphaMax, "check: oracle alpha");
         require(d.oracle.tau() == c.emaTau, "check: oracle tau");
