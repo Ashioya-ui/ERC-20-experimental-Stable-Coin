@@ -1,0 +1,39 @@
+exit code 0
+Compiling 104 files with Solc 0.8.26
+Solc 0.8.26 finished in 8.58s
+Compiler run successful!
+Script ran successfully.
+
+== Logs ==
+  minObservation (wsUSD wei) 10000000000000000000
+  USDC needed (6dp)          30300003
+  USDC for depth (6dp)       10100001
+  USDC held back for fees    28180
+  USDC held   (6dp)          10104581
+  pool already seeded; swapping against existing liquidity
+  oracle filled     2
+  smoothedEntropy   500000000000000000
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 84532
+
+Estimated gas price: 0.011 gwei
+
+Estimated total gas used for script: 6848824
+
+Estimated amount required: 0.000075337064 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/broadcast/SeedPoolSepolia.s.sol/84532/run-latest.json
+
+Sensitive values saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/cache/SeedPoolSepolia.s.sol/84532/run-latest.json
+
