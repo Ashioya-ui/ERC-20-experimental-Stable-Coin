@@ -66,14 +66,21 @@ contract SeedPoolSepolia is Script {
         // The floor: depth has to cover a whole leg, or the swap walks out of the range and
         // fills for less than the oracle counts.
         uint256 need = usdcForMint + (leg / 1e12) + 1;
-        // Above that floor, the position takes everything left over. A fixed multiple would
-        // leave USDC idle in the deployer while the range it is meant to defend runs thin.
-        uint256 usdcForLp = singleSided && have > need
-            ? have - usdcForMint - 1
+        // Each swap pays the pool fee, so an alternating round trip returns slightly less than
+        // it sent and the recycled inventory shrinks a little every lap. Putting every spare
+        // wei into depth left no margin for that, and the second swap reverted 1,008 wei short
+        // on a 10.1 USDC leg. Reserve the whole fee bill up front -- twice the fee on every
+        // planned swap, plus a flat allowance for rounding in the pool's own maths.
+        uint256 swapReserve = (((leg / 1e12) * d.key.fee * swaps * 2) / 1e6) + 10_000;
+        // Above the floor, the position takes what is left after that reserve. A fixed
+        // multiple would leave USDC idle in the deployer while the range it defends runs thin.
+        uint256 usdcForLp = singleSided && have > need + swapReserve
+            ? have - usdcForMint - swapReserve
             : ((leg * lpLegs) / 1e12) + 1;
         console2.log("minObservation (wsUSD wei)", minObs);
         console2.log("USDC needed (6dp)         ", need);
         console2.log("USDC for depth (6dp)      ", usdcForLp);
+        console2.log("USDC held back for fees   ", swapReserve);
         console2.log("USDC held   (6dp)         ", have);
         if (have < need) {
             console2.log("SHORTFALL (6dp)           ", need - have);
