@@ -35,6 +35,8 @@ jobs:
     environment: base-sepolia
     permissions:
       contents: read
+    outputs:
+      trace: ${{ steps.broadcast.outputs.trace }}
     env:
       CHAIN_ID: "84532"
       RPC: https://sepolia.base.org
@@ -98,19 +100,39 @@ jobs:
           echo "SEED_SHORT=$SHORT" >> "$GITHUB_ENV"
 
       - name: Seed the pool and swap
+        id: broadcast
         if: env.SEED_SHORT == '0'
         env:
           DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           KEY="$DEPLOYER_PRIVATE_KEY"; unset DEPLOYER_PRIVATE_KEY
           DEPLOYER=$(cast wallet address --private-key "$KEY")
           echo "deployer $DEPLOYER"
           echo "  ETH  $(cast balance "$DEPLOYER" --rpc-url "$RPC")"
           echo "  USDC $(cast call "$(jq -r .usdc "deployments/$CHAIN_ID.json")" \
                    'balanceOf(address)(uint256)' "$DEPLOYER" --rpc-url "$RPC")"
+          # A broadcast that fails has to be able to say why. This job holds the deployer key
+          # so it cannot be given write access, and the Actions log host is not reachable from
+          # where this gets analysed -- so the reason leaves as a job output instead, redacted
+          # and handed to the job that has no secrets.
+          set +e
           forge script script/SeedPoolSepolia.s.sol --rpc-url "$RPC" \
-            --private-key "$KEY" --sender "$DEPLOYER" --broadcast --slow
+            --private-key "$KEY" --sender "$DEPLOYER" --broadcast --slow -vvv \
+            > /tmp/bcast.raw 2>&1
+          RC=$?
+          set -e
+          unset KEY
+          sed -E -e "s/0x[0-9a-fA-F]{64}/0x<redacted-32-bytes>/g" \
+                 -e "s/$DEPLOYER/<deployer>/gI" /tmp/bcast.raw > /tmp/bcast.txt
+          tail -60 /tmp/bcast.txt
+          {
+            echo "trace<<SEED_TRACE_EOF"
+            echo "exit code $RC"
+            tail -c 30000 /tmp/bcast.txt
+            echo "SEED_TRACE_EOF"
+          } >> "$GITHUB_OUTPUT"
+          exit $RC
 
       # Not gated on the funding check: rebase() needs gas and nothing else, and there is
       # already distributable surplus from the mint fees the two x402 payments generated. This
@@ -255,12 +277,24 @@ jobs:
             echo "admin    ETH $(cast balance "$ADM" --rpc-url "$RPC")   (0 means emergency powers cannot be exercised)"
           } > deployments/84532-engine-state.txt
           cat deployments/84532-engine-state.txt
+      - name: Write the broadcast trace next to it
+        env:
+          SEED_TRACE: ${{ needs.seed.outputs.trace }}
+        run: |
+          set -euo pipefail
+          if [ -n "${SEED_TRACE:-}" ]; then
+            printf '%s\n' "$SEED_TRACE" > deployments/84532-seed-broadcast.txt
+            tail -30 deployments/84532-seed-broadcast.txt
+          else
+            echo "no trace from the broadcast job (it was skipped or produced none)"
+          fi
       - name: Commit it
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -f deployments/84532-engine-state.txt
+          [ -f deployments/84532-seed-broadcast.txt ] && git add -f deployments/84532-seed-broadcast.txt
           git diff --cached --quiet && exit 0
           git commit -q -m "engine(base-sepolia): measured state from run ${{ github.run_id }}"
           git push origin "HEAD:refs/heads/deployments/engine-${{ github.run_id }}"
