@@ -135,3 +135,61 @@ jobs:
             echo "| sUSD index | $I |"
           } >> "$GITHUB_STEP_SUMMARY"
           echo "filled=$F H=$H index=$I"
+
+  publish-state:
+    name: Publish the measured state
+    needs: seed
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      CHAIN_ID: "84532"
+      RPC: https://sepolia.base.org
+    steps:
+      # No deployment secrets in this job: it only reads public chain state and pushes a record.
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
+      - name: Read the engine's state and the funding requirement
+        run: |
+          set -euo pipefail
+          D="deployments/$CHAIN_ID.json"
+          O=$(jq -r .oracle "$D"); T=$(jq -r .sUSD "$D"); U=$(jq -r .usdc "$D")
+          L=$(jq -r .lens "$D"); PM=$(jq -r .poolManager "$D"); PID=$(jq -r .poolId "$D")
+          DEP=$(jq -r .deployer "$D"); ADM=$(jq -r .admin "$D")
+          g() { cast call "$1" "$2" ${3:+"$3"} --rpc-url "$RPC" 2>/dev/null | awk '{print $1}'; }
+          MINOBS=$(g "$O" 'minObservation()(uint256)')
+          HAVE=$(g "$U" 'balanceOf(address)(uint256)' "$DEP")
+          NEED=$(python3 -c "m=$MINOBS;l=m*11//10;w=l*2;print((w//10**12+1)+((l+w)//10**12+2))")
+          mkdir -p deployments
+          { echo "# Spectral engine state on Base Sepolia, run ${{ github.run_id }}"
+            echo "oracle.filled          $(g "$O" 'filled()(uint8)')  of 8"
+            echo "oracle.smoothedEntropy $(g "$O" 'smoothedEntropy()(uint256)')"
+            echo "sUSD.index             $(g "$T" 'index()(uint256)')"
+            echo "sUSD.totalSupply       $(g "$T" 'totalSupply()(uint256)')"
+            echo "lens.distributable     $(g "$L" 'distributable()(uint256)')"
+            echo "pool liquidity         $(cast call "$PM" 'getLiquidity(bytes32)(uint128)' "$PID" --rpc-url "$RPC" 2>/dev/null | awk '{print $1}')"
+            echo ""
+            echo "# funding, USDC 6dp"
+            echo "minObservation (wsUSD wei) $MINOBS"
+            echo "needed                     $NEED"
+            echo "deployer holds             $HAVE"
+            echo "shortfall                  $(( NEED > HAVE ? NEED - HAVE : 0 ))"
+            echo ""
+            echo "# accounts"
+            echo "deployer ETH $(cast balance "$DEP" --rpc-url "$RPC")"
+            echo "admin    ETH $(cast balance "$ADM" --rpc-url "$RPC")   (0 means emergency powers cannot be exercised)"
+          } > deployments/84532-engine-state.txt
+          cat deployments/84532-engine-state.txt
+      - name: Commit it
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f deployments/84532-engine-state.txt
+          git diff --cached --quiet && exit 0
+          git commit -q -m "engine(base-sepolia): measured state from run ${{ github.run_id }}"
+          git push origin "HEAD:refs/heads/deployments/engine-${{ github.run_id }}"
