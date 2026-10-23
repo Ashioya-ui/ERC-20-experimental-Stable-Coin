@@ -100,9 +100,12 @@ jobs:
           echo "SEED_HAVE=$HAVE" >> "$GITHUB_ENV"
           echo "SEED_SHORT=$SHORT" >> "$GITHUB_ENV"
 
+      # Not gated on the funding check any more: once the pool holds a position the capital
+      # is inside it and the deployer is nearly empty, so the guard would skip for ever. The
+      # script decides for itself -- it seeds when it can and swaps the existing liquidity when
+      # it cannot, and still reverts with the shortfall if neither is possible.
       - name: Seed the pool and swap
         id: broadcast
-        if: env.SEED_SHORT == '0'
         env:
           DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
         run: |

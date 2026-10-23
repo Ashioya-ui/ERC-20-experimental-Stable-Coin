@@ -60,6 +60,11 @@ contract SeedPoolSepolia is Script {
 
         bool wsIs0 = Currency.unwrap(d.key.currency0) == address(d.wsusd);
         uint256 have = IERC20(usdc).balanceOf(me);
+        // A second run finds the capital already inside the position and the deployer nearly
+        // empty, so the funding guard refuses and nothing happens. But a seeded pool does not
+        // need seeding again -- it needs swapping, and the inventory for that is whatever the
+        // last run left behind. Alternating swaps recycle it, and each leg records.
+        bool seeded = pm.getLiquidity(d.key.toId()) > 0;
 
         uint256 wsForLp = singleSided ? 0 : leg * lpLegs;
         uint256 usdcForMint = ((leg + wsForLp) / 1e12) + 2; // mint fee eats a little
@@ -82,7 +87,9 @@ contract SeedPoolSepolia is Script {
         console2.log("USDC for depth (6dp)      ", usdcForLp);
         console2.log("USDC held back for fees   ", swapReserve);
         console2.log("USDC held   (6dp)         ", have);
-        if (have < need) {
+        if (seeded && have < need) {
+            console2.log("pool already seeded; swapping against existing liquidity");
+        } else if (have < need) {
             console2.log("SHORTFALL (6dp)           ", need - have);
             console2.log("Get test USDC from faucet.circle.com (20 per claim) and run again.");
             revert("SeedPoolSepolia: not enough test USDC");
@@ -118,10 +125,13 @@ contract SeedPoolSepolia is Script {
         PoolModifyLiquidityTest lp = new PoolModifyLiquidityTest(pm);
         PoolSwapTest router = new PoolSwapTest(pm);
 
-        IERC20(usdc).approve(address(d.stabilizer), usdcForMint);
-        d.stabilizer.mint(usdcForMint, me, 0);
+        bool swapOnly = seeded && have < need;
+        if (!swapOnly) {
+            IERC20(usdc).approve(address(d.stabilizer), usdcForMint);
+            d.stabilizer.mint(usdcForMint, me, 0);
+        }
         d.token.approve(address(d.wsusd), type(uint256).max);
-        d.wsusd.deposit(d.token.balanceOf(me), me);
+        if (d.token.balanceOf(me) > 0) d.wsusd.deposit(d.token.balanceOf(me), me);
 
         d.wsusd.approve(address(lp), type(uint256).max);
         IERC20(usdc).approve(address(lp), type(uint256).max);
@@ -135,6 +145,7 @@ contract SeedPoolSepolia is Script {
             wsIs0 ? wsForLp : usdcForLp,
             wsIs0 ? usdcForLp : wsForLp
         );
+        if (!swapOnly) {
         require(liq > 0, "SeedPoolSepolia: zero liquidity");
         lp.modifyLiquidity(
             d.key,
@@ -142,15 +153,27 @@ contract SeedPoolSepolia is Script {
             ""
         );
         console2.log("liquidity added", uint256(liq));
+        }
 
         // Alternating direction, one transaction each so every swap lands in its own block.
         for (uint256 i; i < swaps; ++i) {
-            bool zeroForOne = (i % 2 == 0) ? wsIs0 : !wsIs0;
+            // Seeding mints wsUSD first, so it can open selling wsUSD. A swap-only run owns
+            // whatever the last run left, which after a wsUSD sale is USDC -- so it opens on
+            // the other foot and alternates from there.
+            uint256 phase = swapOnly ? i + 1 : i;
+            bool zeroForOne = (phase % 2 == 0) ? wsIs0 : !wsIs0;
+            // amountSpecified is denominated in the token going IN, and the two legs of this
+            // pair do not share a scale: wsUSD is 18dp, USDC is 6dp. Sending the wsUSD figure
+            // on a USDC-funded swap asks the pool to spend 1e12 times the intended amount,
+            // which walks the price to the end of the tick space -- the "exceeds max
+            // transaction gas limit" the node returned, mis-read at first as a bitmap scan.
+            bool usdcIn = zeroForOne ? !wsIs0 : wsIs0;
+            uint256 amountIn = usdcIn ? (leg / 1e12) : leg;
             router.swap(
                 d.key,
                 SwapParams({
                     zeroForOne: zeroForOne,
-                    amountSpecified: -int256(leg),
+                    amountSpecified: -int256(amountIn),
                     // Bounded to this position's own edges, not MIN/MAX. Single-sided depth
                     // means one side of spot holds nothing at all, and a swap aimed at the
                     // extreme scans empty tick bitmaps the whole way there -- which the node
