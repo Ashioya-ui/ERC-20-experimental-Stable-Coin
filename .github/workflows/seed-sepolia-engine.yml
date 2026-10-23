@@ -202,10 +202,16 @@ jobs:
           set -uo pipefail
           DEP=$(jq -r .deployer "deployments/$CHAIN_ID.json")
           mkdir -p deployments
+          # Actions runs `run:` under `bash -e`, which `set -uo pipefail` does not undo, so a
+          # reverting forge aborted this step before it could write the very trace it exists to
+          # capture. The failure is the output here: it has to be allowed to happen.
+          set +e
           forge script script/SeedPoolSepolia.s.sol \
             --rpc-url "$RPC" --sender "$DEP" -vvvv \
             > /tmp/sim.raw 2>&1
-          echo "exit=$?" >> /tmp/sim.raw
+          RC=$?
+          set -e
+          echo "exit=$RC" >> /tmp/sim.raw
           # Belt and braces: nothing in a simulation carries a key, but a 64-hex run of
           # characters never needs to leave a runner, so none does.
           sed -E 's/0x[0-9a-fA-F]{64}/0x<redacted-32-bytes>/g' /tmp/sim.raw \
@@ -217,6 +223,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          [ -f deployments/84532-seed-simulation.txt ] || { echo "no trace produced"; exit 0; }
           git add -f deployments/84532-seed-simulation.txt
           git diff --cached --quiet && exit 0
           git commit -q -m "engine(base-sepolia): seed simulation trace from run ${{ github.run_id }}"
