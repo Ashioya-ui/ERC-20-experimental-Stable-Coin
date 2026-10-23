@@ -102,8 +102,10 @@ jobs:
           forge script script/SeedPoolSepolia.s.sol --rpc-url "$RPC" \
             --private-key "$KEY" --sender "$DEPLOYER" --broadcast --slow
 
-      - name: Rebase, now that there is a filled oracle
-        if: env.SEED_SHORT == '0'
+      # Not gated on the funding check: rebase() needs gas and nothing else, and there is
+      # already distributable surplus from the mint fees the two x402 payments generated. This
+      # moves the index on a public chain whether or not the pool ever gets seeded.
+      - name: Rebase (needs no USDC, only gas)
         env:
           DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
         run: |
