@@ -111,6 +111,9 @@ contract SeedPoolSepolia is Script {
             upper = ((tick + span) / sp) * sp;
         }
 
+        uint160 limUp = TickMath.getSqrtPriceAtTick(upper);
+        uint160 limDown = TickMath.getSqrtPriceAtTick(lower);
+
         vm.startBroadcast(me);
         PoolModifyLiquidityTest lp = new PoolModifyLiquidityTest(pm);
         PoolSwapTest router = new PoolSwapTest(pm);
@@ -148,7 +151,13 @@ contract SeedPoolSepolia is Script {
                 SwapParams({
                     zeroForOne: zeroForOne,
                     amountSpecified: -int256(leg),
-                    sqrtPriceLimitX96: zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
+                    // Bounded to this position's own edges, not MIN/MAX. Single-sided depth
+                    // means one side of spot holds nothing at all, and a swap aimed at the
+                    // extreme scans empty tick bitmaps the whole way there -- which the node
+                    // rejects outright as exceeding the per-transaction gas limit. The range
+                    // holds more than a leg, so stopping at its edge never truncates a fill
+                    // below the oracle's threshold.
+                    sqrtPriceLimitX96: zeroForOne ? limDown : limUp
                 }),
                 PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
                 ""
