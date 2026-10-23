@@ -154,6 +154,7 @@ jobs:
     env:
       CHAIN_ID: "84532"
       RPC: https://sepolia.base.org
+      SEED_LP_LEGS: "1"
     steps:
       # No deployment secrets in this job: it only reads public chain state and pushes a record.
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -170,7 +171,8 @@ jobs:
           g() { cast call "$1" "$2" ${3:+"$3"} --rpc-url "$RPC" 2>/dev/null | awk '{print $1}'; }
           MINOBS=$(g "$O" 'minObservation()(uint256)')
           HAVE=$(g "$U" 'balanceOf(address)(uint256)' "$DEP")
-          NEED=$(python3 -c "m=$MINOBS;l=m*11//10;w=l*2;print((w//10**12+1)+((l+w)//10**12+2))")
+          LEGS=${SEED_LP_LEGS:-1}
+          NEED=$(python3 -c "m=$MINOBS;l=m*11//10;w=l*$LEGS;print((w//10**12+1)+((l+w)//10**12+2))")
           mkdir -p deployments
           { echo "# Spectral engine state on Base Sepolia, run ${{ github.run_id }}"
             echo "oracle.filled          $(g "$O" 'filled()(uint8)')  of 8"
@@ -185,6 +187,9 @@ jobs:
             echo "needed                     $NEED"
             echo "deployer holds             $HAVE"
             echo "shortfall                  $(( NEED > HAVE ? NEED - HAVE : 0 ))"
+            echo ""
+            echo "# usdc on this chain is Circle's Base Sepolia contract"
+            echo "usdc contract $U   (if a faucet claim is missing, it likely went to Ethereum Sepolia instead)"
             echo ""
             echo "# accounts"
             echo "deployer ETH $(cast balance "$DEP" --rpc-url "$RPC")"
