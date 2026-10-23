@@ -1,0 +1,35 @@
+exit code 1
+Compiling 104 files with Solc 0.8.26
+Solc 0.8.26 finished in 10.57s
+Compiler run successful!
+Script ran successfully.
+
+== Logs ==
+  minObservation (wsUSD wei) 10000000000000000000
+  USDC needed (6dp)          20200003
+  USDC for depth (6dp)       13871818
+  USDC held back for fees    28180
+  USDC held   (6dp)          24000000
+  liquidity added 4709714859619318
+  oracle filled     1
+  smoothedEntropy   500000000000000000
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 84532
+
+Estimated gas price: 0.011 gwei
+
+Estimated total gas used for script: 281363782
+
+Estimated amount required: 0.003095001602 ETH
+
+==========================
+
+Transactions saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/broadcast/SeedPoolSepolia.s.sol/84532/run-latest.json
+
+Sensitive values saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/cache/SeedPoolSepolia.s.sol/84532/run-latest.json
+
+Error: Failed to send transaction after 4 attempts Err(server returned an error response: error code -32000: exceeds max transaction gas limit)
