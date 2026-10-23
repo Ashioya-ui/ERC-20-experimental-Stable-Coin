@@ -1,0 +1,17 @@
+# Spectral engine state on Base Sepolia, run 39898911702
+oracle.filled          0  of 8
+oracle.smoothedEntropy 500000000000000000
+sUSD.index             1000000000000000000
+sUSD.totalSupply       2947883744717033035
+lens.distributable     2116255282966965
+pool liquidity         
+
+# funding, USDC 6dp
+minObservation (wsUSD wei) 10000000000000000000
+needed                     55000003
+deployer holds             4000000
+shortfall                  51000003
+
+# accounts
+deployer ETH 7758007973576529
+admin    ETH 0   (0 means emergency powers cannot be exercised)
