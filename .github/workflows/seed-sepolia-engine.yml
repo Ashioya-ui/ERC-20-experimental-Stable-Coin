@@ -57,7 +57,38 @@ jobs:
           echo "smoothedEntropy  $(cast call "$O" 'smoothedEntropy()(uint256)' --rpc-url "$RPC")"
           echo "index            $(cast call "$T" 'index()(uint256)' --rpc-url "$RPC")"
 
+      - name: What this run needs, and what is on hand
+        env:
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          D="deployments/$CHAIN_ID.json"
+          O=$(jq -r .oracle "$D"); U=$(jq -r .usdc "$D")
+          KEY="$DEPLOYER_PRIVATE_KEY"; unset DEPLOYER_PRIVATE_KEY
+          DEPLOYER=$(cast wallet address --private-key "$KEY"); unset KEY
+          MINOBS=$(cast call "$O" 'minObservation()(uint256)' --rpc-url "$RPC" | awk '{print $1}')
+          HAVE=$(cast call "$U" 'balanceOf(address)(uint256)' "$DEPLOYER" --rpc-url "$RPC" | awk '{print $1}')
+          # Mirrors the script's own sizing, in bash, so the number is visible in the summary
+          # and not only in a log.
+          # Mirrors the script's own sizing so the number appears in the summary, not only in
+          # a log. minObservation exceeds 64 bits, so bash arithmetic cannot do this.
+          NEED=$(python3 -c "m=$MINOBS;l=m*11//10;w=l*${SEED_LP_LEGS:-2};print((w//10**12+1)+((l+w)//10**12+2))")
+          SHORT=$(( NEED > HAVE ? NEED - HAVE : 0 ))
+          { echo "## Seeding the spectral engine"; echo ""
+            echo "| | USDC (6dp) |"; echo "|---|---|"
+            echo "| minObservation | $MINOBS wsUSD wei |"
+            echo "| needed | $NEED |"
+            echo "| held | $HAVE |"
+            echo "| **shortfall** | **$SHORT** |"
+            [ "$SHORT" -gt 0 ] && echo "" && echo "Get test USDC at faucet.circle.com (20 per claim, every 2 hours)."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "NEED=$NEED HAVE=$HAVE SHORT=$SHORT"
+          echo "SEED_NEED=$NEED" >> "$GITHUB_ENV"
+          echo "SEED_HAVE=$HAVE" >> "$GITHUB_ENV"
+          echo "SEED_SHORT=$SHORT" >> "$GITHUB_ENV"
+
       - name: Seed the pool and swap
+        if: env.SEED_SHORT == '0'
         env:
           DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
         run: |
@@ -72,6 +103,7 @@ jobs:
             --private-key "$KEY" --sender "$DEPLOYER" --broadcast --slow
 
       - name: Rebase, now that there is a filled oracle
+        if: env.SEED_SHORT == '0'
         env:
           DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
         run: |

@@ -49,8 +49,11 @@ contract SeedPoolSepolia is Script {
         // the pool cannot drop a block below it.
         uint256 leg = (minObs * 11) / 10;
         // Liquidity must absorb a leg repeatedly. Alternating direction means it only has to
-        // cover a few legs at once, not all of them.
-        uint256 wsForLp = leg * 4;
+        // cover a couple of legs at once. Concentrating the range (SEED_TICKS) buys far more
+        // depth per unit of capital than widening it, which is what keeps this inside a faucet
+        // budget; tunable because the right trade-off depends on how much USDC is actually on
+        // hand.
+        uint256 wsForLp = leg * vm.envOr("SEED_LP_LEGS", uint256(2));
         uint256 usdcForLp = (wsForLp / 1e12) + 1;
         uint256 usdcForMint = ((leg + wsForLp) / 1e12) + 2; // mint fee eats a little
         uint256 need = usdcForMint + usdcForLp;
@@ -67,9 +70,9 @@ contract SeedPoolSepolia is Script {
 
         bool wsIs0 = Currency.unwrap(d.key.currency0) == address(d.wsusd);
         (uint160 sqrtP, int24 tick,,) = pm.getSlot0(d.key.toId());
-        // A wide range: less liquidity supports the same swap, and the price cannot leave it.
-        int24 lower = ((tick - 2000) / d.key.tickSpacing) * d.key.tickSpacing;
-        int24 upper = ((tick + 2000) / d.key.tickSpacing) * d.key.tickSpacing;
+        int24 span = int24(int256(vm.envOr("SEED_TICKS", uint256(300))));
+        int24 lower = ((tick - span) / d.key.tickSpacing) * d.key.tickSpacing;
+        int24 upper = ((tick + span) / d.key.tickSpacing) * d.key.tickSpacing;
 
         vm.startBroadcast(me);
         PoolModifyLiquidityTest lp = new PoolModifyLiquidityTest(pm);
