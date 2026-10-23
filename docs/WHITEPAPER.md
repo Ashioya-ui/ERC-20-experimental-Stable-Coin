@@ -5,11 +5,11 @@
 > **Status.** The payment rail is live on Base Sepolia (chain 84532, block 48884064) and has
 > settled real payments. The **rebase has executed there three times** — the index has stepped
 > `1e18` → `1.000150005624999998e18` → `1.000225016875421872e18`, each step the policy's maximum
-> at neutral entropy. The **pool is seeded and the entropy oracle has begun recording**: the
-> hook has taken its first observation from a real swap on the public chain, so `filled()` reads
-> **1 of 8**. **H is still the neutral constant there**, because the oracle returns 0.5 until the
-> eight-block window is full; the policy curve therefore remains exercised only locally and in
-> tests. Mainnet deployment is blocked on legal structure (§8), not on engineering.
+> at neutral entropy. **The entropy oracle has run.** The pool is seeded, the hook has recorded
+> nine real swaps on the public chain, `filled()` reads **8 of 8**, and H is a measurement rather
+> than the warm-up constant: **0.375000006254370307**, against the neutral 0.5 it returns before
+> the window fills. The spectral policy is therefore driven by measured flow on Base Sepolia, not
+> only in tests. Mainnet deployment is blocked on legal structure (§8), not on engineering.
 > There has been no professional audit. Figures are marked *measured* or *modelled*; nothing
 > here is evidence that is not labelled as such.
 
@@ -246,15 +246,13 @@ offering should occur before counsel has signed off.** This is not legal advice.
 
 ## 9. Limitations
 
-- **H has never been measured on a public chain.** The Base Sepolia pool is now seeded and the
-  hook has recorded one real observation, so `oracle.filled()` reads 1 of 8 — but the oracle
-  returns the neutral constant 0.5 until the eight-block window fills, so every number the
-  policy curve produces on that chain is still the warm-up value and not a measurement of flow.
-  The spectral policy — fee tiers, mint caps, buffer, rebase step as functions of H — is
-  exercised only locally and in tests. Filling the remaining seven blocks needs roughly 10 USDC
-  of swap inventory per observation; the deployer's capital is currently inside the pool
-  position, which is why the count stands where it does. The rebase itself has executed on Base
-  Sepolia three times.
+- H is measured on Base Sepolia from a single seeded position and nine swaps of one size in
+  alternating directions — a deliberately regular flow, not organic trading. `filled()` is 8 of
+  8 and H is 0.375000006254370307, below the neutral 0.5, which is what a near-even flow with
+  alternating sign should produce. One measurement from synthetic flow is evidence the engine
+  computes entropy on a live chain; it is not evidence about what H does under real demand, and
+  the policy curve's response across the tiers is still exercised only in tests.
+- The rebase has executed on Base Sepolia three times.
 - No professional audit.
 - No external users, no mainnet, no yield ever earned.
 - Interoperability with third-party x402 clients is untested. Standard clients do not send
