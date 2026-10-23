@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      contents: write
+      contents: read
     env:
       CHAIN_ID: "84532"
       RPC: https://sepolia.base.org
@@ -37,6 +37,10 @@ jobs:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           submodules: recursive
+          # This job runs `forge build` over four git submodules and holds the Etherscan key.
+          # It must not also carry a push credential that any of that code could read out of
+          # .git/config (review S-02). The results travel to `publish` as an artifact instead.
+          persist-credentials: false
       - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
           version: v1.5.1
@@ -141,7 +145,7 @@ jobs:
           echo "ABSENT=$absent" >> "$GITHUB_ENV"
           echo "sourcify holds: $exact exact, $partial partial, $absent absent"
 
-      - name: Commit the verification results
+      - name: Write the verification record
         if: always()
         run: |
           set -euo pipefail
@@ -159,11 +163,14 @@ jobs:
             echo ""
             echo "# totals: exact=${EXACT:-?} partial=${PARTIAL:-?} absent=${ABSENT:-?}"
           } > deployments/84532-verification.txt
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f deployments/84532-verification.txt
-          git commit -q -m "verify(base-sepolia): sourcify results from run ${{ github.run_id }}" || exit 0
-          git push origin "HEAD:refs/heads/deployments/verify-${{ github.run_id }}"
+          cat deployments/84532-verification.txt
+
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        if: always()
+        with:
+          name: sepolia-verification
+          path: deployments/84532-verification.txt
+          if-no-files-found: warn
 
       - name: Summary
         if: always()
@@ -183,8 +190,44 @@ jobs:
             echo "|---|---|---|"
             for k in sUSD treasury oracle stabilizer wsUSD lens hook; do
               a=$(jq -r ".$k // empty" "$D"); [[ -n "$a" ]] || continue
-              echo "| $k | [lookup](https://sourcify.dev/server/check-all-by-addresses?addresses=$a&chainIds=$CHAIN_ID) | [view](https://base-sepolia.blockscout.com/address/$a?tab=contract) |"
+              echo "| $k | [lookup](https://sourcify.dev/server/v2/contract/$CHAIN_ID/$a) | [view](https://base-sepolia.blockscout.com/address/$a?tab=contract) |"
             done
             r=$(jq -r '.router // empty' "deployments/$CHAIN_ID-router.json" 2>/dev/null || true)
-            [[ -n "$r" ]] && echo "| SpectrumPayRouter | [lookup](https://sourcify.dev/server/check-all-by-addresses?addresses=$r&chainIds=$CHAIN_ID) | [view](https://base-sepolia.blockscout.com/address/$r?tab=contract) |"
+            [[ -n "$r" ]] && echo "| SpectrumPayRouter | [lookup](https://sourcify.dev/server/v2/contract/$CHAIN_ID/$r) | [view](https://base-sepolia.blockscout.com/address/$r?tab=contract) |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Publish the verification record to a branch
+    needs: verify
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      # This job holds the only git credential in the workflow and runs no build, no
+      # dependency code and no secret. It is the pattern deploy-sepolia-rail.yml already uses.
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        continue-on-error: true
+        with:
+          name: sepolia-verification
+          path: incoming
+      - name: Commit and push
+        run: |
+          set -uo pipefail
+          [[ -f incoming/84532-verification.txt ]] || { echo "nothing to publish"; exit 0; }
+          mkdir -p deployments
+          cp -f incoming/84532-verification.txt deployments/84532-verification.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f deployments/84532-verification.txt
+          git diff --cached --quiet && { echo "nothing new"; exit 0; }
+          git commit -q -m "verify(base-sepolia): sourcify results from run ${{ github.run_id }}"
+          # Bookkeeping: a push that does not land must not turn a successful verification run
+          # into a red build. The record is in the artifact and in the job summary either way.
+          if git push origin "HEAD:refs/heads/deployments/verify-${{ github.run_id }}"; then
+            echo "pushed to deployments/verify-${{ github.run_id }}"
+          else
+            echo "::warning::could not push the verification record; it is in the artifact"
+          fi

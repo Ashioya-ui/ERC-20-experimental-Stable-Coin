@@ -38,6 +38,10 @@ jobs:
     name: Deploy to Base Sepolia and pay a real x402 invoice
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # Environment-scoped so a required reviewer and a deployment-branch rule can be attached,
+    # which is the posture audit/review.md records as the S-02 remediation. A repository secret
+    # of the same name still resolves, so this does not break an existing setup.
+    environment: base-sepolia
     permissions:
       contents: read
     env:

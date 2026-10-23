@@ -1,6 +1,6 @@
 # Spectrum Protocol
 
-> **Status: hardened (Phases 4 and 5), not yet deployed, not externally audited.** Phase 4 is
+> **Status: hardened (Phases 4 and 5), **live on Base Sepolia** (block 48884064), not on mainnet, not externally audited.** Phase 4 is
 > frozen at tag `audit-freeze-1`; [`REPORT_PHASE4.md`](REPORT_PHASE4.md) has the findings, the
 > measurements and a go/no-go checklist. Phase 5 ran the protocol at neobank scale ($300m,
 > card-spend flows, 100,000 holders) and fixed what broke: [`REPORT_SCALE.md`](REPORT_SCALE.md). It launches guarded: a 25,000 sUSD supply cap,
@@ -34,7 +34,7 @@ Base Sepolia and try it, in that order, from a computer or from GitHub.
 ```bash
 cp .env.example .env            # BASE_RPC_URL, BASE_SEPOLIA_RPC_URL, ETHERSCAN_API_KEY, DEPLOYER
 # set roles.admin (your Safe) and roles.guardian in config/8453.json
-make test rehearsal             # 219 tests, then the exact mainnet script on a Base-shaped anvil
+make test rehearsal             # 246 tests, then the exact mainnet script on a Base-shaped anvil
 make deploy-base-sepolia        # dress rehearsal on Base Sepolia, with labelled test vaults
 make fork-test                  # the same scenarios on a fork of Base mainnet
 make preflight                  # the whole deployment simulated against live Base state
@@ -60,7 +60,7 @@ research report; the runbook lists the sources.
 git submodule update --init --recursive   # forge-std v1.17.0, OpenZeppelin v5.4.0, v4-periphery (+ v4-core);
                                           # re-run it if a nested fetch times out
 forge build                               # first build takes about 2 min (via-IR, v4-core PoolManager)
-forge test                                # 219 tests (the Base fork suite skips without BASE_RPC_URL)
+forge test                                # 246 tests (the Base fork suite skips without BASE_RPC_URL)
 FOUNDRY_PROFILE=ci forge test             # 10k fuzz runs; invariants 1,024 runs x 256 calls
 script/rehearsal/run.sh                   # mainnet rehearsal on anvil -> rehearsal/latest.log
 
@@ -203,9 +203,11 @@ float and no ETH for gas, and the balance earns between payments.
 
 The EIP-3009 nonce *is* the payment intent — `keccak256(payTo, assets, salt)`, recomputed inside
 `pay()` — so a submitter who changes the payee, the price or the salt invalidates the signature.
-Measured cost is a flat **3.0–3.3 bps** from $0.01 upward; an agent can turn over roughly 46% of
-its treasury in payments per day before fees cancel the yield
-(`x402/review/fee-curve.mjs`, `x402/review/unit-economics.mjs`).
+Measured cost is **3.0–3.3 bps at neutral entropy** from $0.01 upward (1–10 bp across the policy
+curve; the agent authorises at 10 bp and gets the difference back). A model of the unit economics
+puts break-even near 45% of treasury turned over per day, using an assumed 5% APY — the fee side
+is measured, the yield side is not (`x402/review/fee-curve.mjs`,
+`x402/review/unit-economics.mjs`).
 
 ```bash
 make x402          # chain, router, facilitator, merchant, demo and tests, about a minute
