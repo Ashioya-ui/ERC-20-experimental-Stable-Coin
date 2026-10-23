@@ -148,6 +148,58 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           echo "filled=$F H=$H index=$I"
 
+  simulate:
+    name: Reproduce the seed run without broadcasting
+    needs: seed
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    env:
+      CHAIN_ID: "84532"
+      RPC: https://sepolia.base.org
+      SEED_SWAPS: "9"
+      SEED_LP_LEGS: "1"
+      SEED_TICKS: "60"
+      SEED_SINGLE_SIDED: "true"
+    steps:
+      # No secrets reach this job. `forge script` without --broadcast simulates against live
+      # state and reverts for the same reason the broadcast run did, and a simulation needs
+      # only the sender's address, never its key. That is what makes it safe to give this job
+      # write access so the revert reason reaches a branch -- the Actions log host is not
+      # reachable from where this gets analysed.
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
+      - name: Simulate
+        run: |
+          set -uo pipefail
+          DEP=$(jq -r .deployer "deployments/$CHAIN_ID.json")
+          mkdir -p deployments
+          forge script script/SeedPoolSepolia.s.sol \
+            --rpc-url "$RPC" --sender "$DEP" -vvvv \
+            > /tmp/sim.raw 2>&1
+          echo "exit=$?" >> /tmp/sim.raw
+          # Belt and braces: nothing in a simulation carries a key, but a 64-hex run of
+          # characters never needs to leave a runner, so none does.
+          sed -E 's/0x[0-9a-fA-F]{64}/0x<redacted-32-bytes>/g' /tmp/sim.raw \
+            | tail -c 60000 > deployments/84532-seed-simulation.txt
+          tail -40 deployments/84532-seed-simulation.txt
+      - name: Commit the simulation
+        if: always()
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f deployments/84532-seed-simulation.txt
+          git diff --cached --quiet && exit 0
+          git commit -q -m "engine(base-sepolia): seed simulation trace from run ${{ github.run_id }}"
+          git push origin "HEAD:refs/heads/deployments/sim-${{ github.run_id }}"
+
   publish-state:
     name: Publish the measured state
     needs: seed
