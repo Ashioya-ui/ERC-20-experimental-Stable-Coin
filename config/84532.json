@@ -1,7 +1,7 @@
 {
   "chainId": 84532,
   "network": "base-sepolia",
-  "notes": "Dress rehearsal of the mainnet deployment (Phase 4, D1). Same parameters as config/8453.json except the vaults, which the script deploys (two labelled TestnetVaults: plain ERC-4626, no yield, no admin), and the seed amounts, which fit Circle's testnet faucet. Addresses: Uniswap v4 deployments page and v4-periphery's broadcast log for 84532; Circle's USDC address list. allowEoaAdmin is true here so that a plain wallet can be the rehearsal admin; use a Safe if you want to rehearse the Safe flows too. Mainnet always requires a Safe.",
+  "notes": "Dress rehearsal of the mainnet deployment (Phase 4, D1). Same parameters as config/8453.json except the vaults, which the script deploys (two labelled TestnetVaults: plain ERC-4626, no yield, no admin), and the seed amounts, which fit Circle's testnet faucet. Addresses: Uniswap v4 deployments page and v4-periphery's broadcast log for 84532; Circle's USDC address list. allowEoaAdmin is true here so that a plain wallet can be the rehearsal admin; use a Safe if you want to rehearse the Safe flows too. Mainnet always requires a Safe. roles.admin records the address the live deployment actually granted (run 39843514882), so PostDeployCheck can verify the live instance from the committed config; the deploy workflow overwrites it per run.",
   "external": {
     "poolManager": "0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408",
     "positionManager": "0x4b2c77d209d3405f41a037ec6c77f7f5b8e2ca80",
@@ -14,7 +14,7 @@
     "deployTestVaults": true
   },
   "roles": {
-    "admin": "0x0000000000000000000000000000000000000000",
+    "admin": "0x83927691e3c917273B790e6eeB0FD2bc125E371b",
     "guardian": "0x0000000000000000000000000000000000000000",
     "allowEoaAdmin": true
   },
