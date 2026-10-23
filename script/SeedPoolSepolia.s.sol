@@ -46,21 +46,34 @@ contract SeedPoolSepolia is Script {
         address me = msg.sender;
 
         // One swap leg, at least the oracle's threshold with a little headroom so rounding in
-        // the pool cannot drop a block below it.
-        uint256 leg = (minObs * 11) / 10;
-        // Liquidity must absorb a leg repeatedly. Alternating direction means it only has to
-        // cover a couple of legs at once. Concentrating the range (SEED_TICKS) buys far more
-        // depth per unit of capital than widening it, which is what keeps this inside a faucet
-        // budget; tunable because the right trade-off depends on how much USDC is actually on
-        // hand.
-        uint256 wsForLp = leg * vm.envOr("SEED_LP_LEGS", uint256(2));
-        uint256 usdcForLp = (wsForLp / 1e12) + 1;
-        uint256 usdcForMint = ((leg + wsForLp) / 1e12) + 2; // mint fee eats a little
-        uint256 need = usdcForMint + usdcForLp;
+        // the pool cannot drop a block below it. Kept tight: every wei above the threshold is
+        // a wei of depth the position does not get, and depth is what keeps a swap from
+        // exhausting the range and filling for less than the threshold -- which would move
+        // tokens and still record nothing.
+        uint256 leg = (minObs * 101) / 100;
+        // A concentrated range placed entirely on one side of the spot price is funded by one
+        // currency only -- v4 computes liquidity from amount0 alone above the range and from
+        // amount1 alone below it. Put the range on the side that wants USDC and the position
+        // needs no wsUSD at all, so the only minting this script does is the swap inventory.
+        bool singleSided = vm.envOr("SEED_SINGLE_SIDED", true);
+        uint256 lpLegs = vm.envOr("SEED_LP_LEGS", uint256(1));
 
+        bool wsIs0 = Currency.unwrap(d.key.currency0) == address(d.wsusd);
         uint256 have = IERC20(usdc).balanceOf(me);
+
+        uint256 wsForLp = singleSided ? 0 : leg * lpLegs;
+        uint256 usdcForMint = ((leg + wsForLp) / 1e12) + 2; // mint fee eats a little
+        // The floor: depth has to cover a whole leg, or the swap walks out of the range and
+        // fills for less than the oracle counts.
+        uint256 need = usdcForMint + (leg / 1e12) + 1;
+        // Above that floor, the position takes everything left over. A fixed multiple would
+        // leave USDC idle in the deployer while the range it is meant to defend runs thin.
+        uint256 usdcForLp = singleSided && have > need
+            ? have - usdcForMint - 1
+            : ((leg * lpLegs) / 1e12) + 1;
         console2.log("minObservation (wsUSD wei)", minObs);
         console2.log("USDC needed (6dp)         ", need);
+        console2.log("USDC for depth (6dp)      ", usdcForLp);
         console2.log("USDC held   (6dp)         ", have);
         if (have < need) {
             console2.log("SHORTFALL (6dp)           ", need - have);
@@ -68,11 +81,28 @@ contract SeedPoolSepolia is Script {
             revert("SeedPoolSepolia: not enough test USDC");
         }
 
-        bool wsIs0 = Currency.unwrap(d.key.currency0) == address(d.wsusd);
         (uint160 sqrtP, int24 tick,,) = pm.getSlot0(d.key.toId());
         int24 span = int24(int256(vm.envOr("SEED_TICKS", uint256(300))));
-        int24 lower = ((tick - span) / d.key.tickSpacing) * d.key.tickSpacing;
-        int24 upper = ((tick + span) / d.key.tickSpacing) * d.key.tickSpacing;
+        int24 sp = d.key.tickSpacing;
+        int24 lower;
+        int24 upper;
+        if (singleSided) {
+            // Strictly one side of spot, so the position is funded in USDC alone. Which side
+            // that is depends on the pool's currency order, and the first swap has to be the
+            // one that consumes this liquidity: selling wsUSD moves the price towards the
+            // USDC-only side, which is exactly the direction the swap loop starts in.
+            if (wsIs0) {
+                upper = ((tick - sp) / sp) * sp;
+                lower = ((tick - span) / sp) * sp;
+            } else {
+                lower = ((tick + sp) / sp) * sp;
+                upper = ((tick + span) / sp) * sp;
+            }
+            require(lower < upper, "SeedPoolSepolia: SEED_TICKS too narrow");
+        } else {
+            lower = ((tick - span) / sp) * sp;
+            upper = ((tick + span) / sp) * sp;
+        }
 
         vm.startBroadcast(me);
         PoolModifyLiquidityTest lp = new PoolModifyLiquidityTest(pm);
