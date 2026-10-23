@@ -1,0 +1,136 @@
+exit code 1
+Compiling 104 files with Solc 0.8.26
+Solc 0.8.26 finished in 10.53s
+Compiler run successful!
+Traces:
+  [5568452] → new SeedPoolSepolia@0x5b73C5498c1E3b4dbA84de0F1833c4a029d90519
+    └─ ← [Return] 27698 bytes of code
+
+  [2871355] SeedPoolSepolia::run()
+    ├─ [0] VM::toString(84532 [8.453e4]) [staticcall]
+    │   └─ ← [Return] "84532"
+    ├─ [0] VM::readFile("deployments/84532.json") [staticcall]
+    │   └─ ← [Return] <file>
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".treasury") [staticcall]
+    │   └─ ← [Return] 0x1af57BA60edaEDF91F5925A3A79F346cb50F12a6
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".sUSD") [staticcall]
+    │   └─ ← [Return] 0x54De35aC7fd6756D49eA77ce7bbCd026faDC364a
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".oracle") [staticcall]
+    │   └─ ← [Return] 0xC7A4b9E9A7DAef0cF2bb531CCda1a3a4a744B4BB
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".stabilizer") [staticcall]
+    │   └─ ← [Return] 0x3940F5F444B1ec69bb0245062796896135B8f948
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".wsUSD") [staticcall]
+    │   └─ ← [Return] 0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".lens") [staticcall]
+    │   └─ ← [Return] 0x384768E8b0b9d992EE5F23701D21B1b880495285
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".hook") [staticcall]
+    │   └─ ← [Return] 0x7A4BB5720a158a22ae14297915aa21efbd1B6040
+    ├─ [0] VM::parseJsonBytes32("<stringified JSON>", ".hookSalt") [staticcall]
+    │   └─ ← [Return] 0x<redacted-32-bytes>
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".currency0") [staticcall]
+    │   └─ ← [Return] 0x036CbD53842c5426634e7929541eC2318f3dCF7e
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".currency1") [staticcall]
+    │   └─ ← [Return] 0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8
+    ├─ [0] VM::parseJsonUint("<stringified JSON>", ".poolFee") [staticcall]
+    │   └─ ← [Return] 100
+    ├─ [0] VM::parseJsonInt("<stringified JSON>", ".tickSpacing") [staticcall]
+    │   └─ ← [Return] 1
+    ├─ [0] VM::readFile("deployments/84532.json") [staticcall]
+    │   └─ ← [Return] <file>
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".usdc") [staticcall]
+    │   └─ ← [Return] 0x036CbD53842c5426634e7929541eC2318f3dCF7e
+    ├─ [0] VM::parseJsonAddress("<stringified JSON>", ".poolManager") [staticcall]
+    │   └─ ← [Return] 0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408
+    ├─ [0] VM::envOr("SEED_SWAPS", 9) [staticcall]
+    │   └─ ← [Return] <env var value>
+    ├─ [230] 0xC7A4b9E9A7DAef0cF2bb531CCda1a3a4a744B4BB::minObservation() [staticcall]
+    │   └─ ← [Return] 10000000000000000000 [1e19]
+    ├─ [0] VM::envOr("SEED_SINGLE_SIDED", true) [staticcall]
+    │   └─ ← [Return] <env var value>
+    ├─ [0] VM::envOr("SEED_LP_LEGS", 1) [staticcall]
+    │   └─ ← [Return] <env var value>
+    ├─ [9750] 0x036CbD53842c5426634e7929541eC2318f3dCF7e::balanceOf(<deployer>) [staticcall]
+    │   ├─ [2553] 0xd74cc5d436923b8ba2c179b4bCA2841D8A52C5B5::balanceOf(<deployer>) [delegatecall]
+    │   │   └─ ← [Return] 10104581 [1.01e7]
+    │   └─ ← [Return] 10104581 [1.01e7]
+    ├─ [2375] 0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408::extsload(0x<redacted-32-bytes>) [staticcall]
+    │   └─ ← [Return] 0x<redacted-32-bytes>
+    ├─ [0] console::log("minObservation (wsUSD wei)", 10000000000000000000 [1e19]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("USDC needed (6dp)         ", 20200003 [2.02e7]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("USDC for depth (6dp)      ", 10100001 [1.01e7]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("USDC held back for fees   ", 28180 [2.818e4]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("USDC held   (6dp)         ", 10104581 [1.01e7]) [staticcall]
+    │   └─ ← [Stop]
+    ├─ [0] console::log("pool already seeded; swapping against existing liquidity") [staticcall]
+    │   └─ ← [Stop]
+    ├─ [2375] 0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408::extsload(0x<redacted-32-bytes>) [staticcall]
+    │   └─ ← [Return] 0x<redacted-32-bytes>
+    ├─ [0] VM::envOr("SEED_TICKS", 300) [staticcall]
+    │   └─ ← [Return] <env var value>
+    ├─ [0] VM::startBroadcast(<deployer>)
+    │   └─ ← [Return]
+    ├─ [1211532] → new PoolModifyLiquidityTest@0x0B9a175429c7c721E4B6CA1d72ecc1efF0efa788
+    │   └─ ← [Return] 6050 bytes of code
+    ├─ [1391723] → new PoolSwapTest@0x7B58e6C6C4148852Bf198F38F1557d0C432Aa9aF
+    │   └─ ← [Return] 6950 bytes of code
+    ├─ [4458] 0x54De35aC7fd6756D49eA77ce7bbCd026faDC364a::approve(0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8, 115792089237316195423570985008687907853269984665640564039457584007913129639935 [1.157e77])
+    │   ├─ emit Approval(owner: <deployer>, spender: 0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8, value: 115792089237316195423570985008687907853269984665640564039457584007913129639935 [1.157e77])
+    │   └─ ← [Return] true
+    ├─ [4888] 0x54De35aC7fd6756D49eA77ce7bbCd026faDC364a::balanceOf(<deployer>) [staticcall]
+    │   └─ ← [Return] 0
+    ├─ [24334] 0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8::approve(PoolModifyLiquidityTest: [0x0B9a175429c7c721E4B6CA1d72ecc1efF0efa788], 115792089237316195423570985008687907853269984665640564039457584007913129639935 [1.157e77])
+    │   ├─ emit Approval(owner: <deployer>, spender: PoolModifyLiquidityTest: [0x0B9a175429c7c721E4B6CA1d72ecc1efF0efa788], value: 115792089237316195423570985008687907853269984665640564039457584007913129639935 [1.157e77])
+    │   └─ ← [Return] true
+    ├─ [27341] 0x036CbD53842c5426634e7929541eC2318f3dCF7e::approve(PoolModifyLiquidityTest: [0x0B9a175429c7c721E4B6CA1d72ecc1efF0efa788], 115792089237316195423570985008687907853269984665640564039457584007913129639935 [1.157e77])
+    │   ├─ [26673] 0xd74cc5d436923b8ba2c179b4bCA2841D8A52C5B5::approve(PoolModifyLiquidityTest: [0x0B9a175429c7c721E4B6CA1d72ecc1efF0efa788], 115792089237316195423570985008687907853269984665640564039457584007913129639935 [1.157e77]) [delegatecall]
+    │   │   ├─ emit Approval(owner: <deployer>, spender: PoolModifyLiquidityTest: [0x0B9a175429c7c721E4B6CA1d72ecc1efF0efa788], value: 115792089237316195423570985008687907853269984665640564039457584007913129639935 [1.157e77])
+    │   │   └─ ← [Return] true
+    │   └─ ← [Return] true
+    ├─ [24334] 0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8::approve(PoolSwapTest: [0x7B58e6C6C4148852Bf198F38F1557d0C432Aa9aF], 115792089237316195423570985008687907853269984665640564039457584007913129639935 [1.157e77])
+    │   ├─ emit Approval(owner: <deployer>, spender: PoolSwapTest: [0x7B58e6C6C4148852Bf198F38F1557d0C432Aa9aF], value: 115792089237316195423570985008687907853269984665640564039457584007913129639935 [1.157e77])
+    │   └─ ← [Return] true
+    ├─ [25341] 0x036CbD53842c5426634e7929541eC2318f3dCF7e::approve(PoolSwapTest: [0x7B58e6C6C4148852Bf198F38F1557d0C432Aa9aF], 115792089237316195423570985008687907853269984665640564039457584007913129639935 [1.157e77])
+    │   ├─ [24673] 0xd74cc5d436923b8ba2c179b4bCA2841D8A52C5B5::approve(PoolSwapTest: [0x7B58e6C6C4148852Bf198F38F1557d0C432Aa9aF], 115792089237316195423570985008687907853269984665640564039457584007913129639935 [1.157e77]) [delegatecall]
+    │   │   ├─ emit Approval(owner: <deployer>, spender: PoolSwapTest: [0x7B58e6C6C4148852Bf198F38F1557d0C432Aa9aF], value: 115792089237316195423570985008687907853269984665640564039457584007913129639935 [1.157e77])
+    │   │   └─ ← [Return] true
+    │   └─ ← [Return] true
+    ├─ [24093] PoolSwapTest::swap(PoolKey({ currency0: 0x036CbD53842c5426634e7929541eC2318f3dCF7e, currency1: 0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8, fee: 100, tickSpacing: 1, hooks: 0x7A4BB5720a158a22ae14297915aa21efbd1B6040 }), SwapParams({ zeroForOne: true, amountSpecified: -10100000 [-1.01e7], sqrtPriceLimitX96: 79402542647539943191954697886570481 [7.94e34] }), TestSettings({ takeClaims: false, settleUsingBurn: false }), 0x)
+    │   ├─ [21546] 0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408::unlock(0x<redacted-32-bytes>0000000000000000000000009cd82de3a24bc33d45897f72da5966d8920fab4800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000036cbd53842c5426634e7929541ec2318f3dcf7e0000000000000000000000005b0bb86566ca63b57b6be2138a66c1b3d74467d8000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000010000000000000000000000007a4bb5720a158a22ae14297915aa21efbd1b60400000000000000000000000000000000000000000000000000000000000000001ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff65e2e000000000000000000000000000000000000f4ad8fc9975c22b6bf49cc7bb17f100000000000000000000000000000000000000000000000000000000000001800000000000000000000000000000000000000000000000000000000000000000)
+    │   │   ├─ [20327] PoolSwapTest::unlockCallback(0x<redacted-32-bytes>0000000000000000000000009cd82de3a24bc33d45897f72da5966d8920fab4800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000036cbd53842c5426634e7929541ec2318f3dcf7e0000000000000000000000005b0bb86566ca63b57b6be2138a66c1b3d74467d8000000000000000000000000000000000000000000000000000000000000006400000000000000000000000000000000000000000000000000000000000000010000000000000000000000007a4bb5720a158a22ae14297915aa21efbd1b60400000000000000000000000000000000000000000000000000000000000000001ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff65e2e000000000000000000000000000000000000f4ad8fc9975c22b6bf49cc7bb17f100000000000000000000000000000000000000000000000000000000000001800000000000000000000000000000000000000000000000000000000000000000)
+    │   │   │   ├─ [1250] 0x036CbD53842c5426634e7929541eC2318f3dCF7e::balanceOf(<deployer>) [staticcall]
+    │   │   │   │   ├─ [553] 0xd74cc5d436923b8ba2c179b4bCA2841D8A52C5B5::balanceOf(<deployer>) [delegatecall]
+    │   │   │   │   │   └─ ← [Return] 10104581 [1.01e7]
+    │   │   │   │   └─ ← [Return] 10104581 [1.01e7]
+    │   │   │   ├─ [3250] 0x036CbD53842c5426634e7929541eC2318f3dCF7e::balanceOf(0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408) [staticcall]
+    │   │   │   │   ├─ [2553] 0xd74cc5d436923b8ba2c179b4bCA2841D8A52C5B5::balanceOf(0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408) [delegatecall]
+    │   │   │   │   │   └─ ← [Return] 281441705377 [2.814e11]
+    │   │   │   │   └─ ← [Return] 281441705377 [2.814e11]
+    │   │   │   ├─ [859] 0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408::exttload(0x<redacted-32-bytes>) [staticcall]
+    │   │   │   │   └─ ← [Return] 0x<redacted-32-bytes>
+    │   │   │   ├─ [2649] 0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8::balanceOf(<deployer>) [staticcall]
+    │   │   │   │   └─ ← [Return] 990018229101407269 [9.9e17]
+    │   │   │   ├─ [2649] 0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8::balanceOf(0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408) [staticcall]
+    │   │   │   │   └─ ← [Return] 10100000000000000000 [1.01e19]
+    │   │   │   ├─ [859] 0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408::exttload(0x<redacted-32-bytes>) [staticcall]
+    │   │   │   │   └─ ← [Return] 0x<redacted-32-bytes>
+    │   │   │   ├─ [3327] 0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408::swap(PoolKey({ currency0: 0x036CbD53842c5426634e7929541eC2318f3dCF7e, currency1: 0x5B0Bb86566cA63B57B6BE2138a66c1b3D74467d8, fee: 100, tickSpacing: 1, hooks: 0x7A4BB5720a158a22ae14297915aa21efbd1B6040 }), SwapParams({ zeroForOne: true, amountSpecified: -10100000 [-1.01e7], sqrtPriceLimitX96: 79402542647539943191954697886570481 [7.94e34] }), 0x)
+    │   │   │   │   └─ ← [Revert] custom error 0x7c9c6e8f: 00000000000000000000000000000000000f4ad0f74005f53befa2aad0acc6ff00000000000000000000000000000000000f4ad8fc9975c22b6bf49cc7bb17f1
+    │   │   │   └─ ← [Revert] custom error 0x7c9c6e8f: 00000000000000000000000000000000000f4ad0f74005f53befa2aad0acc6ff00000000000000000000000000000000000f4ad8fc9975c22b6bf49cc7bb17f1
+    │   │   └─ ← [Revert] custom error 0x7c9c6e8f: 00000000000000000000000000000000000f4ad0f74005f53befa2aad0acc6ff00000000000000000000000000000000000f4ad8fc9975c22b6bf49cc7bb17f1
+    │   └─ ← [Revert] custom error 0x7c9c6e8f: 00000000000000000000000000000000000f4ad0f74005f53befa2aad0acc6ff00000000000000000000000000000000000f4ad8fc9975c22b6bf49cc7bb17f1
+    └─ ← [Revert] custom error 0x7c9c6e8f: 00000000000000000000000000000000000f4ad0f74005f53befa2aad0acc6ff00000000000000000000000000000000000f4ad8fc9975c22b6bf49cc7bb17f1
+
+
+
+== Logs ==
+  minObservation (wsUSD wei) 10000000000000000000
+  USDC needed (6dp)          20200003
+  USDC for depth (6dp)       10100001
+  USDC held back for fees    28180
+  USDC held   (6dp)          10104581
+  pool already seeded; swapping against existing liquidity
+Error: script failed: custom error 0x7c9c6e8f: 00000000000000000000000000000000000f4ad0f74005f53befa2aad0acc6ff00000000000000000000000000000000000f4ad8fc9975c22b6bf49cc7bb17f1
