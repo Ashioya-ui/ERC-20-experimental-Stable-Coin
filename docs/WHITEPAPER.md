@@ -3,11 +3,12 @@
 **William Alubokho Ashioya** · 23 October 2026 · v1.0, Base Sepolia
 
 > **Status.** The payment rail is live on Base Sepolia (chain 84532, block 48884064) and has
-> settled real payments. The spectral engine described in §3 has **not** run on a public chain:
-> the pool carries no liquidity, so the oracle has recorded nothing and no rebase has occurred
-> there. Mainnet deployment is blocked on legal structure (§8), not on engineering. There has
-> been no professional audit. Figures are marked *measured* or *modelled*; nothing here is
-> evidence that is not labelled as such.
+> settled real payments. The **rebase has executed there** — the index moved off `1e18` by
+> exactly the policy's maximum step at neutral entropy. The **entropy oracle has not run**: the
+> pool carries no liquidity, so the hook has recorded no swaps and H is the neutral constant on
+> the public chain. Mainnet deployment is blocked on legal structure (§8), not on engineering.
+> There has been no professional audit. Figures are marked *measured* or *modelled*; nothing
+> here is evidence that is not labelled as such.
 
 ---
 
@@ -196,7 +197,7 @@ role, the supply cap is in force, redemption is unpausable, the reserve is backe
 privileged path can move reserve funds to a caller's chosen address. It also corrected five
 overstated claims in this project's own documents, which is why §5 is labelled the way it is.
 
-Tooling: 293 passing tests, 10,000-run fuzzing, invariants at 1,024×256, Slither clean over 71
+Tooling: 304 passing tests, 10,000-run fuzzing, invariants at 1,024×256, Slither clean over 71
 contracts and 102 detectors, Halmos proofs on the churn budget, and mutation testing.
 
 ## 7. Deployment
@@ -242,7 +243,9 @@ offering should occur before counsel has signed off.** This is not legal advice.
 
 ## 9. Limitations
 
-- The spectral engine has never run on a public chain; the Sepolia pool has no liquidity.
+- The entropy oracle has never run on a public chain: the Sepolia pool has no liquidity, so H is
+  the neutral constant there and the policy curve is exercised only locally and in tests. The
+  rebase itself has executed on Base Sepolia.
 - No professional audit.
 - No external users, no mainnet, no yield ever earned.
 - Interoperability with third-party x402 clients is untested. Standard clients do not send

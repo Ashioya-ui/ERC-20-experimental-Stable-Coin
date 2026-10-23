@@ -1,7 +1,7 @@
 # Phase 6 — the sUSD x402 payment rail
 
 **Branch** `phase-6-x402` (merged to `main`) · **Date** 22 October 2026
-**Tests** 246 Forge passed / 1 skipped (15 on the router) + 47 Node = 293 passing · **CI** green
+**Tests** 257 Forge passed / 1 skipped + 47 Node = **304 passing** · **CI** green
 **Status** **live on Base Sepolia** (chain 84532), block 48884064. No professional audit.
 
 ## Live on Base Sepolia
@@ -41,14 +41,16 @@ The run paid an sUSD-priced invoice and a USDC-priced invoice routed out of sUSD
 no ETH: the facilitator submitted both and paid the gas. The whole deployment, the router, the
 facilitator's gas float and both settlements came out of a single 0.01 test-ETH faucet drip.
 
-**What is NOT live.** The payment rail settled real payments; the protocol's distinguishing
-machinery has not run on a public chain. The wsUSD/USDC Uniswap v4 pool has **zero liquidity**,
-so the hook has recorded **no** swaps, the entropy oracle reports `filled() = 0` and returns the
-neutral constant, there are **no** `Rebased` events, and `index` is still exactly `1e18`. The
-reserve sits in a `TestnetVault` that lends nothing and earns nothing by construction. The
-deploy script does not seed pool liquidity on Sepolia, so none of this changes on its own.
-Anyone opening the hook address will see an empty pool. "Live on Base Sepolia" is true of the
-rail and false of the spectral engine.
+**What is live, and what is not.** The payment rail settled real x402 payments, and the
+**rebase has now executed on Base Sepolia**: the index moved from exactly `1e18` to
+`1.000074999999999999e18`, which is **+0.75 bp — precisely the policy's maximum rebase step at
+neutral entropy** — distributing surplus accrued from the mint fees those payments generated.
+
+The **entropy oracle has still recorded nothing**. The wsUSD/USDC v4 pool has no liquidity, so
+the hook has never seen a swap and `smoothedEntropy` returns the neutral warm-up constant.
+Filling it needs 33 test USDC against the 4 the deployer holds, because `minObservation` is
+`10e18` and immutable, so every swap leg has a hard floor. Until that is done, H is a constant
+on the public chain and the policy curve is exercised only locally and in tests.
 
 ## What was built
 

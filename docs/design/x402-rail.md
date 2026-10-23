@@ -188,8 +188,8 @@ lying 402.
   not, because the only honest answer then is the one it produces.
 - **No facilitator fee.** The operator pays the gas.
 - **Live on Base Sepolia; the engine is not.** The rail settled real payments on the public
-  chain. The v4 pool has no liquidity, so the oracle has recorded nothing and no rebase has
-  occurred there. The workspace itself cannot reach Base RPCs; public-network work runs in CI. The Base Sepolia steps are in
+  chain and the rebase has executed there. The v4 pool has no liquidity, so the oracle has
+  recorded nothing and H is the neutral constant on the public chain. The workspace itself cannot reach Base RPCs; public-network work runs in CI. The Base Sepolia steps are in
   `DEPLOY_AND_TEST.md`.
 - **Yield and regulation.** A balance that earns while it pays is the point of the rail. It is
   also what the GENIUS Act's yield prohibition targets for US payment-stablecoin issuers (see

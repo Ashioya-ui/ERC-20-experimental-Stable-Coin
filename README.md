@@ -34,7 +34,7 @@ Base Sepolia and try it, in that order, from a computer or from GitHub.
 ```bash
 cp .env.example .env            # BASE_RPC_URL, BASE_SEPOLIA_RPC_URL, ETHERSCAN_API_KEY, DEPLOYER
 # set roles.admin (your Safe) and roles.guardian in config/8453.json
-make test rehearsal             # 246 tests, then the exact mainnet script on a Base-shaped anvil
+make test rehearsal             # 257 tests, then the exact mainnet script on a Base-shaped anvil
 make deploy-base-sepolia        # dress rehearsal on Base Sepolia, with labelled test vaults
 make fork-test                  # the same scenarios on a fork of Base mainnet
 make preflight                  # the whole deployment simulated against live Base state
@@ -60,7 +60,7 @@ research report; the runbook lists the sources.
 git submodule update --init --recursive   # forge-std v1.17.0, OpenZeppelin v5.4.0, v4-periphery (+ v4-core);
                                           # re-run it if a nested fetch times out
 forge build                               # first build takes about 2 min (via-IR, v4-core PoolManager)
-forge test                                # 246 tests (the Base fork suite skips without BASE_RPC_URL)
+forge test                                # 257 tests (the Base fork suite skips without BASE_RPC_URL)
 FOUNDRY_PROFILE=ci forge test             # 10k fuzz runs; invariants 1,024 runs x 256 calls
 script/rehearsal/run.sh                   # mainnet rehearsal on anvil -> rehearsal/latest.log
 
