@@ -187,7 +187,9 @@ lying 402.
   settlement waits for its turn in the send queue. Waiting is bounded; a send already in flight is
   not, because the only honest answer then is the one it produces.
 - **No facilitator fee.** The operator pays the gas.
-- **Local chain only.** The workspace cannot reach Base RPCs. The Base Sepolia steps are in
+- **Live on Base Sepolia; the engine is not.** The rail settled real payments on the public
+  chain. The v4 pool has no liquidity, so the oracle has recorded nothing and no rebase has
+  occurred there. The workspace itself cannot reach Base RPCs; public-network work runs in CI. The Base Sepolia steps are in
   `DEPLOY_AND_TEST.md`.
 - **Yield and regulation.** A balance that earns while it pays is the point of the rail. It is
   also what the GENIUS Act's yield prohibition targets for US payment-stablecoin issuers (see
@@ -197,7 +199,7 @@ lying 402.
 ## Running it
 
 ```
-script/rehearsal/x402.sh            # chain, deployment, router, servers, demo, 30 tests (about 1 minute)
+script/rehearsal/x402.sh            # chain, deployment, router, servers, demo, 47 tests (about 1 minute)
 script/rehearsal/x402.sh --serve    # same set-up, then keeps serving for agents
 source x402/.tmp/current/env.sh
 node x402/agent.mjs balance         # with AGENT_KEYSTORE=$X402_WALLETS/client

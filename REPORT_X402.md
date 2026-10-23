@@ -1,7 +1,7 @@
 # Phase 6 — the sUSD x402 payment rail
 
 **Branch** `phase-6-x402` (merged to `main`) · **Date** 22 October 2026
-**Tests** 246 Forge (15 on the router) + 47 Node = 293 · **CI** green on GitHub's runners
+**Tests** 246 Forge passed / 1 skipped (15 on the router) + 47 Node = 293 passing · **CI** green
 **Status** **live on Base Sepolia** (chain 84532), block 48884064. No professional audit.
 
 ## Live on Base Sepolia
@@ -25,9 +25,30 @@ v4's PoolManager, then used to pay two real x402 invoices on the public chain. E
 The hook address ends `6040` because Uniswap v4 encodes a hook's permissions in its address; it
 was CREATE2-mined to land on exactly `beforeInitialize | afterSwap` on a live network.
 
+**Source is verified.** All eight contracts are published on Sourcify, creation *and* runtime
+bytecode matched, verified 2026-10-22T20:47:48Z (`verify-sepolia.yml`; results committed per run
+to `deployments/84532-verification.txt`). Readable at
+`https://base-sepolia.blockscout.com/address/<address>?tab=contract` and queryable at
+`https://sourcify.dev/server/v2/contract/84532/<address>`.
+
+Sourcify reports `match`, not `exact_match`, and that is the ceiling for this build:
+`foundry.toml` sets `bytecode_hash = "none"`, so the deployed code carries no metadata hash to
+pin an exact match to. The source still compiles to the deployed bytecode, which is what
+verification is for. BaseScan verification needs an Etherscan API key and runs from the same
+workflow once one exists.
+
 The run paid an sUSD-priced invoice and a USDC-priced invoice routed out of sUSD. The agent held
 no ETH: the facilitator submitted both and paid the gas. The whole deployment, the router, the
 facilitator's gas float and both settlements came out of a single 0.01 test-ETH faucet drip.
+
+**What is NOT live.** The payment rail settled real payments; the protocol's distinguishing
+machinery has not run on a public chain. The wsUSD/USDC Uniswap v4 pool has **zero liquidity**,
+so the hook has recorded **no** swaps, the entropy oracle reports `filled() = 0` and returns the
+neutral constant, there are **no** `Rebased` events, and `index` is still exactly `1e18`. The
+reserve sits in a `TestnetVault` that lends nothing and earns nothing by construction. The
+deploy script does not seed pool liquidity on Sepolia, so none of this changes on its own.
+Anyone opening the hook address will see an empty pool. "Live on Base Sepolia" is true of the
+rail and false of the spectral engine.
 
 ## What was built
 
@@ -70,13 +91,21 @@ Every figure is reproducible from the repository against the shipped code.
 
 | | |
 |---|---|
-| Router cost, $0.01 to $10 | **flat 3.0–3.3 bps** (`x402/review/fee-curve.mjs`) |
-| At x402's ~$0.13 mean payment | ~3.1 bps |
+| Router cost, $0.01 to $10, **at neutral entropy** | **flat 3.0–3.3 bps** (`x402/review/fee-curve.mjs`) |
+| Across the whole policy curve | 1–10 bp, quadratic in H (`SpectralPolicy.sol`) |
+| What the agent must authorise | always the 10 bp figure; the difference comes back |
+| At x402's ~$0.13 mean payment, neutral entropy | ~3.1 bps |
 | Below $0.01 | the 0.01 sUSD minimum dominates; change returns as USDC |
-| Settlement gas | router 217,858 · direct sUSD 89,997 · plain USDC 81,392 |
-| Yield, one simulated day at 5% APY | $0.087333 on a $598.35 treasury, 24 rebases |
+| Settlement gas, **on Base Sepolia** | router **216,976** (`0xedd58590…cf90ca`) · EIP-3009 sUSD **89,973** (`0x41dba712…ca6242`) |
+| Settlement gas, Forge medians | router ~206k–222k, median ~217k |
+| Yield, one **simulated** day at 5% APY | $0.087333 on a $598.35 treasury, 24 rebases |
 | Fee per routed payment | $0.000016 |
-| **Break-even** | **5,374 payments/day — $268.72 of daily volume, ~45% treasury turnover** |
+| **Break-even (modelled, not measured)** | **5,374 payments/day — $268.72 of daily volume, ~45% treasury turnover** |
+
+The break-even is a **model, not a measurement**. `x402/review/unit-economics.mjs` mints a 5% APY
+into a mock vault on a local anvil chain; no reserve has ever earned anything. The fee side of it
+is measured; the yield side is assumed. Treat it as the shape of the unit economics, not evidence
+of them.
 
 So an agent can turn over nearly half its treasury in payments every day before the rail costs
 more than the balance earns. Because the fee is flat in the invoice size above the minimum, that
@@ -90,7 +119,7 @@ held no USDC at any point.
 ## Security work
 
 A **22-row threat model** (`docs/design/x402-rail.md`), each row mapped to the test that tries to
-break it. Five defects were found and fixed during the phase, each reproduced before being
+break it. Seven defects were found and fixed during the phase, each reproduced before being
 patched:
 
 | | Defect | Severity |
@@ -100,6 +129,10 @@ patched:
 | §3 | `unconfirmed` never evicted; grows on a provokable error path | Medium |
 | §4 | One hung `cast` subprocess parked **every** later settlement for ever | High |
 | §5 | **The same authorization could be broadcast twice** when a receipt was unreadable | High |
+
+Plus two from the audit's own leftover list: an oversized request body got no answer at all
+(`readJson` destroyed the socket in the same tick as the 413), and the ambiguous-broadcast case
+below.
 
 §5 recurred in a second form: an ambiguous broadcast — `cast send` failing *after* the node
 accepted the transaction — was reported as unsent, inviting the same double broadcast. The error
