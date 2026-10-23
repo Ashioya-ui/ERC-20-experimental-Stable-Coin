@@ -12,3 +12,7 @@ cache-halmos/
 # Application drafts: personal material, kept local until the author decides to
 # publish it deliberately rather than as a side effect of a tidy working tree.
 docs/speedrun-application.md
+
+# Auditor payment keystores and their password files. Encrypted keys and the
+# passwords that open them never enter version control.
+audit/wallets/
