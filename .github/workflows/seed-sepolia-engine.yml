@@ -12,6 +12,12 @@ name: seed-sepolia-engine
 # RUN: push to `seed-sepolia`, or Run workflow.
 
 on:
+  # Every two hours, which is the faucet's own cooldown. The funding guard skips cleanly when
+  # the USDC has not arrived yet and the job seeds the moment it has, so filling the oracle
+  # needs no further instruction from anyone -- it happens on whichever run first finds the
+  # balance. Runs stop by themselves once the window is full.
+  schedule:
+    - cron: "17 */2 * * *"
   push:
     branches: [seed-sepolia]
   workflow_dispatch:
@@ -48,7 +54,10 @@ jobs:
       SEED_TICKS: "60"
       # One-sided depth: the position sits entirely above spot and is funded in USDC alone,
       # which is what brings the requirement inside what the deployer already holds.
-      SEED_SINGLE_SIDED: "true"
+      # Two-sided: a range on one side of spot can only be traded in one direction, which is
+      # exactly the wall the single-sided run hit (v4 answered PriceLimitAlreadyExceeded).
+      # Filling eight blocks needs flow both ways.
+      SEED_SINGLE_SIDED: "false"
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -66,6 +75,10 @@ jobs:
           echo "oracle filled    $(cast call "$O" 'filled()(uint8)' --rpc-url "$RPC")"
           echo "smoothedEntropy  $(cast call "$O" 'smoothedEntropy()(uint256)' --rpc-url "$RPC")"
           echo "index            $(cast call "$T" 'index()(uint256)' --rpc-url "$RPC")"
+          F=$(cast call "$O" 'filled()(uint8)' --rpc-url "$RPC" | awk '{print $1}')
+          # Eight of eight means H is a measurement, not a warm-up constant. Nothing further to
+          # seed, and a scheduled run should not keep swapping for its own sake.
+          [ "${F:-0}" -ge 8 ] && echo "SEED_DONE=1" >> "$GITHUB_ENV" || true
 
       - name: What this run needs, and what is on hand
         env:
@@ -106,6 +119,7 @@ jobs:
       # it cannot, and still reverts with the shortfall if neither is possible.
       - name: Seed the pool and swap
         id: broadcast
+        if: env.SEED_DONE != '1'
         env:
           DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
         run: |
@@ -174,65 +188,6 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           echo "filled=$F H=$H index=$I"
 
-  simulate:
-    name: Reproduce the seed run without broadcasting
-    needs: seed
-    if: always()
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    permissions:
-      contents: write
-    env:
-      CHAIN_ID: "84532"
-      RPC: https://sepolia.base.org
-      SEED_SWAPS: "9"
-      SEED_LP_LEGS: "1"
-      SEED_TICKS: "60"
-      SEED_SINGLE_SIDED: "true"
-    steps:
-      # No secrets reach this job. `forge script` without --broadcast simulates against live
-      # state and reverts for the same reason the broadcast run did, and a simulation needs
-      # only the sender's address, never its key. That is what makes it safe to give this job
-      # write access so the revert reason reaches a branch -- the Actions log host is not
-      # reachable from where this gets analysed.
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        with:
-          submodules: recursive
-      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
-        with:
-          version: v1.5.1
-      - name: Simulate
-        run: |
-          set -uo pipefail
-          DEP=$(jq -r .deployer "deployments/$CHAIN_ID.json")
-          mkdir -p deployments
-          # Actions runs `run:` under `bash -e`, which `set -uo pipefail` does not undo, so a
-          # reverting forge aborted this step before it could write the very trace it exists to
-          # capture. The failure is the output here: it has to be allowed to happen.
-          set +e
-          forge script script/SeedPoolSepolia.s.sol \
-            --rpc-url "$RPC" --sender "$DEP" -vvvv \
-            > /tmp/sim.raw 2>&1
-          RC=$?
-          set -e
-          echo "exit=$RC" >> /tmp/sim.raw
-          # Belt and braces: nothing in a simulation carries a key, but a 64-hex run of
-          # characters never needs to leave a runner, so none does.
-          sed -E 's/0x[0-9a-fA-F]{64}/0x<redacted-32-bytes>/g' /tmp/sim.raw \
-            | tail -c 60000 > deployments/84532-seed-simulation.txt
-          tail -40 deployments/84532-seed-simulation.txt
-      - name: Commit the simulation
-        if: always()
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          [ -f deployments/84532-seed-simulation.txt ] || { echo "no trace produced"; exit 0; }
-          git add -f deployments/84532-seed-simulation.txt
-          git diff --cached --quiet && exit 0
-          git commit -q -m "engine(base-sepolia): seed simulation trace from run ${{ github.run_id }}"
-          git push origin "HEAD:refs/heads/deployments/sim-${{ github.run_id }}"
-
   publish-state:
     name: Publish the measured state
     needs: seed
@@ -245,7 +200,10 @@ jobs:
       CHAIN_ID: "84532"
       RPC: https://sepolia.base.org
       SEED_LP_LEGS: "1"
-      SEED_SINGLE_SIDED: "true"
+      # Two-sided: a range on one side of spot can only be traded in one direction, which is
+      # exactly the wall the single-sided run hit (v4 answered PriceLimitAlreadyExceeded).
+      # Filling eight blocks needs flow both ways.
+      SEED_SINGLE_SIDED: "false"
     steps:
       # No deployment secrets in this job: it only reads public chain state and pushes a record.
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
