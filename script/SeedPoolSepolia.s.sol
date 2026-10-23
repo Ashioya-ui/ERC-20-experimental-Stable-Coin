@@ -58,6 +58,12 @@ contract SeedPoolSepolia is Script {
         bool singleSided = vm.envOr("SEED_SINGLE_SIDED", true);
         uint256 lpLegs = vm.envOr("SEED_LP_LEGS", uint256(1));
 
+        // Each swap pays the pool fee, so an alternating round trip returns slightly less than
+        // it sent and the recycled inventory shrinks a little every lap. Reserve the whole fee
+        // bill up front -- twice the fee on every planned swap, plus a flat allowance for
+        // rounding in the pool's own maths.
+        uint256 swapReserve = ((leg / 1e12) * d.key.fee * swaps * 2) / 1e6 + 10_000;
+
         bool wsIs0 = Currency.unwrap(d.key.currency0) == address(d.wsusd);
         uint256 have = IERC20(usdc).balanceOf(me);
         // A second run finds the capital already inside the position and the deployer nearly
@@ -66,22 +72,36 @@ contract SeedPoolSepolia is Script {
         // last run left behind. Alternating swaps recycle it, and each leg records.
         bool seeded = pm.getLiquidity(d.key.toId()) > 0;
 
-        uint256 wsForLp = singleSided ? 0 : leg * lpLegs;
+        // Two-sided depth is paid for twice over: the position's wsUSD side has to be minted,
+        // and minting is what USDC buys. So the budget splits -- one leg of swap inventory off
+        // the top, then whatever remains divided between the position's two sides. Taking a
+        // fixed multiple instead asks for more than the balance holds and skips the run; this
+        // asks for exactly what is there.
+        uint256 legUsdc = leg / 1e12;
+        uint256 budget = have > swapReserve + 64 ? have - swapReserve - 64 : 0;
+        uint256 perSide = budget > legUsdc ? (budget - legUsdc) / 2 : 0;
+        uint256 wantPerSide = (leg * lpLegs) / 1e12;
+        if (perSide > wantPerSide) perSide = wantPerSide;
+
+        uint256 wsForLp = singleSided ? 0 : perSide * 1e12;
         uint256 usdcForMint = ((leg + wsForLp) / 1e12) + 2; // mint fee eats a little
         // The floor: depth has to cover a whole leg, or the swap walks out of the range and
         // fills for less than the oracle counts.
-        uint256 need = usdcForMint + (leg / 1e12) + 1;
+
         // Each swap pays the pool fee, so an alternating round trip returns slightly less than
         // it sent and the recycled inventory shrinks a little every lap. Putting every spare
         // wei into depth left no margin for that, and the second swap reverted 1,008 wei short
         // on a 10.1 USDC leg. Reserve the whole fee bill up front -- twice the fee on every
         // planned swap, plus a flat allowance for rounding in the pool's own maths.
-        uint256 swapReserve = (((leg / 1e12) * d.key.fee * swaps * 2) / 1e6) + 10_000;
         // Above the floor, the position takes what is left after that reserve. A fixed
         // multiple would leave USDC idle in the deployer while the range it defends runs thin.
-        uint256 usdcForLp = singleSided && have > need + swapReserve
-            ? have - usdcForMint - swapReserve
-            : ((leg * lpLegs) / 1e12) + 1;
+        uint256 usdcForLp = singleSided
+            ? (have > usdcForMint + legUsdc + swapReserve ? have - usdcForMint - swapReserve : wantPerSide + 1)
+            : perSide + 1;
+        // The mint already buys the swap inventory as well as the position's wsUSD side, so
+        // counting a leg again on top of it asked for 10 USDC that was never going to be
+        // spent -- and skipped the run for a shortfall of its own invention.
+        uint256 need = usdcForMint + usdcForLp + swapReserve;
         console2.log("minObservation (wsUSD wei)", minObs);
         console2.log("USDC needed (6dp)         ", need);
         console2.log("USDC for depth (6dp)      ", usdcForLp);
