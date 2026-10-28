@@ -81,7 +81,7 @@ before(async () => {
   await dealUSDC(FUNDER, 25_000_000n);
   await send(A.usdc, 'approve(address,uint256)', [vault, 25_000_000n]);
   await send(vault, 'deposit(uint256,address)', [25_000_000n, agentKey.address]);
-  const agent = await createAgent({ rpcUrl: RPC, signer: agentKey, tmpDir: dir });
+  const agent = await createAgent({ rpcUrl: RPC, signer: agentKey, facilitatorUrl, tmpDir: dir });
 
   world = { facilitator, facilitatorUrl, merchant, merchantUrl, merchantAddress, agent, vault, dir };
 });
