@@ -16,8 +16,9 @@ name: deploy-vault-rail-mainnet
 # Account 1 therefore needs, on Base mainnet: at least 0.0002 ETH and 0.50 USDC.
 #
 # Gates, in order: the router's tests and the full x402 rail on a Base mainnet fork pass in this
-# same run; a read-only funding check runs before anything is sent and stops cleanly if Account 1
-# is short; the CREATE2 deployment is idempotent, so a re-run sends no second router.
+# same run; a read-only funding check runs before anything is sent, waiting up to two hours for
+# the funds to land and stopping cleanly if they never do; the CREATE2 deployment is idempotent,
+# so a re-run sends no second router.
 #
 # RUN: push to `deploy-vault-rail-mainnet`. The report lands on deployments/vault-rail-mainnet-<run>.
 
@@ -71,7 +72,7 @@ jobs:
     name: Deploy and pay on Base mainnet
     needs: gate
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 180
     environment: base-sepolia
     permissions:
       contents: read
@@ -99,9 +100,16 @@ jobs:
           KEY="$DEPLOYER_PRIVATE_KEY"; unset DEPLOYER_PRIVATE_KEY
           DEP=$(cast wallet address --private-key "$KEY"); unset KEY
           [ "$(cast chain-id --rpc-url "$RPC")" = 8453 ] || { echo "::error::RPC is not Base mainnet"; exit 1; }
-          WEI=$(cast balance "$DEP" --rpc-url "$RPC")
-          HAVE=$(cast call "$USDC" 'balanceOf(address)(uint256)' "$DEP" --rpc-url "$RPC" | awk '{print $1}')
-          OK=$(python3 -c "print('true' if $WEI >= $NEED_WEI and $HAVE >= $NEED_USDC else 'false')")
+          # Waits for the funds instead of failing on their absence: the run can be started before
+          # the deposit lands, and it proceeds the minute Account 1 holds enough. Read-only until then.
+          for i in $(seq 1 "${WAIT_MINUTES:-120}"); do
+            WEI=$(cast balance "$DEP" --rpc-url "$RPC" 2>/dev/null || echo 0)
+            HAVE=$(cast call "$USDC" 'balanceOf(address)(uint256)' "$DEP" --rpc-url "$RPC" 2>/dev/null | awk '{print $1}')
+            OK=$(python3 -c "print('true' if ${WEI:-0} >= $NEED_WEI and ${HAVE:-0} >= $NEED_USDC else 'false')")
+            [ "$OK" = true ] && break
+            echo "minute $i: ETH ${WEI:-0} wei of $NEED_WEI, USDC ${HAVE:-0} of $NEED_USDC; waiting"
+            sleep 60
+          done
           REPORT=$(printf 'Base mainnet funding check, run %s\naccount 1  %s\nETH  have %s wei, need %s\nUSDC have %s, need %s\nfunded %s\n' \
             "${{ github.run_id }}" "$DEP" "$WEI" "$NEED_WEI" "$HAVE" "$NEED_USDC" "$OK")
           echo "$REPORT"
