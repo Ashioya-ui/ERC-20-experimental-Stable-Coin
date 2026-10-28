@@ -1,0 +1,582 @@
+{
+  "chain": "base-mainnet",
+  "latest_block": 53212971,
+  "window_days": 7,
+  "sampled_blocks": 14400,
+  "sampled_share_of_window": 0.047619047619047616,
+  "authorizations_in_sample": 114596,
+  "authorizations_per_day_est": 343788.0,
+  "receipts_sampled": 1500,
+  "top_submitters": [
+    {
+      "address": "0xc8d6bac2ff7182d22c4f316bfff9f713261a6cec",
+      "share": 0.4126666666666667
+    },
+    {
+      "address": "0x7f72a02c682e908d46a5677fe937cdb612d94a3b",
+      "share": 0.05333333333333334
+    },
+    {
+      "address": "0x950158b9be56b9893c77089e129b73ea62bbc677",
+      "share": 0.044
+    },
+    {
+      "address": "0x4c934c63c786157fefd990945b25ea60a0fb0205",
+      "share": 0.03
+    },
+    {
+      "address": "0xe74817f4cdc15844314812b2271276e64e890fae",
+      "share": 0.027333333333333334
+    },
+    {
+      "address": "0x68a96f41ff1e9f2e7b591a931a4ad224e7c07863",
+      "share": 0.026
+    },
+    {
+      "address": "0xb87e1a2cc2b4643f2892768e80e41167f17c5860",
+      "share": 0.025333333333333333
+    },
+    {
+      "address": "0x68efafe862d89ce66dd3d7b07d5a3747a0871164",
+      "share": 0.024
+    },
+    {
+      "address": "0x8cda367232d78c067116e3260da881d2da8ffa39",
+      "share": 0.024
+    },
+    {
+      "address": "0x42dd53906b49c202e8e934b059dc019e04634b00",
+      "share": 0.023333333333333334
+    }
+  ],
+  "payment_usdc": {
+    "n": 2356,
+    "sum": 55946.16611,
+    "mean": 23.74625047113752,
+    "median": 0.02,
+    "p75": 0.09,
+    "p90": 0.2,
+    "p99": 15.75,
+    "max": 49252.000492,
+    "zero_share": 0.0,
+    "share_held_by_top_1pct": 0.992374211145029,
+    "share_held_by_top_10pct": 0.9986013798006078
+  },
+  "payers": {
+    "unique_in_sample": 10040,
+    "measured_wallets": 8000,
+    "of": 10040,
+    "usdc": {
+      "n": 8000,
+      "sum": 8918145.757406,
+      "mean": 1114.76821967575,
+      "median": 0.034,
+      "p75": 0.19,
+      "p90": 2.561802,
+      "p99": 147.986826,
+      "max": 4693941.308576,
+      "zero_share": 0.26675,
+      "share_held_by_top_1pct": 0.9986236906964873,
+      "share_held_by_top_10pct": 0.9998549364707426
+    },
+    "holding_any_aave_usdc_share": 0.001,
+    "code_sample": {
+      "n": 400,
+      "eoa": 210,
+      "eip7702_delegated": 20,
+      "contract": 170
+    },
+    "top_by_usdc": [
+      [
+        "0xd86cadb414171d1155aa88076504763f7de32805",
+        4693941.308576,
+        0.0
+      ],
+      [
+        "0xb4807865a786e9e9e26e6a9610f2078e7fc507fb",
+        1456967.524558,
+        0.0
+      ],
+      [
+        "0x2b3558a6369c0687f10927aa6580ec00e100bd04",
+        1151992.387904,
+        0.0
+      ],
+      [
+        "0x20fe51a9229eef2cf8ad9e89d91cab9312cf3b7a",
+        573025.168259,
+        0.0
+      ],
+      [
+        "0x1985ea6e9c68e1c272d8209f3b478ac2fdb25c87",
+        273979.842655,
+        0.0
+      ],
+      [
+        "0x6dcbce46a8b494c885d0e7b6817d2b519df64467",
+        208494.105248,
+        0.0
+      ],
+      [
+        "0x40ebc1ac8d4fedd2e144b75fe9c0420be82750c6",
+        100085.988014,
+        0.0
+      ],
+      [
+        "0x2fc617e933a52713247ce25730f6695920b3befe",
+        93320.64926,
+        0.0
+      ],
+      [
+        "0xd34ea7278e6bd48defe656bbe263aef11101469c",
+        89069.746678,
+        0.0
+      ],
+      [
+        "0x26b610a059de2488ebe3e0eda02ae17907917419",
+        79294.818593,
+        0.0
+      ],
+      [
+        "0x1498ec2dc9d5c9f04c938fe10abb7bc43b3f61bd",
+        47933.600484,
+        0.0
+      ],
+      [
+        "0x7f7a1e4226e01b96d0cf5c83e2bb6c4aa6f247c1",
+        37178.658243,
+        0.0
+      ],
+      [
+        "0xadca14b81f11b00a7bb0dc1152e5e4e995d264e4",
+        10594.91518,
+        0.0
+      ],
+      [
+        "0x5618cea479ecb481de865b4deab323f0985a6d9e",
+        9922.483945,
+        0.0
+      ],
+      [
+        "0xc41b0e5f1174e70c9ddc8c6240214ca1da330320",
+        8178.4424,
+        0.0
+      ],
+      [
+        "0x7b5584426b0ee760f018b37eff2e19a8130ba52b",
+        7916.280037,
+        0.0
+      ],
+      [
+        "0x340539a3fa16808bff6502588e664f451acea70c",
+        6080.302649,
+        0.0
+      ],
+      [
+        "0x07248a9b9eb4918a6b4d045823155d29a593a85f",
+        4703.6495,
+        0.0
+      ],
+      [
+        "0x653eb9450741a76842a44a1951b59f4310ad37bc",
+        4350.791787,
+        0.0
+      ],
+      [
+        "0xc9974d7189ac5ab8b9db1530410161dcd53def35",
+        4315.632172,
+        0.0
+      ],
+      [
+        "0x7718d1ce3dd0c17d0d2087e32c36eaf5f59d27e6",
+        3601.15,
+        0.0
+      ],
+      [
+        "0xa787777b2cf08284358b0cd630db8d9bc52664cf",
+        3032.130752,
+        0.0
+      ],
+      [
+        "0x13de1e11527d8a7f40b8f95a2060c05de5df883e",
+        2890.54744,
+        0.0
+      ],
+      [
+        "0x07896a94364d7121a6f92ed21092e984e09f128c",
+        2679.264813,
+        0.0
+      ],
+      [
+        "0x00f0e0ce9fd32e23baf60e7ef31c488e14453b85",
+        2625.703314,
+        0.0
+      ]
+    ]
+  },
+  "merchants": {
+    "unique_in_receipt_sample": 611,
+    "measured_wallets": 611,
+    "of": 611,
+    "usdc": {
+      "n": 611,
+      "sum": 213393.361335,
+      "mean": 349.2526372094926,
+      "median": 0.0,
+      "p75": 0.0,
+      "p90": 9.353809,
+      "p99": 8549.986107,
+      "max": 64873.796475,
+      "zero_share": 0.795417348608838,
+      "share_held_by_top_1pct": 0.8121288904809781,
+      "share_held_by_top_10pct": 0.9993973636283928
+    },
+    "holding_any_aave_usdc_share": 0.0016366612111292963,
+    "code_sample": {
+      "n": 400,
+      "eoa": 53,
+      "eip7702_delegated": 18,
+      "contract": 329
+    },
+    "top_by_usdc": [
+      [
+        "0xf6ee347de62a1c81eb69eb5b4d4c665e93043bd2",
+        64873.796475,
+        0.0
+      ],
+      [
+        "0xff78965b6fb3b926fa83906cfaf4e2d6e71eb1bf",
+        42252.168476,
+        0.0
+      ],
+      [
+        "0xba2304d1f48ac01cf01427fc9d9ae3d21e71b536",
+        24856.692287,
+        0.015533
+      ],
+      [
+        "0x0bfa625da669398fef9654c9341b9aee1251b56c",
+        15100.580831,
+        0.0
+      ],
+      [
+        "0x325bdf6f7efab24a2210c48c1b64cab2eae1d430",
+        13294.235558,
+        0.0
+      ],
+      [
+        "0x7284d41b5b852f2bd4c99bdf95043d84452d299c",
+        12925.44015,
+        0.0
+      ],
+      [
+        "0xaf36084a4dc0ce760a6dcfa46cf129e140c92aa9",
+        8549.986107,
+        0.0
+      ],
+      [
+        "0x2670b922ef37c7df47158725c0cc407b5382293f",
+        5971.307,
+        0.0
+      ],
+      [
+        "0x85b47b40455ab2bd7921f76dce841b48c82d627c",
+        4791.800059,
+        0.0
+      ],
+      [
+        "0x480cd46e6fade651a0437deadda53d5c8e7d846a",
+        3304.072,
+        0.0
+      ],
+      [
+        "0x86b1b1be6caa9c46583ae5e414f4b348efa92f66",
+        2333.725178,
+        0.0
+      ],
+      [
+        "0xa9dd7cc9cbf0e05551332209289f04be36bc2315",
+        2098.880135,
+        0.0
+      ],
+      [
+        "0xcfa26f13c6c18307033ece13bbb8f470da5b4dbe",
+        1809.46301,
+        0.0
+      ],
+      [
+        "0x8b29dabd6fbb5a09dacbc7978eaed66a8540721d",
+        1683.939021,
+        0.0
+      ],
+      [
+        "0xa8b2c2594ec5774479749d26105c9fb6cdca1d68",
+        1333.57,
+        0.0
+      ],
+      [
+        "0xa58851b98a53a5559a340ddbfc597ec109b6014c",
+        1050.920218,
+        0.0
+      ],
+      [
+        "0xe9030014f5dae217d0a152f02a043567b16c1abf",
+        1032.918373,
+        0.0
+      ],
+      [
+        "0x3e0a7c9a79f0646fc4e72d52b5ee8877f5aa78e7",
+        600.400574,
+        0.0
+      ],
+      [
+        "0x47d3394c7234714e4b9e9b74827c12be847f9dda",
+        545.1,
+        0.0
+      ],
+      [
+        "0xe813d34c0525e0fbb1e6478b86d40b83603c2008",
+        537.129209,
+        0.0
+      ],
+      [
+        "0x0e3df9510de65469c4518d7843919c0b8c7a7757",
+        456.835271,
+        0.0
+      ],
+      [
+        "0xf000ab8b02aa5c52b62bdb10bf63312317e994fc",
+        453.214441,
+        0.0
+      ],
+      [
+        "0x52e29e0d2aa49bfbfc548c0a9f2196f4aa51f3ea",
+        414.22235,
+        0.0
+      ],
+      [
+        "0xf732ea490c5766071785a2310523f7fa2cebb829",
+        398.56,
+        0.0
+      ],
+      [
+        "0x40a17c3004aa1f39223f51a170ea4f92d2043bad",
+        363.516708,
+        0.0
+      ]
+    ]
+  },
+  "aave_usdc_supply": {
+    "pool": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5",
+    "aToken": "0x4e65fe4dba92790696d040ac24aa414708f5c0ab",
+    "apr": 0.043014019879809254,
+    "apy": 0.04395253029123469
+  },
+  "rpc_calls": 187,
+  "idle_yield_per_year_usd": {
+    "payers_measured": 391975.07154403336,
+    "merchants_measured": 9379.178178024977
+  },
+  "merchants_by_sampled_x402_revenue": [
+    {
+      "address": "0x998d7c178a1f9607b47ea3a8e22426451b3ce707",
+      "usdc_received_in_sample": 50212.006414999996,
+      "payments_in_sample": 2
+    },
+    {
+      "address": "0x0bfa625da669398fef9654c9341b9aee1251b56c",
+      "usdc_received_in_sample": 3694.17,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0xff78965b6fb3b926fa83906cfaf4e2d6e71eb1bf",
+      "usdc_received_in_sample": 623.0,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x0e3df9510de65469c4518d7843919c0b8c7a7757",
+      "usdc_received_in_sample": 489.78,
+      "payments_in_sample": 12
+    },
+    {
+      "address": "0x524c827cd1d5691817706763fb67574d107578b1",
+      "usdc_received_in_sample": 271.48500000000007,
+      "payments_in_sample": 142
+    },
+    {
+      "address": "0x6351c235e6f7e08f80974009d01829e5a8250d62",
+      "usdc_received_in_sample": 221.096045,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x3a659e0de5b3643bf78970062c36eea131909ec4",
+      "usdc_received_in_sample": 72.0,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x31d058b5e02c8b01c749e6844d86cdd3f2962cd7",
+      "usdc_received_in_sample": 66.00999999999999,
+      "payments_in_sample": 2
+    },
+    {
+      "address": "0x7bb9c04f7d1d7a33267be7f9ca81de7e7787eeda",
+      "usdc_received_in_sample": 59.32,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0xaf36084a4dc0ce760a6dcfa46cf129e140c92aa9",
+      "usdc_received_in_sample": 39.3390000000001,
+      "payments_in_sample": 736
+    },
+    {
+      "address": "0xe7413410632bcad5ae6ea168b55410920d4580cc",
+      "usdc_received_in_sample": 29.9,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x99b03b03c3fe4178ee8fc300b5efa1970fa6b6db",
+      "usdc_received_in_sample": 20.0,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x79160cdb477ccaec573f395b5c921aeba7258519",
+      "usdc_received_in_sample": 12.0,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x40a17c3004aa1f39223f51a170ea4f92d2043bad",
+      "usdc_received_in_sample": 7.75,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x7284d41b5b852f2bd4c99bdf95043d84452d299c",
+      "usdc_received_in_sample": 5.0399999999999805,
+      "payments_in_sample": 252
+    },
+    {
+      "address": "0x2670b922ef37c7df47158725c0cc407b5382293f",
+      "usdc_received_in_sample": 5.0,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0xe9a0ae6b5f8f935d38a9b3b23db7e4d4bcd38d4c",
+      "usdc_received_in_sample": 5.0,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x6293bab0227313eb0fae270743588d0f588b5458",
+      "usdc_received_in_sample": 5.0,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x5fcb1df014a4151a58e9d328e645f8608243ad81",
+      "usdc_received_in_sample": 4.95,
+      "payments_in_sample": 5
+    },
+    {
+      "address": "0x9355da441e525008f48a19d2e05ca931ed479c8b",
+      "usdc_received_in_sample": 4.90524,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x900e505c9a704ed8ec2419c01f46f3efa569a156",
+      "usdc_received_in_sample": 3.852,
+      "payments_in_sample": 4
+    },
+    {
+      "address": "0x47d3394c7234714e4b9e9b74827c12be847f9dda",
+      "usdc_received_in_sample": 3.3,
+      "payments_in_sample": 4
+    },
+    {
+      "address": "0xc79e3a0aae2298421c72b069a3b23c4ec2e26ed0",
+      "usdc_received_in_sample": 3.0509999999999997,
+      "payments_in_sample": 3
+    },
+    {
+      "address": "0x088ce95853a14295c66536d8e2c6f0d9cbdfc46b",
+      "usdc_received_in_sample": 3.0,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x9d720c6cf6119596d1f60ca55816fd2db5906b33",
+      "usdc_received_in_sample": 2.5,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x86b1b1be6caa9c46583ae5e414f4b348efa92f66",
+      "usdc_received_in_sample": 2.5,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x4518c0ef3f95b0c628e3f84f5900b8475453f578",
+      "usdc_received_in_sample": 2.5,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x351d9392c6db9c506e824dddf6e488df03dd0d69",
+      "usdc_received_in_sample": 2.322,
+      "payments_in_sample": 2
+    },
+    {
+      "address": "0xd56d74c4f894b3cb6d66908dc481703ccb4caebe",
+      "usdc_received_in_sample": 1.908,
+      "payments_in_sample": 2
+    },
+    {
+      "address": "0xda677d3a1ef84e6a62559064f9f12bacb98dcff9",
+      "usdc_received_in_sample": 1.872,
+      "payments_in_sample": 2
+    },
+    {
+      "address": "0x000233eb395ef0be23ce723b3ff565ed25fa8450",
+      "usdc_received_in_sample": 1.665,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x875c693bb283b024fd0fd31518eb76e8068d34c9",
+      "usdc_received_in_sample": 1.557,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x433dfafba818bb95fda7528ba3f3383fb4419010",
+      "usdc_received_in_sample": 1.53,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0xd57050ad9229dd6f1c5d7d2a642a0c86e9a24c98",
+      "usdc_received_in_sample": 1.467,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0xda2b62464bd04e0cd863b1b12dbbc71d37e4e65d",
+      "usdc_received_in_sample": 1.449,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0xa8cb0d5d7e2774ba14a64ee2b9998d6f1c93932d",
+      "usdc_received_in_sample": 1.332,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x5e6831af85dc38340fd9a48694c481256d188989",
+      "usdc_received_in_sample": 1.296,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0xd9777f706afb0e91fec6bbc05deac3a9a5725d71",
+      "usdc_received_in_sample": 1.287,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0xb9c53f0aaeab006544b3768dd7fa17d3147c1759",
+      "usdc_received_in_sample": 1.242,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0xbc3b17ffff09f5d3b30c85a44113944c56ed8e45",
+      "usdc_received_in_sample": 1.233,
+      "payments_in_sample": 1
+    }
+  ]
+}

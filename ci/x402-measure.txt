@@ -1,0 +1,67 @@
+exit 0
+x402 on Base mainnet, measured at block 53,212,971 (last 7 days, 14,400 blocks sampled)
+
+EIP-3009 authorizations in sample   114,596   (~343,788 per day, extrapolated)
+receipts inspected                  1,500
+top submitters (facilitators)       0xc8d6bac2.. 41%, 0x7f72a02c.. 5%, 0x950158b9.. 4%, 0x4c934c63.. 3%, 0xe74817f4.. 3%
+payment size, USDC                  median 0.02, mean 23.75, p90 0.20
+
+Aave USDC supply rate on Base       4.40% APY (live, from the pool)
+
+                         PAYERS                MERCHANTS
+wallets measured         8,000                 611
+USDC held, median        0.03                  0.00
+USDC held, mean          1,114.77              349.25
+USDC held, p90           2.56                  9.35
+USDC held, total         8,918,145.76          213,393.36
+held by top 10%          100%                  100%
+holding zero USDC        27%                   80%
+already in Aave          0.1%                  0.2%
+contracts (code sample)  170/400               329/400
+idle yield / year (USD)  391,975.07            9,379.18
+
+Top merchants by USDC held (address, USDC, already in Aave, payments in receipt sample):
+  0xf6ee347de62a1c81eb69eb5b4d4c665e93043bd2       64,873.80        0.00  2
+  0xff78965b6fb3b926fa83906cfaf4e2d6e71eb1bf       42,252.17        0.00  1
+  0xba2304d1f48ac01cf01427fc9d9ae3d21e71b536       24,856.69        0.02  1
+  0x0bfa625da669398fef9654c9341b9aee1251b56c       15,100.58        0.00  1
+  0x325bdf6f7efab24a2210c48c1b64cab2eae1d430       13,294.24        0.00  35
+  0x7284d41b5b852f2bd4c99bdf95043d84452d299c       12,925.44        0.00  252
+  0xaf36084a4dc0ce760a6dcfa46cf129e140c92aa9        8,549.99        0.00  736
+  0x2670b922ef37c7df47158725c0cc407b5382293f        5,971.31        0.00  1
+  0x85b47b40455ab2bd7921f76dce841b48c82d627c        4,791.80        0.00  1
+  0x480cd46e6fade651a0437deadda53d5c8e7d846a        3,304.07        0.00  1
+  0x86b1b1be6caa9c46583ae5e414f4b348efa92f66        2,333.73        0.00  1
+  0xa9dd7cc9cbf0e05551332209289f04be36bc2315        2,098.88        0.00  72
+  0xcfa26f13c6c18307033ece13bbb8f470da5b4dbe        1,809.46        0.00  1
+  0x8b29dabd6fbb5a09dacbc7978eaed66a8540721d        1,683.94        0.00  1
+  0xa8b2c2594ec5774479749d26105c9fb6cdca1d68        1,333.57        0.00  66
+  0xa58851b98a53a5559a340ddbfc597ec109b6014c        1,050.92        0.00  3
+  0xe9030014f5dae217d0a152f02a043567b16c1abf        1,032.92        0.00  20
+  0x3e0a7c9a79f0646fc4e72d52b5ee8877f5aa78e7          600.40        0.00  10
+  0x47d3394c7234714e4b9e9b74827c12be847f9dda          545.10        0.00  4
+  0xe813d34c0525e0fbb1e6478b86d40b83603c2008          537.13        0.00  1
+
+Top merchants by x402 revenue in the receipt sample (address, USDC, payments):
+  0x998d7c178a1f9607b47ea3a8e22426451b3ce707   50,212.0064  2
+  0x0bfa625da669398fef9654c9341b9aee1251b56c    3,694.1700  1
+  0xff78965b6fb3b926fa83906cfaf4e2d6e71eb1bf      623.0000  1
+  0x0e3df9510de65469c4518d7843919c0b8c7a7757      489.7800  12
+  0x524c827cd1d5691817706763fb67574d107578b1      271.4850  142
+  0x6351c235e6f7e08f80974009d01829e5a8250d62      221.0960  1
+  0x3a659e0de5b3643bf78970062c36eea131909ec4       72.0000  1
+  0x31d058b5e02c8b01c749e6844d86cdd3f2962cd7       66.0100  2
+  0x7bb9c04f7d1d7a33267be7f9ca81de7e7787eeda       59.3200  1
+  0xaf36084a4dc0ce760a6dcfa46cf129e140c92aa9       39.3390  736
+  0xe7413410632bcad5ae6ea168b55410920d4580cc       29.9000  1
+  0x99b03b03c3fe4178ee8fc300b5efa1970fa6b6db       20.0000  1
+  0x79160cdb477ccaec573f395b5c921aeba7258519       12.0000  1
+  0x40a17c3004aa1f39223f51a170ea4f92d2043bad        7.7500  1
+  0x7284d41b5b852f2bd4c99bdf95043d84452d299c        5.0400  252
+  0x2670b922ef37c7df47158725c0cc407b5382293f        5.0000  1
+  0xe9a0ae6b5f8f935d38a9b3b23db7e4d4bcd38d4c        5.0000  1
+  0x6293bab0227313eb0fae270743588d0f588b5458        5.0000  1
+  0x5fcb1df014a4151a58e9d328e645f8608243ad81        4.9500  5
+  0x9355da441e525008f48a19d2e05ca931ed479c8b        4.9052  1
+
+rpc calls: 187
