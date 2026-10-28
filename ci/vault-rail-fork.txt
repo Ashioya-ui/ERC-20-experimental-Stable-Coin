@@ -1,0 +1,89 @@
+exit unit 0, fork 1
+✔ headers are base64 JSON both ways (1.609913ms)
+✔ sameRequirement compares what is paid, to whom, on which chain (0.314231ms)
+✔ EIP-3009 typed data has the six fields in order and the right domain (0.185372ms)
+✔ validators (0.278058ms)
+✔ cast output: JSON is found even with stray log lines around it (seen on a busy anvil) (0.505442ms)
+✔ signer specs (0.20388ms)
+✔ dollar amounts (0.313249ms)
+✔ PayIntent fields reproduce the Solidity typehash string exactly (0.281513ms)
+✔ vault intent typed data (0.394068ms)
+✔ permit typed data (0.400558ms)
+✔ splitting a signature for a permit (0.293151ms)
+✔ cast tuples for the router call (0.137772ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 212.427704
+
+fork of Base mainnet at block 53212376
+Compiling 43 files with Solc 0.8.26
+Solc 0.8.26 finished in 1.86s
+Compiler run successful!
+Script ran successfully.
+
+== Return ==
+router: contract VaultPayRouter 0x95Eb257F1F78F82D3105A709A2F66F3B5B80D3c2
+
+== Logs ==
+  VaultPayRouter 0x95Eb257F1F78F82D3105A709A2F66F3B5B80D3c2
+  chain id       8453
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 8453
+
+Estimated gas price: 0.010530697 gwei
+
+Estimated total gas used for script: 2074996
+
+Estimated amount required: 0.000021851154152212 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/broadcast/DeployVaultPayRouter.s.sol/8453/run-latest.json
+
+Sensitive values saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/cache/DeployVaultPayRouter.s.sol/8453/run-latest.json
+
+{
+  "chainId": 8453,
+  "codehash": "0x9f3d1b1c2c03d2477dedde3df8ef4ce6269ec549b04ac22c68887810dc75591e",
+  "router": "0x95Eb257F1F78F82D3105A709A2F66F3B5B80D3c2",
+  "salt": "0x6bc16b64077405698ba09013c414c21390b38a75e36ef6837507d84382f096a4"
+}
+✔ the facilitator offers the vault router, and only for the vault it trusts (5864.883259ms)
+✔ an agent with no ETH pays an x402 invoice from its Aave position (2115.513177ms)
+✔ a second payment works too, signing a fresh permit at the next nonce (448.830215ms)
+✔ a replayed payment is refused before it reaches the chain (470.945168ms)
+✔ a tampered intent is refused: checked fields locally, signed fields by simulation (267.796331ms)
+✖ an owner sweeps the agent's whole position home, through the facilitator's checks (13.125174ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 5
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9322.511354
+
+✖ failing tests:
+
+test at test/vault-fork.e2e.mjs:182:1
+✖ an owner sweeps the agent's whole position home, through the facilitator's checks (13.125174ms)
+  Error: sweep needs a facilitator and the vault router
+      at Object.sweep (file:///home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/x402/agent.mjs:282:50)
+      at TestContext.<anonymous> (file:///home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/x402/test/vault-fork.e2e.mjs:189:27)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async Test.run (node:internal/test_runner/test:1054:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
