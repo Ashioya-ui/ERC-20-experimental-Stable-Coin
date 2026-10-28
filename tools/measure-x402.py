@@ -182,28 +182,53 @@ def main():
         logs += logs_between(s, s + SEGMENT_BLOCKS - 1)
     sampled_blocks = SEGMENTS * SEGMENT_BLOCKS
     per_day = len(logs) / sampled_blocks * BLOCKS_PER_DAY
-    payers = {}
+    payers, payer_txs = {}, {}
     for lg in logs:
         a = addr_topic(lg["topics"][1])
         payers[a] = payers.get(a, 0) + 1
+        if len(payer_txs.setdefault(a, [])) < 3:
+            payer_txs[a].append(lg["transactionHash"])
 
     # Receipts: who submitted, who was paid, how much.
     txs = list({lg["transactionHash"] for lg in logs})
     random.shuffle(txs)
+    def payments_in(receipts_):
+        """(submitter, payer, payTo, amount) for every EIP-3009 payment in these receipts."""
+        rows = []
+        for r in receipts_:
+            authorizers = {addr_topic(l["topics"][1]) for l in r["logs"]
+                           if l["address"].lower() == USDC and l["topics"][0] == TOPIC_AUTH_USED}
+            for l in r["logs"]:
+                if l["address"].lower() == USDC and l["topics"][0] == TOPIC_TRANSFER and len(l["topics"]) == 3:
+                    frm, to = addr_topic(l["topics"][1]), addr_topic(l["topics"][2])
+                    if frm in authorizers:
+                        rows.append((r["from"].lower(), frm, to, h2i(l["data"]) / 1e6))
+        return rows
+
     receipts = [r for r in batch([("eth_getTransactionReceipt", [t]) for t in txs[:RECEIPTS]], size=25) if r]
     submitters, merchants, amounts, revenue = {}, {}, [], {}
     for r in receipts:
         submitters[r["from"].lower()] = submitters.get(r["from"].lower(), 0) + 1
-        authorizers = {addr_topic(l["topics"][1]) for l in r["logs"]
-                       if l["address"].lower() == USDC and l["topics"][0] == TOPIC_AUTH_USED}
-        for l in r["logs"]:
-            if l["address"].lower() == USDC and l["topics"][0] == TOPIC_TRANSFER and len(l["topics"]) == 3:
-                frm, to = addr_topic(l["topics"][1]), addr_topic(l["topics"][2])
-                if frm in authorizers:
-                    merchants[to] = merchants.get(to, 0) + 1
-                    amt = h2i(l["data"]) / 1e6
-                    amounts.append(amt)
-                    revenue[to] = revenue.get(to, 0) + amt
+    random_payments = payments_in(receipts)
+    for sub, frm, to, amt in random_payments:
+        merchants[to] = merchants.get(to, 0) + 1
+        amounts.append(amt)
+        revenue[to] = revenue.get(to, 0) + amt
+
+    # Which submitters behave like x402 facilitators: many settlements of micro-payments. Profiled
+    # on the random sample only, so the profile is not biased by the targeted lookups below.
+    prof = {}
+    for sub, frm, to, amt in random_payments:
+        x = prof.setdefault(sub, {"payments": 0, "amounts": [], "payTo": set()})
+        x["payments"] += 1
+        x["amounts"].append(amt)
+        x["payTo"].add(to)
+    facilitator_like = {sub for sub, x in prof.items()
+                        if x["payments"] >= 8 and statistics.median(x["amounts"]) <= 1.0}
+    submitter_profiles = sorted(
+        [{"address": sub, "payments_in_sample": x["payments"], "median_usdc": statistics.median(x["amounts"]),
+          "distinct_payTo": len(x["payTo"]), "x402_like": sub in facilitator_like} for sub, x in prof.items()],
+        key=lambda y: -y["payments_in_sample"])[:15]
 
     # Aave: the tokens that mean "already earning", and the live supply rate. Guarded: a missing
     # rate costs one line of the report, not the run.
@@ -243,10 +268,36 @@ def main():
             "code_sample": {"n": len(sample), "eoa": eoa, "eip7702_delegated": delegated,
                             "contract": len(sample) - eoa - delegated},
             "top_by_usdc": sorted(rows, key=lambda x: -x[1])[:25],
+            "_rows": rows,
         }
 
     payer_h = holdings(payers)
     merchant_h = holdings(merchants)
+
+    # Classify the wallets that hold the money. For the 200 biggest payers, read the receipts of
+    # their own sampled payments: who submitted them and how big they were. A wallet whose
+    # payments went through a facilitator-like submitter at micro-payment size is an x402 payer;
+    # one that made a large gasless transfer through anything else is not, however much it holds.
+    big = sorted(payer_h.pop("_rows"), key=lambda x: -x[1])[:200]
+    merchant_h.pop("_rows")
+    want = [t for w, _, _ in big for t in payer_txs.get(w, [])]
+    targeted = [r for r in batch([("eth_getTransactionReceipt", [t]) for t in want], size=25) if r]
+    by_payer = {}
+    for sub, frm, to, amt in payments_in(targeted):
+        by_payer.setdefault(frm, []).append((sub, amt))
+    classified = []
+    for w, u, earning in big:
+        ps = by_payer.get(w, [])
+        x402 = bool(ps) and any(sub in facilitator_like for sub, _ in ps) and statistics.median(a for _, a in ps) <= 5.0
+        classified.append({"address": w, "usdc": u, "in_aave": earning, "x402": x402,
+                           "authorizations_in_sample": payers.get(w, 0),
+                           "median_payment": statistics.median(a for _, a in ps) if ps else None,
+                           "submitters": sorted({sub for sub, _ in ps})})
+    x402_big = [c for c in classified if c["x402"]]
+    other_big = [c for c in classified if not c["x402"]]
+    # Heavy users: wallets paying most often, whatever they hold. Who an x402 product is for.
+    heavy = sorted(payers.items(), key=lambda x: -x[1])[:30]
+    heavy_bal = dict(zip([w for w, _ in heavy], multicall_balances([(USDC, w) for w, _ in heavy])))
     top_sub = sorted(submitters.items(), key=lambda x: -x[1])[:10]
     result = {
         "chain": "base-mainnet", "latest_block": latest, "window_days": WINDOW_DAYS,
@@ -256,6 +307,16 @@ def main():
         "top_submitters": [{"address": a, "share": c / len(receipts)} for a, c in top_sub],
         "payment_usdc": dist(amounts),
         "payers": {"unique_in_sample": len(payers), **payer_h},
+        "facilitator_like_submitters": sorted(facilitator_like),
+        "submitter_profiles": submitter_profiles,
+        "big_payers_classified": classified,
+        "big_payers_summary": {
+            "x402_count": len(x402_big), "x402_usdc": sum(c["usdc"] for c in x402_big),
+            "other_count": len(other_big), "other_usdc": sum(c["usdc"] for c in other_big),
+        },
+        "heaviest_payers": [{"address": w, "authorizations_in_sample": n,
+                             "authorizations_per_week_est": n / (sampled_blocks / (WINDOW_DAYS * BLOCKS_PER_DAY)),
+                             "usdc": heavy_bal[w] / 1e6} for w, n in heavy],
         "merchants": {"unique_in_receipt_sample": len(merchants), **merchant_h},
         "aave_usdc_supply": {"pool": pool, "aToken": a_token, "apr": apr, "apy": apy},
         "rpc_calls": _n,
@@ -301,6 +362,24 @@ def main():
     ]
     for w, u, a in merchant_h["top_by_usdc"][:20]:
         lines.append(f"  {w}  {u:>14,.2f}  {a:>10,.2f}  {merchants.get(w, 0)}")
+    bs = result["big_payers_summary"]
+    lines += [
+        "",
+        "Who holds the payer-side money: the 200 biggest payers, classified by their own payments",
+        f"  x402 payers (facilitator-submitted micro-payments)  {bs['x402_count']:>4} wallets  {bs['x402_usdc']:>16,.2f} USDC",
+        f"  everything else (large or non-facilitator transfers) {bs['other_count']:>4} wallets  {bs['other_usdc']:>16,.2f} USDC",
+        f"  idle yield / year, x402 payers only (at {apy:.2%})   {bs['x402_usdc'] * apy:>16,.2f} USD" if apy else "",
+        "",
+        "Biggest x402 payers (address, USDC, authorizations in sample, median payment):",
+    ]
+    for c in sorted(x402_big, key=lambda y: -y["usdc"])[:20]:
+        lines.append(f"  {c['address']}  {c['usdc']:>14,.2f}  {c['authorizations_in_sample']:>5}  {c['median_payment']}")
+    lines += ["", "Heaviest payers by frequency (address, authorizations/week est, USDC held):"]
+    for x in result["heaviest_payers"][:20]:
+        lines.append(f"  {x['address']}  {x['authorizations_per_week_est']:>10,.0f}  {x['usdc']:>14,.2f}")
+    lines += ["", "Submitters (address, payments in random sample, median USDC, distinct payTo, x402-like):"]
+    for x in submitter_profiles[:12]:
+        lines.append(f"  {x['address']}  {x['payments_in_sample']:>5}  {x['median_usdc']:>8.4f}  {x['distinct_payTo']:>5}  {x['x402_like']}")
     lines += ["", "Top merchants by x402 revenue in the receipt sample (address, USDC, payments):"]
     for x in result["merchants_by_sampled_x402_revenue"][:20]:
         lines.append(f"  {x['address']}  {x['usdc_received_in_sample']:>12,.4f}  {x['payments_in_sample']}")
