@@ -21,7 +21,7 @@
 // known router, because a receive authorization lets its `to` move the whole value.
 //
 // Library: createAgent({ rpcUrl, signer, payer?, facilitatorUrl?, policy? }).
-// CLI:     agent.mjs address | balance | pay <url> [--prefer <mode>] [--out <file>] | convert <usd>
+// CLI:     agent.mjs address | balance | pay <url> [--prefer <mode>] [--out <file>] | convert <usd> | sweep <to>
 //          Env: RPC_URL, AGENT_KEYSTORE, AGENT_PASSWORD_FILE, AGENT_PAYER (an ERC-1271 account
 //          the key controls), FACILITATOR_URL, AGENT_MAX_PER_REQUEST and AGENT_BUDGET (USD),
 //          AGENT_ALLOWED_PAYTO (comma-separated), AGENT_LEDGER (a JSON file that keeps the
@@ -273,6 +273,36 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
     return out;
   }
 
+  /**
+   * Pay this agent's whole position in each trusted vault to `to`, through the facilitator's
+   * /settle and so through every check it applies: how an owner takes an agent's treasury back.
+   * What stays behind is less than one share of rounding.
+   */
+  async function sweep(to) {
+    if (!facilitatorUrl || !A.vaultRouter) throw new Error('sweep needs a facilitator and the vault router');
+    if (!isAddress(to)) throw new Error(`bad address ${to}`);
+    const out = [];
+    for (const vault of A.vaults) {
+      const amount = await chain.uint(vault, 'maxWithdraw(address)(uint256)', [from]);
+      if (amount === 0n) continue;
+      const r = {
+        scheme: 'exact', network: dep.network, asset: A.usdc, payTo: lc(to), amount: String(amount), maxTimeoutSeconds: 120,
+      };
+      const payload = await authorize({ mode: 'vault', r, vault, cost: amount });
+      const res = await fetch(`${facilitatorUrl}/settle`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          x402Version: X402_VERSION, paymentPayload: { x402Version: X402_VERSION, accepted: r, payload }, paymentRequirements: r,
+        }),
+      });
+      const result = await res.json();
+      if (!result.success) throw new Error(`sweep of ${vault} failed: ${result.errorReason}`);
+      out.push({ vault, amount: String(amount), transaction: result.transaction });
+    }
+    return out;
+  }
+
   /** The PAYMENT-REQUIRED object of a 402 (header first, body as fallback). */
   async function requiredOf(res) {
     const h = res.headers.get(HEADER.required);
@@ -326,7 +356,7 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
   }
 
   return {
-    address: from, owner, deployment: dep, balances, pay, convert, choose, authorize,
+    address: from, owner, deployment: dep, balances, pay, convert, sweep, choose, authorize,
     get spent() { return spent; }, ledger: () => ledger,
   };
 }
@@ -366,6 +396,7 @@ async function main(argv) {
     const out = await agent.convert(parseUsd(rest[0]));
     return show({ converted: rest[0], transaction: out.transaction, balances: await bal() });
   }
+  if (cmd === 'sweep') return show({ sweptTo: rest[0], payments: await agent.sweep(rest[0]), balances: await bal() });
   if (cmd === 'pay') {
     const url = rest[0];
     const before = await bal();
@@ -380,7 +411,7 @@ async function main(argv) {
     if (!r.paid) process.exitCode = 2;
     return;
   }
-  console.error('usage: agent.mjs address | balance | pay <url> [--prefer sUSD|USDC|vault|router|convert] [--out <file>] | convert <usd>');
+  console.error('usage: agent.mjs address | balance | pay <url> [--prefer sUSD|USDC|vault|router|convert] [--out <file>] | convert <usd> | sweep <to>');
   process.exitCode = 64;
 }
 

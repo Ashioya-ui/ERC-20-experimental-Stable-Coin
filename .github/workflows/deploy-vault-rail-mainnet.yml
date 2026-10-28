@@ -1,0 +1,251 @@
+name: deploy-vault-rail-mainnet
+
+# Deploys VaultPayRouter to Base MAINNET and settles real x402 payments through it.
+#
+# Nothing is issued: no token, no reserve, no owner. The router turns an agent's own Aave
+# position (waBasUSDC) into an exact USDC payment the agent signed for. That is what keeps this
+# deployment outside the issuer problem in RUNBOOK_MAINNET.md section 7.
+#
+# Signs with Account 1 (0x9CD82de3A24bc33D45897f72da5966D8920fAB48), the key the Base Sepolia jobs
+# already use, read from the base-sepolia environment: one key, the same on every chain. It spends:
+#   - gas: the router deployment (simulated at about 0.00002 ETH), one deposit, and four router
+#     payments of roughly 320-370k gas each;
+#   - 0.50 USDC, deposited into Aave's waBasUSDC for a throwaway agent wallet. The agent pays two
+#     0.05 USDC invoices to Account 1 acting as the merchant, then sweeps its whole position back
+#     to Account 1. Every cent returns except gas and under-one-share rounding dust.
+# Account 1 therefore needs, on Base mainnet: at least 0.0002 ETH and 0.50 USDC.
+#
+# Gates, in order: the router's tests and the full x402 rail on a Base mainnet fork pass in this
+# same run; a read-only funding check runs before anything is sent and stops cleanly if Account 1
+# is short; the CREATE2 deployment is idempotent, so a re-run sends no second router.
+#
+# RUN: push to `deploy-vault-rail-mainnet`. The report lands on deployments/vault-rail-mainnet-<run>.
+
+on:
+  push:
+    branches: [deploy-vault-rail-mainnet]
+
+concurrency:
+  group: deploy-vault-rail-mainnet
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  RPC: https://mainnet.base.org
+  USDC: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+  VAULT: "0xC768c589647798a6EE01A91FdE98EF2ed046DBD6"
+  NEED_WEI: "200000000000000"   # 0.0002 ETH
+  NEED_USDC: "500000"           # 0.50 USDC
+  DEPOSIT: "500000"
+
+jobs:
+  gate:
+    name: Router tests and the rail on a Base mainnet fork (no secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+      - name: Router tests, including the fork suite against live Base state
+        env:
+          FOUNDRY_PROFILE: vault
+          BASE_RPC_URL: ${{ env.RPC }}
+        run: forge test
+      - name: The x402 rail end to end on a Base mainnet fork
+        env:
+          BASE_RPC_URL: ${{ env.RPC }}
+        run: script/rehearsal/x402-vault-fork.sh
+
+  mainnet:
+    name: Deploy and pay on Base mainnet
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: base-sepolia
+    permissions:
+      contents: read
+    outputs:
+      report: ${{ steps.rail.outputs.report || steps.fund.outputs.report }}
+      deployment: ${{ steps.deploy.outputs.deployment }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+
+      - name: Is Account 1 funded on Base mainnet? (read-only)
+        id: fund
+        env:
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          KEY="$DEPLOYER_PRIVATE_KEY"; unset DEPLOYER_PRIVATE_KEY
+          DEP=$(cast wallet address --private-key "$KEY"); unset KEY
+          [ "$(cast chain-id --rpc-url "$RPC")" = 8453 ] || { echo "::error::RPC is not Base mainnet"; exit 1; }
+          WEI=$(cast balance "$DEP" --rpc-url "$RPC")
+          HAVE=$(cast call "$USDC" 'balanceOf(address)(uint256)' "$DEP" --rpc-url "$RPC" | awk '{print $1}')
+          OK=$(python3 -c "print('true' if $WEI >= $NEED_WEI and $HAVE >= $NEED_USDC else 'false')")
+          REPORT=$(printf 'Base mainnet funding check, run %s\naccount 1  %s\nETH  have %s wei, need %s\nUSDC have %s, need %s\nfunded %s\n' \
+            "${{ github.run_id }}" "$DEP" "$WEI" "$NEED_WEI" "$HAVE" "$NEED_USDC" "$OK")
+          echo "$REPORT"
+          { echo "funded=$OK"; echo "deployer=$DEP"; echo "report<<VR_EOF"; echo "$REPORT"; echo "VR_EOF"; } >> "$GITHUB_OUTPUT"
+
+      - name: Deploy VaultPayRouter (CREATE2, idempotent)
+        id: deploy
+        if: steps.fund.outputs.funded == 'true'
+        env:
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          FOUNDRY_PROFILE: vault
+        run: |
+          set -euo pipefail
+          KEY="$DEPLOYER_PRIVATE_KEY"; unset DEPLOYER_PRIVATE_KEY
+          DEP=${{ steps.fund.outputs.deployer }}
+          # Out of the environment before forge starts: dependency code can read environment
+          # variables, not command-line arguments (review S-02).
+          forge script script/vault/DeployVaultPayRouter.s.sol --rpc-url "$RPC" \
+            --private-key "$KEY" --sender "$DEP" --broadcast --slow
+          unset KEY
+          cat deployments/8453-vault-router.json
+          { echo "deployment<<VR_EOF"; cat deployments/8453-vault-router.json; echo; echo "VR_EOF"; } >> "$GITHUB_OUTPUT"
+
+      - name: Real x402 payments from an Aave position, then the treasury swept home
+        id: rail
+        if: steps.fund.outputs.funded == 'true'
+        env:
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          KEY="$DEPLOYER_PRIVATE_KEY"; unset DEPLOYER_PRIVATE_KEY
+          DEP=${{ steps.fund.outputs.deployer }}
+          ROUTER=$(jq -r .router deployments/8453-vault-router.json)
+          LOG=rail.log; : > "$LOG"
+          say() { echo "$*" | tee -a "$LOG"; }
+
+          # Wallets for this run only. On mainnet every wallet a job makes is somewhere real money
+          # can be stranded, so there is one throwaway wallet, the agent's, and it ends swept to
+          # dust. The facilitator signs with Account 1 through a keystore made here; Account 1 is
+          # also the merchant, so the invoices come home too.
+          mkdir -p .ci-wallets && chmod 700 .ci-wallets
+          ( umask 077; head -c 32 /dev/urandom | base64 | tr -d '\n' > .ci-wallets/pw )
+          CAST_UNSAFE_PASSWORD="$(cat .ci-wallets/pw)" cast wallet import facilitator \
+            --private-key "$KEY" --keystore-dir .ci-wallets >/dev/null
+          AGENT=$(CAST_PASSWORD="$(cat .ci-wallets/pw)" cast wallet new .ci-wallets agent --json | jq -r '.[0].address')
+          chmod 600 .ci-wallets/*
+
+          say "router      $ROUTER"
+          say "account 1   $DEP   (deployer, facilitator gas, merchant)"
+          say "agent       $AGENT (fresh; never holds ETH)"
+          say "agent ETH before: $(cast balance "$AGENT" --rpc-url "$RPC")"
+
+          # The agent's treasury: 0.50 USDC parked in Aave for it by its owner.
+          cast send "$USDC" 'approve(address,uint256)' "$VAULT" "$DEPOSIT" --rpc-url "$RPC" --private-key "$KEY" >/dev/null
+          TX=$(cast send "$VAULT" 'deposit(uint256,address)' "$DEPOSIT" "$AGENT" --rpc-url "$RPC" --private-key "$KEY" --json | jq -r .transactionHash)
+          say "deposit for the agent  $TX"
+          say "agent position: $(cast call "$VAULT" 'maxWithdraw(address)(uint256)' "$AGENT" --rpc-url "$RPC" | awk '{print $1}') USDC units in waBasUSDC"
+
+          export RPC_URL="$RPC" FACILITATOR_URL=http://127.0.0.1:4020 MERCHANT_URL=http://127.0.0.1:4021
+          FACILITATOR_SIGNER="keystore:$PWD/.ci-wallets/facilitator" FACILITATOR_PASSWORD_FILE="$PWD/.ci-wallets/pw" \
+            node x402/facilitator.mjs > facilitator.log 2>&1 &
+          for _ in $(seq 1 90); do curl -sf "$FACILITATOR_URL/health" >/dev/null && break; sleep 1; done
+          MERCHANT_PAYTO="$DEP" node x402/merchant.mjs > merchant.log 2>&1 &
+          for _ in $(seq 1 90); do curl -sf "$MERCHANT_URL/health" >/dev/null && break; sleep 1; done
+          say "$(curl -s "$FACILITATOR_URL/supported")"
+
+          export AGENT_KEYSTORE="$PWD/.ci-wallets/agent" AGENT_PASSWORD_FILE="$PWD/.ci-wallets/pw" AGENT_MAX_PER_REQUEST=0.10
+          set +e
+          node x402/agent.mjs pay "$MERCHANT_URL/api/v1/premium" > pay1.json 2>&1; P1=$?
+          node x402/agent.mjs pay "$MERCHANT_URL/api/v1/premium" > pay2.json 2>&1; P2=$?
+          node x402/agent.mjs sweep "$DEP" > sweep.json 2>&1; SW=$?
+          set -e
+          for f in pay1.json pay2.json sweep.json; do say "--- $f"; cat "$f" | tee -a "$LOG"; done
+          say "--- facilitator log"; tail -20 facilitator.log | tee -a "$LOG"
+
+          say "--- after"
+          say "agent ETH:          $(cast balance "$AGENT" --rpc-url "$RPC")   (never held any)"
+          say "agent position:     $(cast call "$VAULT" 'maxWithdraw(address)(uint256)' "$AGENT" --rpc-url "$RPC" | awk '{print $1}') USDC units (dust)"
+          say "router waBasUSDC:   $(cast call "$VAULT" 'balanceOf(address)(uint256)' "$ROUTER" --rpc-url "$RPC" | awk '{print $1}')   (must be 0)"
+          say "router USDC:        $(cast call "$USDC" 'balanceOf(address)(uint256)' "$ROUTER" --rpc-url "$RPC" | awk '{print $1}')   (must be 0)"
+          say "account 1 USDC:     $(cast call "$USDC" 'balanceOf(address)(uint256)' "$DEP" --rpc-url "$RPC" | awk '{print $1}')"
+          say "account 1 ETH:      $(cast balance "$DEP" --rpc-url "$RPC")"
+          say "exit codes: pay $P1 $P2, sweep $SW"
+
+          # Nothing derived from the key leaves the runner: refuse to publish a report containing it.
+          if grep -qiF "${KEY#0x}" "$LOG"; then echo "::error::key material in the report"; exit 1; fi
+          unset KEY
+          rm -rf .ci-wallets
+          { echo "report<<VR_EOF"; cat "$LOG"; echo "VR_EOF"; } >> "$GITHUB_OUTPUT"
+          [ $P1 -eq 0 ] && [ $P2 -eq 0 ] && [ $SW -eq 0 ]
+
+  verify:
+    name: Source verification on Sourcify (no secrets)
+    needs: mainnet
+    if: needs.mainnet.outputs.deployment != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ steps.v.outputs.result }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
+      - id: v
+        env:
+          FOUNDRY_PROFILE: vault
+          DEPLOYMENT: ${{ needs.mainnet.outputs.deployment }}
+        run: |
+          set +e
+          ROUTER=$(printf '%s' "$DEPLOYMENT" | jq -r .router)
+          forge verify-contract --verifier sourcify --chain 8453 --watch "$ROUTER" \
+            src/vault/VaultPayRouter.sol:VaultPayRouter > v.txt 2>&1; R=$?
+          cat v.txt
+          { echo "result<<VR_EOF"; echo "exit $R"; tail -15 v.txt; echo "VR_EOF"; } >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Commit the deployment and the report (no secrets)
+    needs: [mainnet, verify]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - env:
+          REPORT: ${{ needs.mainnet.outputs.report }}
+          DEPLOYMENT: ${{ needs.mainnet.outputs.deployment }}
+          VERIFY: ${{ needs.verify.outputs.result }}
+        run: |
+          set -euo pipefail
+          mkdir -p deployments
+          printf '%s\n' "$REPORT" "" "--- sourcify" "${VERIFY:-not run}" > deployments/8453-vault-rail-report.txt
+          [ -n "$DEPLOYMENT" ] && printf '%s\n' "$DEPLOYMENT" > deployments/8453-vault-router.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f deployments/8453-vault-rail-report.txt
+          [ -f deployments/8453-vault-router.json ] && git add -f deployments/8453-vault-router.json
+          git diff --cached --quiet && exit 0
+          git commit -q -m "base mainnet: vault rail, run ${{ github.run_id }}"
+          git push origin "HEAD:refs/heads/deployments/vault-rail-mainnet-${{ github.run_id }}"

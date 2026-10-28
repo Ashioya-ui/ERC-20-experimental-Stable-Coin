@@ -178,3 +178,20 @@ test('a tampered intent is refused: checked fields locally, signed fields by sim
 
   assert.equal(await bal(A.usdc, merchantAddress), before, 'nothing moved');
 });
+
+test("an owner sweeps the agent's whole position home, through the facilitator's checks", async (t) => {
+  if (skip) return t.skip(skip);
+  const { agent, vault } = world;
+  const home = '0x' + randomBytes(20).toString('hex');
+  const position = await chain.uint(vault, 'maxWithdraw(address)(uint256)', [agent.address]);
+  assert.ok(position > 0n, 'something to sweep');
+
+  const out = await agent.sweep(home);
+
+  assert.equal(out.length, 1);
+  assert.equal(await bal(A.usdc, home), position, 'the whole position arrived as USDC');
+  assert.ok((await chain.uint(vault, 'maxWithdraw(address)(uint256)', [agent.address])) <= 1n, 'dust only');
+  assert.equal(await bal(vault, A.vaultRouter), 0n, 'router keeps no shares');
+  assert.equal(await bal(A.usdc, A.vaultRouter), 0n, 'router keeps no USDC');
+  assert.deepEqual(await agent.sweep(home), [], 'nothing left to sweep');
+});
