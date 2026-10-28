@@ -8,6 +8,10 @@
 //   router  the requirement's asset is USDC but the payer holds sUSD: a receiveWithAuthorization
 //           of sUSD to the SpectrumPayRouter whose nonce commits to (payTo, amount, salt). The router
 //           redeems, pays the merchant exactly `amount` USDC and returns the change.
+//   vault   the requirement's asset is USDC and the payer holds shares of an ERC-4626 vault over
+//           it (on Base: Aave's waBasUSDC): a PayIntent signed for VaultPayRouter, plus an optional
+//           EIP-2612 permit on the shares. The router withdraws exactly `amount`, pays the merchant
+//           and returns the rest. Nothing is issued; this mode needs no Spectrum deployment at all.
 // Plus POST /convert (a Spectrum extension): the same router call with payTo = the payer, so an
 // agent holding sUSD can get USDC for any merchant on any facilitator.
 //
@@ -20,13 +24,19 @@
 import http from 'node:http';
 import { cast, first, makeChain, parseSigner, signerAddress, UnconfirmedError } from './lib/cast.mjs';
 import { loadDeployment } from './lib/config.mjs';
-import { X402_VERSION, lc, isAddress, isBytes32, isHex, isUint, readJson, sendJson, closeAfter } from './lib/protocol.mjs';
+import {
+  X402_VERSION, lc, isAddress, isBytes32, isHex, isUint, readJson, sendJson, closeAfter, PAY_INTENT_FIELDS, intentTuple,
+  permitTuple,
+} from './lib/protocol.mjs';
 
 const SKEW = 6n; // seconds of clock slack allowed beyond maxTimeoutSeconds
 // A requirement comes from the resource server, which is not trusted: its maxTimeoutSeconds is
 // validated like any other input, and capped, so a hostile or careless merchant cannot talk the
 // facilitator into accepting an authorization that stays spendable for days (A-02).
 const MAX_TIMEOUT = 3600n;
+// VaultPayRouter's ABI tuples, as cast takes them.
+const INTENT_TYPE = `(${PAY_INTENT_FIELDS.map((f) => f.type).join(',')})`;
+const PERMIT_TYPE = '(uint256,uint256,uint8,bytes32,bytes32)';
 
 /** Raised when a settlement waited for its turn in the send queue and never got one. */
 class QueueTimeout extends Error {
@@ -57,6 +67,15 @@ export async function createFacilitator({ rpcUrl, signer, chain: chainOverride, 
     'InvalidPayTo(address)': 'invalid_pay_to',
     'AmountTooSmall()': 'spectrum_amount_too_small',
     'ReserveFloorBreached(uint256,uint256)': 'spectrum_reserve_floor',
+    // VaultPayRouter, and the OpenZeppelin ERC-20 errors its vault raises
+    'IntentAlreadyUsed(bytes32)': 'invalid_exact_evm_payload_authorization_nonce_used',
+    'NotYetValid(uint256)': 'invalid_exact_evm_payload_authorization_valid_after',
+    'Expired(uint256)': 'invalid_exact_evm_payload_authorization_valid_before',
+    'SharesAboveCeiling(uint256,uint256)': 'vault_shares_above_ceiling',
+    'ShortWithdrawal(uint256,uint256)': 'vault_short_withdrawal',
+    'ZeroAmount()': 'invalid_payment_requirements',
+    'ERC20InsufficientAllowance(address,uint256,uint256)': 'vault_insufficient_allowance',
+    'ERC20InsufficientBalance(address,uint256,uint256)': 'insufficient_funds',
   };
   for (const [sig, reason] of Object.entries(map)) errors[(await cast(['sig', sig])).toLowerCase()] = reason;
   const fiatReasons = [
@@ -73,7 +92,9 @@ export async function createFacilitator({ rpcUrl, signer, chain: chainOverride, 
     return null;
   };
 
-  const forbiddenPayTo = new Set([A.sUSD, A.stabilizer, A.treasury, A.router, A.usdc, '0x' + '0'.repeat(40)].filter(Boolean));
+  const forbiddenPayTo = new Set(
+    [A.sUSD, A.stabilizer, A.treasury, A.router, A.usdc, A.vaultRouter, ...A.vaults, '0x' + '0'.repeat(40)].filter(Boolean),
+  );
   // Idempotency per (payer, nonce). Each entry keeps a fingerprint of the whole request, so a
   // cached success is returned only for the identical request, never for the same
   // authorization presented with other requirements.
@@ -136,18 +157,105 @@ export async function createFacilitator({ rpcUrl, signer, chain: chainOverride, 
   const bad = (invalidReason, payer) => ({ isValid: false, invalidReason, ...(payer ? { payer } : {}) });
   // The payer named by a request, for answers produced before check() got far enough to find it.
   const payerOf = (body) => {
-    const from = body?.paymentPayload?.payload?.authorization?.from;
+    const pl = body?.paymentPayload?.payload;
+    const from = pl?.vaultPay !== undefined ? pl.vaultPay?.intent?.payer : pl?.authorization?.from;
     return isAddress(from) ? lc(from) : undefined;
+  };
+  // The idempotency key, taken from the same field check() dispatches on, so that the key and the
+  // path that was checked can never describe two different payments. For a vault intent it is
+  // (payer, router, salt): a payer's salts are its nonces, and the router's own replay guard is the
+  // backstop on-chain.
+  const keyOf = (body) => {
+    const pl = body?.paymentPayload?.payload;
+    if (pl?.vaultPay !== undefined) {
+      const vp = pl.vaultPay;
+      return isAddress(vp?.router) && isAddress(vp?.intent?.payer) && isBytes32(vp?.intent?.salt)
+        ? `${lc(vp.intent.payer)}:vault:${lc(vp.router)}:${lc(vp.intent.salt)}`
+        : null;
+    }
+    const auth = pl?.authorization;
+    return auth && isAddress(auth.from) && isBytes32(auth.nonce) ? `${lc(auth.from)}:${lc(auth.nonce)}` : null;
   };
   const fingerprint = (body) => {
     const p = body?.paymentPayload;
     const r = body?.paymentRequirements;
+    const vp = p?.payload?.vaultPay;
+    if (vp !== undefined) {
+      const it = vp?.intent || {};
+      const pm = vp?.permit;
+      return JSON.stringify([
+        'vault', r?.network, lc(r?.asset), lc(r?.payTo), String(r?.amount), lc(vp?.router),
+        ...PAY_INTENT_FIELDS.map(({ name }) => lc(String(it[name] ?? ''))), lc(vp?.signature),
+        pm ? [String(pm.value), String(pm.deadline), String(pm.v), lc(pm.r), lc(pm.s)] : null,
+      ]);
+    }
     const a = p?.payload?.authorization || {};
     return JSON.stringify([
       r?.network, lc(r?.asset), lc(r?.payTo), String(r?.amount), lc(a.from), lc(a.to), String(a.value),
       String(a.validAfter), String(a.validBefore), lc(a.nonce), lc(p?.payload?.signature), lc(p?.payload?.spectrum?.salt),
     ]);
   };
+
+  /**
+   * The validity window, against chain time (the clock the contracts check): validBefore must
+   * leave SKEW seconds for the transaction to land, and may not reach further than the
+   * requirement's (capped) maxTimeoutSeconds. null when the window is acceptable.
+   */
+  async function windowError(validAfter, validBefore, r, payer) {
+    const now = await chain.timestamp();
+    if (BigInt(validAfter) > now) return bad('invalid_exact_evm_payload_authorization_valid_after', payer);
+    if (!(now + SKEW < BigInt(validBefore))) return bad('invalid_exact_evm_payload_authorization_valid_before', payer);
+    const rawTimeout = r.maxTimeoutSeconds ?? 60;
+    if (!isUint(rawTimeout)) return bad('invalid_payment_requirements', payer);
+    const timeout = BigInt(rawTimeout) > MAX_TIMEOUT ? MAX_TIMEOUT : BigInt(rawTimeout);
+    if (BigInt(validBefore) > now + timeout + SKEW) return bad('invalid_exact_evm_payload_authorization_valid_before', payer);
+    return null;
+  }
+
+  /** The vault path of check(): a PayIntent for VaultPayRouter and an optional share permit. */
+  async function checkVault(vp, r) {
+    const it = vp?.intent;
+    const pm = vp?.permit ?? null;
+    if (
+      !it || !isAddress(vp.router) || !isHex(vp.signature) || !isAddress(it.payer) || !isAddress(it.vault) ||
+      !isAddress(it.payTo) || !isUint(it.assets) || !isUint(it.maxShares) || !isBytes32(it.salt) ||
+      !isUint(it.validAfter) || !isUint(it.validBefore) || !isAddress(r.payTo) || !isUint(r.amount)
+    ) return bad('invalid_payload');
+    if (pm !== null && !(isUint(pm.value) && isUint(pm.deadline) && isUint(pm.v) && isBytes32(pm.r) && isBytes32(pm.s))) {
+      return bad('invalid_payload');
+    }
+    const payer = lc(it.payer);
+    const payTo = lc(r.payTo);
+    const vault = lc(it.vault);
+    // Only the router this facilitator knows, and only vaults it has chosen: it pays the gas for
+    // every attempt, so it does not take a contract a payer picked.
+    if (!A.vaultRouter || lc(vp.router) !== A.vaultRouter) return bad('unsupported_vault_router', payer);
+    if (!A.vaults.includes(vault)) return bad('unsupported_vault', payer);
+    if (forbiddenPayTo.has(payTo)) return bad('invalid_pay_to', payer);
+    if (BigInt(r.amount) === 0n) return bad('invalid_payment_requirements', payer);
+    if (lc(it.payTo) !== payTo) return bad('invalid_exact_evm_payload_recipient_mismatch', payer);
+    if (BigInt(it.assets) !== BigInt(r.amount)) return bad('invalid_exact_evm_payload_authorization_value', payer);
+    const late = await windowError(it.validAfter, it.validBefore, r, payer);
+    if (late) return late;
+    if (lc(first(await chain.call(vault, 'asset()(address)'))) !== lc(r.asset)) return bad('unsupported_asset', payer);
+
+    const intent = intentTuple(it);
+    const digest = lc(first(await chain.call(A.vaultRouter, `intentDigest(${INTENT_TYPE})(bytes32)`, [intent])));
+    if (await chain.bool(A.vaultRouter, 'intentUsed(address,bytes32)(bool)', [it.payer, digest])) {
+      return bad('invalid_exact_evm_payload_authorization_nonce_used', payer);
+    }
+    const needed = await chain.uint(A.vaultRouter, 'sharesFor(address,uint256)(uint256)', [vault, it.assets]);
+    if (needed > BigInt(it.maxShares)) return bad('vault_shares_above_ceiling', payer);
+    if ((await chain.uint(vault, 'balanceOf(address)(uint256)', [it.payer])) < needed) return bad('insufficient_funds', payer);
+
+    const tx = { to: A.vaultRouter, sig: `pay(${INTENT_TYPE},bytes,${PERMIT_TYPE})`, args: [intent, vp.signature, permitTuple(pm)] };
+    try {
+      await chain.call(tx.to, tx.sig, tx.args, { from }); // exactly what /settle would send
+    } catch (e) {
+      return bad(reasonOf(e) || 'unexpected_verify_error', payer);
+    }
+    return { isValid: true, payer, mode: 'vault', tx, digest };
+  }
 
   /** Everything /verify checks; on success also returns the exact transaction /settle sends. */
   async function check(body) {
@@ -157,6 +265,12 @@ export async function createFacilitator({ rpcUrl, signer, chain: chainOverride, 
     if (r.network !== dep.network || p.accepted.network !== dep.network) return bad('invalid_network');
     for (const k of ['asset', 'payTo', 'amount']) {
       if (lc(p.accepted[k]) !== lc(r[k])) return bad('invalid_payment_requirements');
+    }
+    if (p.payload?.vaultPay !== undefined) {
+      // One payment per payload: a payload that is both an authorization and an intent could be
+      // keyed as one and checked as the other.
+      if (p.payload?.authorization !== undefined) return bad('invalid_payload');
+      return checkVault(p.payload.vaultPay, r);
     }
     const auth = p.payload?.authorization;
     const signature = p.payload?.signature;
@@ -169,21 +283,12 @@ export async function createFacilitator({ rpcUrl, signer, chain: chainOverride, 
     if (forbiddenPayTo.has(payTo)) return bad('invalid_pay_to', payer);
     if (BigInt(r.amount) === 0n) return bad('invalid_payment_requirements', payer);
 
-    // Chain time, not the server clock: it is the clock the token contract checks. validBefore
-    // must leave SKEW seconds for the transaction to land.
-    const now = await chain.timestamp();
-    if (BigInt(auth.validAfter) > now) return bad('invalid_exact_evm_payload_authorization_valid_after', payer);
-    if (!(now + SKEW < BigInt(auth.validBefore))) return bad('invalid_exact_evm_payload_authorization_valid_before', payer);
-    const rawTimeout = r.maxTimeoutSeconds ?? 60;
-    if (!isUint(rawTimeout)) return bad('invalid_payment_requirements', payer);
-    const timeout = BigInt(rawTimeout) > MAX_TIMEOUT ? MAX_TIMEOUT : BigInt(rawTimeout);
-    if (BigInt(auth.validBefore) > now + timeout + SKEW) {
-      return bad('invalid_exact_evm_payload_authorization_valid_before', payer);
-    }
+    const late = await windowError(auth.validAfter, auth.validBefore, r, payer);
+    if (late) return late;
 
     const asset = lc(r.asset);
     let mode;
-    if (asset === A.sUSD) mode = 'sUSD';
+    if (A.sUSD && asset === A.sUSD) mode = 'sUSD';
     else if (asset === A.usdc) mode = A.router && lc(auth.to) === A.router ? 'router' : 'USDC';
     else return bad('unsupported_asset', payer);
 
@@ -246,14 +351,13 @@ export async function createFacilitator({ rpcUrl, signer, chain: chainOverride, 
   }
 
   async function settle(body) {
-    const auth = body?.paymentPayload?.payload?.authorization;
-    const key = auth && isAddress(auth.from) && isBytes32(auth.nonce) ? `${lc(auth.from)}:${lc(auth.nonce)}` : null;
+    const key = keyOf(body);
     const fp = fingerprint(body);
     const fail = (errorReason, payer, transaction = '') => ({ success: false, errorReason, payer: payer ?? '', transaction, network: dep.network });
     const prior = key && (settled.get(key) || inflight.get(key) || unconfirmed.get(key));
     if (prior && prior.fp !== fp) {
       // Anything other than the identical request that reuses the authorization is a replay.
-      return fail('invalid_exact_evm_payload_authorization_nonce_used', lc(auth.from));
+      return fail('invalid_exact_evm_payload_authorization_nonce_used', payerOf(body));
     }
     if (prior && prior.result) return prior.result; // a retry gets the same answer
     const succeed = (payer, transaction) => {
@@ -338,6 +442,7 @@ export async function createFacilitator({ rpcUrl, signer, chain: chainOverride, 
 
   /** Spectrum extension: convert the payer's own sUSD to USDC through the router (payTo = payer). */
   async function convert(body) {
+    if (!A.router) return { success: false, errorReason: 'unsupported', transaction: '', network: dep.network };
     const auth = body?.payload?.authorization;
     if (!auth || !isAddress(auth.from) || !isUint(body?.amount)) {
       return { success: false, errorReason: 'invalid_payload', transaction: '', network: dep.network };
@@ -354,14 +459,17 @@ export async function createFacilitator({ rpcUrl, signer, chain: chainOverride, 
   }
 
   function supported() {
-    const kinds = [
-      { x402Version: X402_VERSION, scheme: 'exact', network: dep.network, extra: { asset: A.sUSD, ...dep.domains.sUSD } },
-      { x402Version: X402_VERSION, scheme: 'exact', network: dep.network, extra: { asset: A.usdc, ...dep.domains.usdc } },
+    const kind = (extra) => ({ x402Version: X402_VERSION, scheme: 'exact', network: dep.network, extra });
+    const kinds = [];
+    if (A.sUSD) kinds.push(kind({ asset: A.sUSD, ...dep.domains.sUSD }));
+    kinds.push(kind({ asset: A.usdc, ...dep.domains.usdc }));
+    if (A.router) kinds.push(kind({ asset: A.usdc, spectrumRouter: A.router, payWith: A.sUSD }));
+    if (A.vaultRouter && A.vaults.length) kinds.push(kind({ asset: A.usdc, vaultRouter: A.vaultRouter, vaults: A.vaults }));
+    const extensions = [
+      ...(A.router ? ['spectrum-router', 'spectrum-convert'] : []),
+      ...(A.vaultRouter ? ['spectrum-vault-router'] : []),
     ];
-    if (A.router) {
-      kinds.push({ x402Version: X402_VERSION, scheme: 'exact', network: dep.network, extra: { asset: A.usdc, spectrumRouter: A.router, payWith: A.sUSD } });
-    }
-    return { kinds, extensions: A.router ? ['spectrum-router', 'spectrum-convert'] : [], signers: { [dep.network]: [from] } };
+    return { kinds, extensions, signers: { [dep.network]: [from] } };
   }
 
   const server = http.createServer(async (req, res) => {

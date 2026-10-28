@@ -13,7 +13,10 @@ name: vault-router-ci
 #             mainnet deployment showing the CREATE2 address.
 #   snapshot  default profile, exactly as the main CI measures gas, so the snapshot lines for the
 #             new tests can be merged into .gas-snapshot without guesswork.
-#   publish   no compiler, no secrets: writes both outputs and pushes them to ci/vault-router-<run>.
+#   rail-fork the x402 rail end to end on an anvil fork of Base mainnet: the router deployed as it
+#             will be on mainnet, then facilitator, merchant and agent over HTTP, paying from a
+#             real waBasUSDC position in real USDC.
+#   publish   no compiler, no secrets: writes the outputs and pushes them to ci/vault-router-<run>.
 
 on:
   push:
@@ -105,9 +108,42 @@ jobs:
             echo "VPR_SNAP_EOF"; } >> "$GITHUB_OUTPUT"
           cat /tmp/vault.snap 2>/dev/null || tail -30 /tmp/snap.log
 
+  rail-fork:
+    name: x402 rail end to end on a Base mainnet fork
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      report: ${{ steps.run.outputs.report }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+      - id: run
+        name: Router on a fork, then facilitator, merchant and agent over HTTP
+        env:
+          BASE_RPC_URL: https://mainnet.base.org
+        run: |
+          set +e
+          (cd x402 && node --test --test-reporter=spec test/unit.test.mjs) > /tmp/unit.txt 2>&1; U=$?
+          script/rehearsal/x402-vault-fork.sh > /tmp/fork.txt 2>&1; R=$?
+          set -e
+          { echo "report<<VPR_FORK_EOF"; echo "exit unit $U, fork $R"; tail -c 4000 /tmp/unit.txt; echo;
+            tail -c 36000 /tmp/fork.txt; echo "VPR_FORK_EOF"; } >> "$GITHUB_OUTPUT"
+          tail -80 /tmp/fork.txt
+          [ $U -eq 0 ] && [ $R -eq 0 ]
+
   publish:
     name: Commit the reports
-    needs: [test, snapshot]
+    needs: [test, snapshot, rail-fork]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -119,13 +155,15 @@ jobs:
           OK: ${{ needs.test.outputs.ok }}
           REPORT: ${{ needs.test.outputs.report }}
           SNAP: ${{ needs.snapshot.outputs.lines }}
+          FORK: ${{ needs.rail-fork.outputs.report }}
         run: |
           set -euo pipefail
           mkdir -p ci
           printf 'ok=%s\n%s\n' "${OK:-unknown}" "$REPORT" > ci/vault-router-report.txt
           printf '%s\n' "$SNAP" > ci/vault-router-snapshot.txt
+          printf '%s\n' "$FORK" > ci/vault-rail-fork.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f ci/vault-router-report.txt ci/vault-router-snapshot.txt
+          git add -f ci/vault-router-report.txt ci/vault-router-snapshot.txt ci/vault-rail-fork.txt
           git commit -q -m "ci(vault-router): reports from run ${{ github.run_id }}"
           git push origin "HEAD:refs/heads/ci/vault-router-${{ github.run_id }}"

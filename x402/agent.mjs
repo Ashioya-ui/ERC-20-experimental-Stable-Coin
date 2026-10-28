@@ -9,12 +9,16 @@
 //            only that payment can be made with it. The merchant gets exact USDC and the change
 //            comes back.
 //   USDC     the agent holds USDC: a standard x402 USDC authorization
+//   vault    the merchant prices in USDC and offers VaultPayRouter, and the agent holds shares of
+//            a vault over USDC (on Base, Aave's waBasUSDC): sign a PayIntent, plus an EIP-2612
+//            permit on the shares when the standing allowance falls short. The router withdraws
+//            exactly the price, pays the merchant, returns the rest. Nothing is issued.
 //   convert  the merchant takes only plain USDC: convert just enough sUSD to USDC through the
 //            facilitator's /convert, then pay in USDC
 //
-// Trust: token, router and EIP-712 domain come from the agent's own deployment files, never
-// from the merchant's 402. A merchant-supplied router address is ignored unless it is the known
-// router, because a receive authorization lets its `to` move the whole value.
+// Trust: token, routers, vaults and EIP-712 domains come from the agent's own deployment files,
+// never from the merchant's 402. A merchant-supplied router address is ignored unless it is the
+// known router, because a receive authorization lets its `to` move the whole value.
 //
 // Library: createAgent({ rpcUrl, signer, payer?, facilitatorUrl?, policy? }).
 // CLI:     agent.mjs address | balance | pay <url> [--prefer <mode>] [--out <file>] | convert <usd>
@@ -27,9 +31,12 @@ import { randomBytes } from 'node:crypto';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { first, makeChain, signTypedData, signerAddress } from './lib/cast.mjs';
+import { cast, first, makeChain, signTypedData, signerAddress } from './lib/cast.mjs';
 import { loadDeployment } from './lib/config.mjs';
-import { X402_VERSION, HEADER, encode, decode, lc, isAddress, isUint, authorizationTypedData } from './lib/protocol.mjs';
+import {
+  X402_VERSION, HEADER, encode, decode, lc, isAddress, isUint, authorizationTypedData, vaultIntentTypedData,
+  permitTypedData, splitSignature,
+} from './lib/protocol.mjs';
 
 export class PolicyError extends Error {
   constructor(message) {
@@ -43,7 +50,8 @@ const SCALE = 10n ** 12n; // sUSD has 18 decimals, USDC 6
 // change is idle, non-earning money, and spending it costs no redeem fee, whereas routing
 // redeems more of the earning balance and hands back yet more idle change. Routing comes before
 // convert because it is one transaction instead of two (A-04).
-const MODES = ['sUSD', 'USDC', 'router', 'convert'];
+// A vault position is spent after idle USDC, for the same reason, and before the sUSD router.
+const MODES = ['sUSD', 'USDC', 'vault', 'router', 'convert'];
 
 /** "1.25" (US dollars) -> 1_250_000n (6 decimals). */
 export function parseUsd(s) {
@@ -80,13 +88,48 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
   const ledger = ledgerFile && existsSync(ledgerFile) ? JSON.parse(readFileSync(ledgerFile, 'utf8')) : { spent: '0', payments: [] };
   let spent = BigInt(ledger.spent);
 
-  const usdOf = (mode, cost) => (mode === 'USDC' ? cost : (cost + SCALE - 1n) / SCALE);
+  const usdOf = (mode, cost) => (mode === 'USDC' || mode === 'vault' ? cost : (cost + SCALE - 1n) / SCALE);
 
   async function balances() {
+    const vaults = {};
+    for (const v of A.vaults) {
+      vaults[v] = {
+        shares: await chain.uint(v, 'balanceOf(address)(uint256)', [from]),
+        usdc: await chain.uint(v, 'maxWithdraw(address)(uint256)', [from]),
+      };
+    }
     return {
-      sUSD: await chain.uint(A.sUSD, 'balanceOf(address)(uint256)', [from]),
+      sUSD: A.sUSD ? await chain.uint(A.sUSD, 'balanceOf(address)(uint256)', [from]) : 0n,
       usdc: await chain.uint(A.usdc, 'balanceOf(address)(uint256)', [from]),
+      vaults,
     };
+  }
+
+  // A vault's EIP-712 domain, rebuilt from its ERC-5267 eip712Domain() and accepted only if it
+  // hashes to the vault's own DOMAIN_SEPARATOR(): a permit signed over any other domain would not
+  // verify, so it is never signed.
+  const domains = new Map();
+  async function vaultDomain(vault) {
+    if (domains.has(vault)) return domains.get(vault);
+    const out = (await chain.call(vault, 'eip712Domain()(bytes1,string,string,uint256,address,bytes32,uint256[])'))
+      .split('\n').map((l) => l.trim());
+    const unq = (x) => String(x).replace(/^"|"$/g, '');
+    const [fields, name, version, chainId, verifying] = [out[0], unq(out[1]), unq(out[2]), first(out[3]), lc(out[4])];
+    if (lc(fields) !== '0x0f' || BigInt(chainId) !== BigInt(dep.chainId) || verifying !== vault) {
+      throw new Error(`vault ${vault} uses an EIP-712 domain this agent does not sign for`);
+    }
+    const typeHash = await cast(['keccak', 'EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)']);
+    const encoded = await cast([
+      'abi-encode', 'f(bytes32,bytes32,bytes32,uint256,address)', typeHash,
+      await cast(['keccak', name]), await cast(['keccak', version]), String(dep.chainId), vault,
+    ]);
+    const rebuilt = lc(await cast(['keccak', encoded]));
+    if (rebuilt !== lc(first(await chain.call(vault, 'DOMAIN_SEPARATOR()(bytes32)')))) {
+      throw new Error(`could not reproduce the EIP-712 domain of vault ${vault}`);
+    }
+    const d = { name, version };
+    domains.set(vault, d);
+    return d;
   }
 
   async function timeWindow(maxTimeoutSeconds) {
@@ -120,6 +163,13 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
           const value = await chain.uint(A.router, 'sUSDToAuthorize(uint256)(uint256)', [r.amount]);
           if (lc(r.extra?.spectrumRouter) === A.router) out.push({ mode: 'router', r, cost: value, have: bal.sUSD >= value });
           if (facilitatorUrl) out.push({ mode: 'convert', r, cost: value, have: bal.sUSD >= value });
+        }
+        // Only the agent's own router, and only vaults both sides accept.
+        if (A.vaultRouter && lc(r.extra?.vaultRouter) === A.vaultRouter) {
+          const offered = Array.isArray(r.extra?.vaults) ? r.extra.vaults.map(lc) : [];
+          for (const vault of A.vaults.filter((v) => offered.includes(v))) {
+            out.push({ mode: 'vault', r, vault, cost: amount, have: bal.vaults[vault].usdc >= amount });
+          }
         }
       }
     }
@@ -162,6 +212,36 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
       const token = o.mode === 'sUSD' ? A.sUSD : A.usdc;
       const authorization = { from, to: lc(r.payTo), value: String(r.amount), ...w, nonce: rand32() };
       return { signature: await sign('TransferWithAuthorization', token, authorization), authorization };
+    }
+    if (o.mode === 'vault') {
+      // The intent binds vault, recipient, exact amount and a ceiling on shares; a submitter who
+      // changes any of them invalidates the signature.
+      const maxShares = await chain.uint(A.vaultRouter, 'sharesToAuthorize(address,uint256)(uint256)', [o.vault, r.amount]);
+      const intent = {
+        payer: from, vault: o.vault, payTo: lc(r.payTo), assets: String(r.amount), maxShares: String(maxShares),
+        salt: rand32(), validAfter: w.validAfter, validBefore: w.validBefore,
+      };
+      const signature = await signTypedData(
+        vaultIntentTypedData({ chainId: dep.chainId, router: A.vaultRouter, intent }), signer, work,
+      );
+      // A permit only when the standing allowance falls short, and only for the exact ceiling: it
+      // raises the allowance to what this payment may cost and no further.
+      let permit = null;
+      const allowance = await chain.uint(o.vault, 'allowance(address,address)(uint256)', [from, A.vaultRouter]);
+      if (allowance < maxShares) {
+        if (from !== owner) {
+          throw new Error('a smart-wallet payer must approve the router once: EIP-2612 permits are signed by an EOA');
+        }
+        const { name, version } = await vaultDomain(o.vault);
+        const nonce = await chain.uint(o.vault, 'nonces(address)(uint256)', [from]);
+        const typed = permitTypedData({
+          name, version, chainId: dep.chainId, verifyingContract: o.vault, owner: from, spender: A.vaultRouter,
+          value: maxShares, nonce, deadline: w.validBefore,
+        });
+        const { v, r: pr, s } = splitSignature(await signTypedData(typed, signer, work));
+        permit = { value: String(maxShares), deadline: w.validBefore, v: String(v), r: pr, s };
+      }
+      return { vaultPay: { router: A.vaultRouter, intent, signature, permit } };
     }
     // Router: the nonce is the payment intent, so the authorization can only pay `amount` USDC
     // to `payTo`. The router address is the one from the agent's own deployment files.
@@ -277,7 +357,8 @@ async function main(argv) {
   const show = (o) => console.log(JSON.stringify(o, (_, v) => (typeof v === 'bigint' ? v.toString() : v), 2));
   const bal = async () => {
     const b = await agent.balances();
-    return { sUSD: formatUnits(b.sUSD, 18), USDC: formatUnits(b.usdc, 6) };
+    const vaults = Object.fromEntries(Object.entries(b.vaults).map(([v, x]) => [v, formatUnits(x.usdc, 6)]));
+    return { sUSD: formatUnits(b.sUSD, 18), USDC: formatUnits(b.usdc, 6), ...(Object.keys(vaults).length ? { vaults } : {}) };
   };
   if (cmd === 'address') return show({ address: agent.address, owner: agent.owner });
   if (cmd === 'balance') return show({ address: agent.address, ...(await bal()), spentUSD: formatUnits(agent.spent, 6) });
@@ -299,7 +380,7 @@ async function main(argv) {
     if (!r.paid) process.exitCode = 2;
     return;
   }
-  console.error('usage: agent.mjs address | balance | pay <url> [--prefer sUSD|router|USDC|convert] [--out <file>] | convert <usd>');
+  console.error('usage: agent.mjs address | balance | pay <url> [--prefer sUSD|USDC|vault|router|convert] [--out <file>] | convert <usd>');
   process.exitCode = 64;
 }
 

@@ -35,16 +35,24 @@ export async function createMerchant({ rpcUrl, facilitatorUrl, payTo, marketFile
   const usdc = (amount, { router = true, to = payTo } = {}) => ({
     scheme: 'exact', network: dep.network, amount: String(amount), asset: A.usdc, payTo: to,
     maxTimeoutSeconds: 60,
-    extra: { ...dep.domains.usdc, ...(router && A.router ? { spectrumRouter: A.router, payWith: A.sUSD } : {}) },
+    extra: {
+      ...dep.domains.usdc,
+      ...(router && A.router ? { spectrumRouter: A.router, payWith: A.sUSD } : {}),
+      // An agent holding shares of one of these vaults can pay through VaultPayRouter instead.
+      ...(router && A.vaultRouter && A.vaults.length ? { vaultRouter: A.vaultRouter, vaults: A.vaults } : {}),
+    },
   });
 
   const json = (body) => ({ type: 'application/json', body: JSON.stringify(body) });
   const routes = [
-    {
-      path: '/api/v1/compute', description: 'Compute job, priced in sUSD', mimeType: 'application/json',
-      accepts: () => [sUSD('5000000000000000')],
-      handler: async () => json({ job: 'compute', result: 6 * 7, servedAt: new Date().toISOString() }),
-    },
+    // Priced in sUSD, so only where Spectrum is deployed.
+    ...(A.sUSD
+      ? [{
+          path: '/api/v1/compute', description: 'Compute job, priced in sUSD', mimeType: 'application/json',
+          accepts: () => [sUSD('5000000000000000')],
+          handler: async () => json({ job: 'compute', result: 6 * 7, servedAt: new Date().toISOString() }),
+        }]
+      : []),
     {
       path: '/api/v1/premium', description: 'Premium data, priced in USDC; sUSD holders pay through the Spectrum router',
       mimeType: 'application/json',
@@ -57,7 +65,7 @@ export async function createMerchant({ rpcUrl, facilitatorUrl, payTo, marketFile
       handler: async () => json({ data: 'usdc-only', servedAt: new Date().toISOString() }),
     },
   ];
-  if (testRoutes) {
+  if (testRoutes && A.sUSD) {
     routes.push({
       path: '/api/v1/race', description: 'Test: the payer spends its balance before settlement', mimeType: 'application/json',
       accepts: () => [sUSD('5000000000000000')],
@@ -81,7 +89,7 @@ export async function createMerchant({ rpcUrl, facilitatorUrl, payTo, marketFile
     const m = /^\/work\/([A-Za-z0-9_-]{1,64})$/.exec(pathname);
     if (!m || !marketFile || !existsSync(marketFile)) return null;
     const item = (JSON.parse(readFileSync(marketFile, 'utf8')).items || []).find((i) => i.id === m[1]);
-    if (!item) return null;
+    if (!item || (item.asset !== 'USDC' && !A.sUSD)) return null;
     const req = item.asset === 'USDC' ? usdc(item.price, { to: item.payTo }) : sUSD(item.price, item.payTo);
     return {
       path: pathname, description: item.title, mimeType: 'text/markdown',
