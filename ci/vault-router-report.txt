@@ -1,0 +1,271 @@
+ok=true
+== exit codes: build 0, test 0, slither 0, deploy-simulation 0
+
+== deployment simulation on Base mainnet (no broadcast)
+
+== Logs ==
+  VaultPayRouter 0x95Eb257F1F78F82D3105A709A2F66F3B5B80D3c2
+  chain id       8453
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 8453
+
+Estimated gas price: 0.010303845 gwei
+
+Estimated total gas used for script: 2074996
+
+Estimated amount required: 0.00002138043715962 ETH
+
+==========================
+
+SIMULATION COMPLETE. To broadcast these transactions, add --broadcast and wallet configuration(s) to the previous command. See forge script --help for more.
+
+Transactions saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/broadcast/DeployVaultPayRouter.s.sol/8453/dry-run/run-latest.json
+
+Sensitive values saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/cache/DeployVaultPayRouter.s.sol/8453/dry-run/run-latest.json
+
+
+== slither
+'forge clean' running (wd: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin)
+'forge config --json' running
+'forge build --build-info --deny never --skip ./test/vault/** ./script/vault/** --force' running (wd: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin)
+ERROR:ContractSolcParsing:Impossible to generate IR for VaultPayRouter._nonReentrantBefore (lib/openzeppelin-contracts/contracts/utils/ReentrancyGuardTransient.sol#40-48):
+ 'NoneType' object has no attribute 'parameters'
+ERROR:ContractSolcParsing:Impossible to generate IR for VaultPayRouter._nonReentrantAfter (lib/openzeppelin-contracts/contracts/utils/ReentrancyGuardTransient.sol#50-52):
+ 'NoneType' object has no attribute 'parameters'
+ERROR:ContractSolcParsing:Impossible to generate IR for VaultPayRouter._reentrancyGuardEntered (lib/openzeppelin-contracts/contracts/utils/ReentrancyGuardTransient.sol#58-60):
+ 'NoneType' object has no attribute 'parameters'
+INFO:Detectors:
+Detector: cyclomatic-complexity
+VaultPayRouter.pay(VaultPayRouter.PayIntent,bytes,VaultPayRouter.Permit) (src/vault/VaultPayRouter.sol#124-186) has a high cyclomatic complexity (14).
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#cyclomatic-complexity
+INFO:Slither:. analyzed (25 contracts with 102 detectors), 1 result(s) found
+
+== sizes
+|------------------+------------------+-------------------+--------------------+---------------------|
+| StorageSlot      | 16               | 44                | 24,560             | 49,108              |
+|------------------+------------------+-------------------+--------------------+---------------------|
+| Strings          | 16               | 44                | 24,560             | 49,108              |
+|------------------+------------------+-------------------+--------------------+---------------------|
+| TransientSlot    | 16               | 44                | 24,560             | 49,108              |
+|------------------+------------------+-------------------+--------------------+---------------------|
+| VaultPayHandler  | 5,852            | 7,384             | 18,724             | 41,768              |
+|------------------+------------------+-------------------+--------------------+---------------------|
+| VaultPayRouter   | 6,663            | 7,743             | 17,913             | 41,409              |
+╰------------------+------------------+-------------------+--------------------+---------------------╯
+
+
+== tests
+No files changed, compilation skipped
+
+Ran 24 tests for test/vault/VaultPayRouter.t.sol:VaultPayRouterTest
+[PASS] testFuzz_pay_exactEmptyAndConserving(uint256,uint256,uint256) (runs: 10000, μ: 1819968, ~: 1820445)
+[PASS] test_domainSeparator_isStandardEIP712() (gas: 5992)
+[PASS] test_intentDigest_matchesTheTypedDataSpec() (gas: 28385)
+[PASS] test_pay_aFrontRunSubmissionPaysExactlyAsSigned() (gas: 203041)
+[PASS] test_pay_aVaultCannotBurnSharesThePaymentDidNotBring() (gas: 1875399)
+[PASS] test_pay_blocksReentry() (gas: 1937896)
+[PASS] test_pay_deliversExactPriceAndKeepsNothing() (gas: 202641)
+[PASS] test_pay_emitsPaidFromVault() (gas: 191836)
+[PASS] test_pay_failedPaymentLeavesTheIntentUnused() (gas: 190948)
+[PASS] test_pay_fromAnERC1271Wallet() (gas: 536449)
+[PASS] test_pay_neverHandsAPayerSomeoneElsesTokens() (gas: 293284)
+[PASS] test_pay_refusesAShortWithdrawal() (gas: 1774968)
+[PASS] test_pay_refusesToSpendAboveTheCeiling() (gas: 72725)
+[PASS] test_pay_rejectsAZeroPrice() (gas: 31476)
+[PASS] test_pay_rejectsAnotherKeysSignature() (gas: 63947)
+[PASS] test_pay_rejectsEveryTamperedField() (gas: 1784212)
+[PASS] test_pay_rejectsInvalidRecipients() (gas: 75071)
+[PASS] test_pay_rejectsReplay() (gas: 192546)
+[PASS] test_pay_respectsTheValidityWindow() (gas: 193429)
+[PASS] test_pay_survivesAFrontRunPermit() (gas: 194808)
+[PASS] test_pay_theCeilingProtectsThePayerFromALoss() (gas: 87106)
+[PASS] test_pay_toSelfConvertsSharesToTheAsset() (gas: 184739)
+[PASS] test_pay_usesAStandingAllowanceWithoutAPermit() (gas: 153902)
+[PASS] test_sharesToAuthorize_coversTodayWithOneBasisPoint() (gas: 24444)
+Suite result: ok. 24 passed; 0 failed; 0 skipped; finished in 5.90s (5.91s CPU time)
+
+Ran 4 tests for test/vault/VaultPayRouterBaseMainnetFork.t.sol:VaultPayRouterBaseMainnetForkTest
+[PASS] test_fork_paysFiveCentsFromAnAavePosition() (gas: 400065)
+Logs:
+  gas: pay() with permit on waBasUSDC: 370524
+
+[PASS] test_fork_paysWithAStandingAllowance() (gas: 352653)
+Logs:
+  gas: pay() without permit on waBasUSDC: 316652
+
+[PASS] test_fork_spendsAWholePosition() (gas: 407969)
+[PASS] test_fork_waBasUSDCAcceptsAPermit() (gas: 83091)
+Suite result: ok. 4 passed; 0 failed; 0 skipped; finished in 6.33s (2.64s CPU time)
+
+Ran 2 tests for test/vault/VaultPayRouterInvariant.t.sol:VaultPayRouterInvariantTest
+[PASS] invariant_merchantsReceiveExactlyWhatWasPaid() (runs: 256, calls: 32768, reverts: 0)
+
+╭-----------------+----------+-------+---------+----------╮
+| Contract        | Selector | Calls | Reverts | Discards |
++=========================================================+
+| VaultPayHandler | accrue   | 8029  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | elapse   | 8201  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | pay      | 8209  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | topUp    | 8329  | 0       | 0        |
+╰-----------------+----------+-------+---------+----------╯
+
+[PASS] invariant_routerHoldsNothing() (runs: 256, calls: 32768, reverts: 0)
+
+╭-----------------+----------+-------+---------+----------╮
+| Contract        | Selector | Calls | Reverts | Discards |
++=========================================================+
+| VaultPayHandler | accrue   | 8029  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | elapse   | 8201  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | pay      | 8209  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | topUp    | 8329  | 0       | 0        |
+╰-----------------+----------+-------+---------+----------╯
+
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 6.43s (9.50s CPU time)
+
+Ran 3 test suites in 6.43s (18.66s CPU time): 30 tests passed, 0 failed, 0 skipped (30 total tests)
+
+...
+== exit codes: build 0, test 0, slither 0, deploy-simulation 0
+
+== deployment simulation on Base mainnet (no broadcast)
+
+== Logs ==
+  VaultPayRouter 0x95Eb257F1F78F82D3105A709A2F66F3B5B80D3c2
+  chain id       8453
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 8453
+
+Estimated gas price: 0.010303845 gwei
+
+Estimated total gas used for script: 2074996
+
+Estimated amount required: 0.00002138043715962 ETH
+
+==========================
+
+SIMULATION COMPLETE. To broadcast these transactions, add --broadcast and wallet configuration(s) to the previous command. See forge script --help for more.
+
+Transactions saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/broadcast/DeployVaultPayRouter.s.sol/8453/dry-run/run-latest.json
+
+Sensitive values saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/cache/DeployVaultPayRouter.s.sol/8453/dry-run/run-latest.json
+
+
+== slither
+'forge clean' running (wd: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin)
+'forge config --json' running
+'forge build --build-info --deny never --skip ./test/vault/** ./script/vault/** --force' running (wd: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin)
+ERROR:ContractSolcParsing:Impossible to generate IR for VaultPayRouter._nonReentrantBefore (lib/openzeppelin-contracts/contracts/utils/ReentrancyGuardTransient.sol#40-48):
+ 'NoneType' object has no attribute 'parameters'
+ERROR:ContractSolcParsing:Impossible to generate IR for VaultPayRouter._nonReentrantAfter (lib/openzeppelin-contracts/contracts/utils/ReentrancyGuardTransient.sol#50-52):
+ 'NoneType' object has no attribute 'parameters'
+ERROR:ContractSolcParsing:Impossible to generate IR for VaultPayRouter._reentrancyGuardEntered (lib/openzeppelin-contracts/contracts/utils/ReentrancyGuardTransient.sol#58-60):
+ 'NoneType' object has no attribute 'parameters'
+INFO:Detectors:
+Detector: cyclomatic-complexity
+VaultPayRouter.pay(VaultPayRouter.PayIntent,bytes,VaultPayRouter.Permit) (src/vault/VaultPayRouter.sol#124-186) has a high cyclomatic complexity (14).
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#cyclomatic-complexity
+INFO:Slither:. analyzed (25 contracts with 102 detectors), 1 result(s) found
+
+== sizes
+|------------------+------------------+-------------------+--------------------+---------------------|
+| StorageSlot      | 16               | 44                | 24,560             | 49,108              |
+|------------------+------------------+-------------------+--------------------+---------------------|
+| Strings          | 16               | 44                | 24,560             | 49,108              |
+|------------------+------------------+-------------------+--------------------+---------------------|
+| TransientSlot    | 16               | 44                | 24,560             | 49,108              |
+|------------------+------------------+-------------------+--------------------+---------------------|
+| VaultPayHandler  | 5,852            | 7,384             | 18,724             | 41,768              |
+|------------------+------------------+-------------------+--------------------+---------------------|
+| VaultPayRouter   | 6,663            | 7,743             | 17,913             | 41,409              |
+╰------------------+------------------+-------------------+--------------------+---------------------╯
+
+
+== tests
+No files changed, compilation skipped
+
+Ran 24 tests for test/vault/VaultPayRouter.t.sol:VaultPayRouterTest
+[PASS] testFuzz_pay_exactEmptyAndConserving(uint256,uint256,uint256) (runs: 10000, μ: 1819968, ~: 1820445)
+[PASS] test_domainSeparator_isStandardEIP712() (gas: 5992)
+[PASS] test_intentDigest_matchesTheTypedDataSpec() (gas: 28385)
+[PASS] test_pay_aFrontRunSubmissionPaysExactlyAsSigned() (gas: 203041)
+[PASS] test_pay_aVaultCannotBurnSharesThePaymentDidNotBring() (gas: 1875399)
+[PASS] test_pay_blocksReentry() (gas: 1937896)
+[PASS] test_pay_deliversExactPriceAndKeepsNothing() (gas: 202641)
+[PASS] test_pay_emitsPaidFromVault() (gas: 191836)
+[PASS] test_pay_failedPaymentLeavesTheIntentUnused() (gas: 190948)
+[PASS] test_pay_fromAnERC1271Wallet() (gas: 536449)
+[PASS] test_pay_neverHandsAPayerSomeoneElsesTokens() (gas: 293284)
+[PASS] test_pay_refusesAShortWithdrawal() (gas: 1774968)
+[PASS] test_pay_refusesToSpendAboveTheCeiling() (gas: 72725)
+[PASS] test_pay_rejectsAZeroPrice() (gas: 31476)
+[PASS] test_pay_rejectsAnotherKeysSignature() (gas: 63947)
+[PASS] test_pay_rejectsEveryTamperedField() (gas: 1784212)
+[PASS] test_pay_rejectsInvalidRecipients() (gas: 75071)
+[PASS] test_pay_rejectsReplay() (gas: 192546)
+[PASS] test_pay_respectsTheValidityWindow() (gas: 193429)
+[PASS] test_pay_survivesAFrontRunPermit() (gas: 194808)
+[PASS] test_pay_theCeilingProtectsThePayerFromALoss() (gas: 87106)
+[PASS] test_pay_toSelfConvertsSharesToTheAsset() (gas: 184739)
+[PASS] test_pay_usesAStandingAllowanceWithoutAPermit() (gas: 153902)
+[PASS] test_sharesToAuthorize_coversTodayWithOneBasisPoint() (gas: 24444)
+Suite result: ok. 24 passed; 0 failed; 0 skipped; finished in 5.90s (5.91s CPU time)
+
+Ran 4 tests for test/vault/VaultPayRouterBaseMainnetFork.t.sol:VaultPayRouterBaseMainnetForkTest
+[PASS] test_fork_paysFiveCentsFromAnAavePosition() (gas: 400065)
+Logs:
+  gas: pay() with permit on waBasUSDC: 370524
+
+[PASS] test_fork_paysWithAStandingAllowance() (gas: 352653)
+Logs:
+  gas: pay() without permit on waBasUSDC: 316652
+
+[PASS] test_fork_spendsAWholePosition() (gas: 407969)
+[PASS] test_fork_waBasUSDCAcceptsAPermit() (gas: 83091)
+Suite result: ok. 4 passed; 0 failed; 0 skipped; finished in 6.33s (2.64s CPU time)
+
+Ran 2 tests for test/vault/VaultPayRouterInvariant.t.sol:VaultPayRouterInvariantTest
+[PASS] invariant_merchantsReceiveExactlyWhatWasPaid() (runs: 256, calls: 32768, reverts: 0)
+
+╭-----------------+----------+-------+---------+----------╮
+| Contract        | Selector | Calls | Reverts | Discards |
++=========================================================+
+| VaultPayHandler | accrue   | 8029  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | elapse   | 8201  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | pay      | 8209  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | topUp    | 8329  | 0       | 0        |
+╰-----------------+----------+-------+---------+----------╯
+
+[PASS] invariant_routerHoldsNothing() (runs: 256, calls: 32768, reverts: 0)
+
+╭-----------------+----------+-------+---------+----------╮
+| Contract        | Selector | Calls | Reverts | Discards |
++=========================================================+
+| VaultPayHandler | accrue   | 8029  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | elapse   | 8201  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | pay      | 8209  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | topUp    | 8329  | 0       | 0        |
+╰-----------------+----------+-------+---------+----------╯
+
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 6.43s (9.50s CPU time)
+
+Ran 3 test suites in 6.43s (18.66s CPU time): 30 tests passed, 0 failed, 0 skipped (30 total tests)
