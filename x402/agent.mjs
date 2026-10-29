@@ -473,21 +473,15 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
   }
 
   /**
-   * Pay this agent's whole position in each trusted vault to `to`, through the facilitator's
-   * /settle and so through every check it applies: how an owner takes an agent's treasury back.
-   * What stays behind is less than one share of rounding.
+   * Take this agent's treasury home: its whole position in each trusted vault, then any plain USDC
+   * it holds (a session's refund lands there), each paid to `to` through the facilitator's /settle
+   * and so through every check it applies. Gasless: the facilitator submits. What stays behind is
+   * less than one share of rounding.
    */
   async function sweep(to) {
-    if (!facilitatorUrl || !A.vaultRouter) throw new Error('sweep needs a facilitator and the vault router');
+    if (!facilitatorUrl) throw new Error('sweep needs a facilitator');
     if (!isAddress(to)) throw new Error(`bad address ${to}`);
-    const out = [];
-    for (const vault of A.vaults) {
-      const amount = await chain.uint(vault, 'maxWithdraw(address)(uint256)', [from]);
-      if (amount === 0n) continue;
-      const r = {
-        scheme: 'exact', network: dep.network, asset: A.usdc, payTo: lc(to), amount: String(amount), maxTimeoutSeconds: 120,
-      };
-      const payload = await authorize({ mode: 'vault', r, vault, cost: amount });
+    const settle = async (r, payload, what) => {
       const res = await fetch(`${facilitatorUrl}/settle`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -496,8 +490,24 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
         }),
       });
       const result = await res.json();
-      if (!result.success) throw new Error(`sweep of ${vault} failed: ${result.errorReason}`);
-      out.push({ vault, amount: String(amount), transaction: result.transaction });
+      if (!result.success) throw new Error(`sweep of ${what} failed: ${result.errorReason}`);
+      return result.transaction;
+    };
+    const out = [];
+    for (const vault of A.vaultRouter ? A.vaults : []) {
+      const amount = await chain.uint(vault, 'maxWithdraw(address)(uint256)', [from]);
+      if (amount === 0n) continue;
+      const r = {
+        scheme: 'exact', network: dep.network, asset: A.usdc, payTo: lc(to), amount: String(amount), maxTimeoutSeconds: 120,
+      };
+      const payload = await authorize({ mode: 'vault', r, vault, cost: amount });
+      out.push({ vault, amount: String(amount), transaction: await settle(r, payload, vault) });
+    }
+    const cash = await chain.uint(A.usdc, 'balanceOf(address)(uint256)', [from]);
+    if (cash > 0n) {
+      const r = { scheme: 'exact', network: dep.network, asset: A.usdc, payTo: lc(to), amount: String(cash), maxTimeoutSeconds: 120 };
+      const payload = await authorize({ mode: 'USDC', r, cost: cash });
+      out.push({ asset: A.usdc, amount: String(cash), transaction: await settle(r, payload, 'USDC') });
     }
     return out;
   }

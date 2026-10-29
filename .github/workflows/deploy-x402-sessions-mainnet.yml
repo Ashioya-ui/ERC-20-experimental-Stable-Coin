@@ -1,0 +1,308 @@
+name: deploy-x402-sessions-mainnet
+
+# Deploys X402SessionEscrow to Base MAINNET and runs one real x402 session through it: an agent
+# that never holds ETH makes 1,000 paid calls at 0.0001 USDC each, and the chain sees one open and
+# one redemption. The report prices both transactions from their receipts, so the per-call cost of
+# settlement on Base is measured, not estimated.
+#
+# Nothing is issued: no token, no reserve, no owner, no fee. The escrow holds a deposit in Circle's
+# USDC under terms the funder signed, and pays out only vouchers the session's key signed. That is
+# what keeps it outside the issuer problem in RUNBOOK_MAINNET.md section 7.
+#
+# Signs with Account 1 (0x9CD82de3A24bc33D45897f72da5966D8920fAB48), the key the Base Sepolia jobs
+# already use, read from the base-sepolia environment. Account 1 plays three parts here: deployer,
+# facilitator (it pays the gas of the open and the redemption) and merchant (the session's payee).
+# The agent is a throwaway wallet made in this run. Money flow, all real USDC:
+#   Account 1 -> agent 0.20 -> escrow (gasless open) -> Account 1 0.10 for 1,000 calls (redemption)
+#   -> agent 0.10 (Account 1 closes the session as payee) -> Account 1 (gasless sweep).
+# Every cent returns to Account 1 except gas. Account 1 needs on Base mainnet: 0.0001 ETH, 0.20 USDC.
+#
+# Gates, in order: the vault suites (including the live-Base fork suites) and the session rail on a
+# Base mainnet fork pass in this same run; a read-only funding check waits up to two hours for the
+# funds; the CREATE2 deployment is idempotent, so a re-run sends no second escrow.
+#
+# RUN: push to `deploy-x402-sessions-mainnet`. The report lands on deployments/x402-sessions-mainnet-<run>.
+
+on:
+  push:
+    branches: [deploy-x402-sessions-mainnet]
+
+concurrency:
+  group: deploy-x402-sessions-mainnet
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  RPC: https://mainnet.base.org
+  USDC: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+  ETH_USD: "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70" # Chainlink ETH/USD on Base
+  NEED_WEI: "100000000000000" # 0.0001 ETH
+  NEED_USDC: "200000"         # 0.20 USDC
+  DEPOSIT: "200000"           # the agent's session deposit
+  PRICE: "100"                # 0.0001 USDC a call
+  CALLS: "1000"
+
+jobs:
+  gate:
+    name: Vault suites and the session rail on a Base mainnet fork (no secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+      - name: Escrow and router tests, including the fork suites against live Base state
+        env:
+          FOUNDRY_PROFILE: vault
+          BASE_RPC_URL: ${{ env.RPC }}
+        run: forge test
+      - name: x402 unit tests
+        run: cd x402 && node --test test/unit.test.mjs
+      - name: 1,000 paid calls on one session, on a Base mainnet fork against Circle's live USDC
+        env:
+          BASE_RPC_URL: ${{ env.RPC }}
+          SESSION_CALLS: ${{ env.CALLS }}
+        run: script/rehearsal/x402-session.sh --fork
+
+  mainnet:
+    name: Deploy the escrow and run a real session on Base mainnet
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment: base-sepolia
+    permissions:
+      contents: read
+    outputs:
+      report: ${{ steps.session.outputs.report || steps.fund.outputs.report }}
+      deployment: ${{ steps.deploy.outputs.deployment }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+
+      - name: Is Account 1 funded on Base mainnet? (read-only)
+        id: fund
+        env:
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          KEY="$DEPLOYER_PRIVATE_KEY"; unset DEPLOYER_PRIVATE_KEY
+          DEP=$(cast wallet address --private-key "$KEY"); unset KEY
+          [ "$(cast chain-id --rpc-url "$RPC")" = 8453 ] || { echo "::error::RPC is not Base mainnet"; exit 1; }
+          # Waits for the funds instead of failing on their absence: the run can start before the
+          # deposit lands and proceeds the minute Account 1 holds enough. Read-only until then.
+          for i in $(seq 1 "${WAIT_MINUTES:-120}"); do
+            WEI=$(cast balance "$DEP" --rpc-url "$RPC" 2>/dev/null || echo 0)
+            HAVE=$(cast call "$USDC" 'balanceOf(address)(uint256)' "$DEP" --rpc-url "$RPC" 2>/dev/null | awk '{print $1}')
+            OK=$(python3 -c "print('true' if ${WEI:-0} >= $NEED_WEI and ${HAVE:-0} >= $NEED_USDC else 'false')")
+            [ "$OK" = true ] && break
+            echo "minute $i: ETH ${WEI:-0} wei of $NEED_WEI, USDC ${HAVE:-0} of $NEED_USDC; waiting"
+            sleep 60
+          done
+          REPORT=$(printf 'Base mainnet funding check, run %s\naccount 1  %s\nETH  have %s wei, need %s\nUSDC have %s, need %s\nfunded %s\n' \
+            "${{ github.run_id }}" "$DEP" "$WEI" "$NEED_WEI" "$HAVE" "$NEED_USDC" "$OK")
+          echo "$REPORT"
+          { echo "funded=$OK"; echo "deployer=$DEP"; echo "report<<XS_EOF"; echo "$REPORT"; echo "XS_EOF"; } >> "$GITHUB_OUTPUT"
+
+      - name: Deploy X402SessionEscrow (CREATE2, idempotent)
+        id: deploy
+        if: steps.fund.outputs.funded == 'true'
+        env:
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+          FOUNDRY_PROFILE: vault
+        run: |
+          set -euo pipefail
+          KEY="$DEPLOYER_PRIVATE_KEY"; unset DEPLOYER_PRIVATE_KEY
+          DEP=${{ steps.fund.outputs.deployer }}
+          # Out of the environment before forge starts: dependency code can read environment
+          # variables, not command-line arguments (review S-02).
+          forge script script/vault/DeployX402SessionEscrow.s.sol --rpc-url "$RPC" \
+            --private-key "$KEY" --sender "$DEP" --broadcast --slow | tee deploy.log
+          unset KEY
+          cat deployments/8453-session-escrow.json
+          { echo "deployment<<XS_EOF"; cat deployments/8453-session-escrow.json; echo; echo "XS_EOF"; } >> "$GITHUB_OUTPUT"
+
+      - name: One real session, 1,000 paid calls, then everything home
+        id: session
+        if: steps.fund.outputs.funded == 'true'
+        env:
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          KEY="$DEPLOYER_PRIVATE_KEY"; unset DEPLOYER_PRIVATE_KEY
+          DEP=${{ steps.fund.outputs.deployer }}
+          ESCROW=$(jq -r .escrow deployments/8453-session-escrow.json)
+          LOG=session.log; : > "$LOG"
+          say() { echo "$*" | tee -a "$LOG"; }
+          usdc() { cast call "$USDC" 'balanceOf(address)(uint256)' "$1" --rpc-url "$RPC" | awk '{print $1}'; }
+
+          # Wallets for this run only. The facilitator signs with Account 1 through a keystore made
+          # here; the agent is fresh and ends swept to zero.
+          mkdir -p .ci-wallets && chmod 700 .ci-wallets
+          ( umask 077; head -c 32 /dev/urandom | base64 | tr -d '\n' > .ci-wallets/pw )
+          CAST_UNSAFE_PASSWORD="$(cat .ci-wallets/pw)" cast wallet import facilitator \
+            --private-key "$KEY" --keystore-dir .ci-wallets >/dev/null
+          AGENT=$(CAST_PASSWORD="$(cat .ci-wallets/pw)" cast wallet new .ci-wallets agent --json | jq -r '.[0].address')
+          chmod 600 .ci-wallets/*
+
+          say "escrow      $ESCROW"
+          say "account 1   $DEP   (deployer, facilitator gas, merchant = the session's payee)"
+          say "agent       $AGENT (fresh; never holds ETH)"
+          ESCROW0=$(usdc "$ESCROW"); DEP0=$(usdc "$DEP")
+
+          TX=$(cast send "$USDC" 'transfer(address,uint256)' "$AGENT" "$DEPOSIT" --rpc-url "$RPC" --private-key "$KEY" --json | jq -r .transactionHash)
+          say "agent funded with $DEPOSIT USDC units  $TX"
+
+          export RPC_URL="$RPC" FACILITATOR_URL=http://127.0.0.1:4020 MERCHANT_URL=http://127.0.0.1:4021
+          # Redemption on demand only, so this run shows exactly one.
+          FACILITATOR_SIGNER="keystore:$PWD/.ci-wallets/facilitator" FACILITATOR_PASSWORD_FILE="$PWD/.ci-wallets/pw" \
+            FACILITATOR_SESSIONS_FILE="$PWD/.ci-wallets/sessions.json" FACILITATOR_ADMIN=1 FACILITATOR_REDEEM_EVERY_MS=0 \
+            node x402/facilitator.mjs > facilitator.log 2>&1 &
+          for _ in $(seq 1 90); do curl -sf "$FACILITATOR_URL/health" >/dev/null && break; sleep 1; done
+          MERCHANT_PAYTO="$DEP" MERCHANT_TICK_PRICE="$PRICE" MERCHANT_SESSION_DEPOSIT="$DEPOSIT" \
+            node x402/merchant.mjs > merchant.log 2>&1 &
+          for _ in $(seq 1 90); do curl -sf "$MERCHANT_URL/health" >/dev/null && break; sleep 1; done
+          say "$(curl -s "$FACILITATOR_URL/supported")"
+          NONCE0=$(cast nonce "$DEP" --rpc-url "$RPC")
+
+          export AGENT_KEYSTORE="$PWD/.ci-wallets/agent" AGENT_PASSWORD_FILE="$PWD/.ci-wallets/pw" \
+            AGENT_LEDGER="$PWD/.ci-wallets/ledger.json" AGENT_MAX_PER_REQUEST=0.001 AGENT_BUDGET=0.20 \
+            AGENT_SESSION_DEPOSIT=0.20 AGENT_MAX_SESSION_DEPOSIT=0.20
+          set +e
+          node x402/agent.mjs pay "$MERCHANT_URL/api/v1/tick" --times "$CALLS" > calls.json 2>&1; C=$?
+          set -e
+          say "--- $CALLS calls"; cat calls.json | tee -a "$LOG"
+          NONCE1=$(cast nonce "$DEP" --rpc-url "$RPC")
+          SESSIONS=$(curl -s "$FACILITATOR_URL/sessions")
+          SID=$(printf '%s' "$SESSIONS" | jq -r '.[0].id'); OPEN_TX=$(printf '%s' "$SESSIONS" | jq -r '.[0].openTx')
+          say "session $SID, opened in $OPEN_TX"
+          say "transactions sent during the $CALLS calls: $((NONCE1 - NONCE0)) (the open)"
+          say "merchant USDC before redemption: $(usdc "$DEP")"
+
+          REDEEMED=$(curl -s -X POST "$FACILITATOR_URL/sessions/redeem")
+          say "--- redemption"; say "$REDEEMED"
+          REDEEM_TX=$(printf '%s' "$REDEEMED" | jq -r '.transactions[0].hash')
+          say "session after redemption: $(cast call "$ESCROW" 'session(bytes32)((address,address,address,address,uint128,uint128,uint64,bool))' "$SID" --rpc-url "$RPC")"
+
+          # The payee ends the session early and releases the unspent half of the deposit.
+          CLOSE_TX=$(cast send "$ESCROW" 'closeByPayee(bytes32,uint256,bytes)' "$SID" 0 0x --rpc-url "$RPC" --private-key "$KEY" --json | jq -r .transactionHash)
+          say "closed by the payee  $CLOSE_TX"
+          set +e
+          node x402/agent.mjs sweep "$DEP" > sweep.json 2>&1; SW=$?
+          set -e
+          say "--- sweep"; cat sweep.json | tee -a "$LOG"
+          say "--- facilitator log"; tail -20 facilitator.log | tee -a "$LOG"
+
+          say "--- after"
+          say "agent ETH:          $(cast balance "$AGENT" --rpc-url "$RPC")   (never held any)"
+          say "agent USDC:         $(usdc "$AGENT")   (swept)"
+          say "escrow USDC:        $(usdc "$ESCROW") (was $ESCROW0: this session left nothing behind)"
+          say "account 1 USDC:     $(usdc "$DEP") (was $DEP0; the difference is the deposit's round trip, 0)"
+          say "account 1 ETH:      $(cast balance "$DEP" --rpc-url "$RPC")"
+          say "exit codes: calls $C, sweep $SW"
+
+          # The number: what settlement cost per paid call, from the receipts.
+          python3 - "$OPEN_TX" "$REDEEM_TX" "$CLOSE_TX" <<'PY' | tee -a "$LOG"
+          import json, os, subprocess, sys
+          rpc = os.environ["RPC"]
+          def receipt(h):
+              return json.loads(subprocess.check_output(["cast", "receipt", "--json", h, "--rpc-url", rpc]))
+          def fee(r):
+              n = lambda v: int(v, 16) if isinstance(v, str) and v.startswith("0x") else int(v or 0)
+              return n(r["gasUsed"]), n(r["gasUsed"]) * n(r["effectiveGasPrice"]) + n(r.get("l1Fee", 0))
+          out = subprocess.check_output(["cast", "call", os.environ["ETH_USD"],
+              "latestRoundData()(uint80,int256,uint256,uint256,uint80)", "--rpc-url", rpc]).decode().splitlines()
+          usd_per_eth = int(out[1].split()[0]) / 1e8  # one value a line, each maybe followed by "[1.2e3]"
+          names = ["open", "redemption", "close (payee)"]
+          rows = [(n, *fee(receipt(h))) for n, h in zip(names, sys.argv[1:4])]
+          calls = int(os.environ["CALLS"])
+          print(f"ETH/USD {usd_per_eth:.2f} (Chainlink on Base)")
+          for n, gas, wei in rows:
+              print(f"{n:14s} gas {gas:>8,}  fee {wei / 1e18:.10f} ETH  ${wei / 1e18 * usd_per_eth:.6f}")
+          settle = rows[0][2] + rows[1][2]
+          per_call = settle / 1e18 * usd_per_eth / calls
+          print(f"settlement for {calls} paid calls (open + one redemption): ${settle / 1e18 * usd_per_eth:.6f}")
+          print(f"per paid call: ${per_call:.8f}, against a measured median of $0.00129 of gas per x402 payment"
+                f" settled one at a time on Base mainnet: {0.00129 / per_call:,.0f}x cheaper")
+          PY
+
+          # Nothing derived from the key leaves the runner: refuse to publish a report containing it.
+          if grep -qiF "${KEY#0x}" "$LOG"; then echo "::error::key material in the report"; exit 1; fi
+          unset KEY
+          rm -rf .ci-wallets
+          { echo "report<<XS_EOF"; cat "$LOG"; echo "XS_EOF"; } >> "$GITHUB_OUTPUT"
+          [ $C -eq 0 ] && [ $SW -eq 0 ]
+
+  verify:
+    name: Source verification on Sourcify (no secrets)
+    needs: mainnet
+    if: needs.mainnet.outputs.deployment != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ steps.v.outputs.result }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
+      - id: v
+        env:
+          FOUNDRY_PROFILE: vault
+          DEPLOYMENT: ${{ needs.mainnet.outputs.deployment }}
+        run: |
+          set +e
+          ESCROW=$(printf '%s' "$DEPLOYMENT" | jq -r .escrow)
+          forge verify-contract --verifier sourcify --chain 8453 --watch "$ESCROW" \
+            src/vault/X402SessionEscrow.sol:X402SessionEscrow > v.txt 2>&1; R=$?
+          cat v.txt
+          { echo "result<<XS_EOF"; echo "exit $R"; tail -15 v.txt; echo "XS_EOF"; } >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Commit the deployment and the report (no secrets)
+    needs: [mainnet, verify]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - env:
+          REPORT: ${{ needs.mainnet.outputs.report }}
+          DEPLOYMENT: ${{ needs.mainnet.outputs.deployment }}
+          VERIFY: ${{ needs.verify.outputs.result }}
+        run: |
+          set -euo pipefail
+          mkdir -p deployments
+          printf '%s\n' "$REPORT" "" "--- sourcify" "${VERIFY:-not run}" > deployments/8453-x402-sessions-report.txt
+          [ -n "$DEPLOYMENT" ] && printf '%s\n' "$DEPLOYMENT" > deployments/8453-session-escrow.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f deployments/8453-x402-sessions-report.txt
+          [ -f deployments/8453-session-escrow.json ] && git add -f deployments/8453-session-escrow.json
+          git diff --cached --quiet && exit 0
+          git commit -q -m "base mainnet: x402 sessions, run ${{ github.run_id }}"
+          git push origin "HEAD:refs/heads/deployments/x402-sessions-mainnet-${{ github.run_id }}"

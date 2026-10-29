@@ -236,3 +236,17 @@ test('after the close, the agent retires the session and pays from a new one', a
   assert.equal(agent.ledger().retired.at(-1).sessionId, sessionId);
   assert.equal(agent.ledger().retired.at(-1).retiredBecause, 'session_closed');
 });
+
+test("the owner takes the agent's free USDC home, gaslessly", async (t) => {
+  if (skip) return t.skip(skip);
+  const { agent } = world;
+  const home = '0x' + randomBytes(20).toString('hex');
+  const cash = await bal(agent.address);
+  assert.ok(cash > 0n, 'the refund and the untouched balance are there');
+  const out = await agent.sweep(home);
+  assert.equal(out.length, 1);
+  assert.equal(await bal(home), cash, 'all of it arrived');
+  assert.equal(await bal(agent.address), 0n);
+  assert.equal(await eth(agent.address), 0n, 'without the agent ever holding ETH');
+  assert.deepEqual(await agent.sweep(home), [], 'nothing left');
+});
