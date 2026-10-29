@@ -1,0 +1,709 @@
+ok=false
+== exit codes: build 0, test 1, slither 0, deploy-simulation router 0, escrow 0
+
+== deployment simulations on Base mainnet (no broadcast)
+
+== Logs ==
+  VaultPayRouter 0x2e665A5E6C636fA00DBf1C0A845eB07929D51d6f
+  chain id       8453
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 8453
+
+Estimated gas price: 0.010316576 gwei
+
+Estimated total gas used for script: 2525201
+
+Estimated amount required: 0.000026051428031776 ETH
+
+==========================
+
+SIMULATION COMPLETE. To broadcast these transactions, add --broadcast and wallet configuration(s) to the previous command. See forge script --help for more.
+
+Transactions saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/broadcast/DeployVaultPayRouter.s.sol/8453/dry-run/run-latest.json
+
+Sensitive values saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/cache/DeployVaultPayRouter.s.sol/8453/dry-run/run-latest.json
+
+
+== Logs ==
+  X402SessionEscrow 0x175925a679f389D905686D7E484b030Ccd7992CB
+  chain id          8453
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 8453
+
+Estimated gas price: 0.010312578 gwei
+
+Estimated total gas used for script: 3521521
+
+Estimated amount required: 0.000036315959991138 ETH
+
+==========================
+
+SIMULATION COMPLETE. To broadcast these transactions, add --broadcast and wallet configuration(s) to the previous command. See forge script --help for more.
+
+Transactions saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/broadcast/DeployX402SessionEscrow.s.sol/8453/dry-run/run-latest.json
+
+Sensitive values saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/cache/DeployX402SessionEscrow.s.sol/8453/dry-run/run-latest.json
+
+
+== slither
+'forge clean' running (wd: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin)
+'forge config --json' running
+'forge build --build-info --deny never --skip ./test/vault/** ./script/vault/** --force' running (wd: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin)
+ERROR:ContractSolcParsing:Impossible to generate IR for VaultPayRouter._nonReentrantBefore (lib/openzeppelin-contracts/contracts/utils/ReentrancyGuardTransient.sol#40-48):
+ 'NoneType' object has no attribute 'parameters'
+ERROR:ContractSolcParsing:Impossible to generate IR for VaultPayRouter._nonReentrantAfter (lib/openzeppelin-contracts/contracts/utils/ReentrancyGuardTransient.sol#50-52):
+ 'NoneType' object has no attribute 'parameters'
+ERROR:ContractSolcParsing:Impossible to generate IR for VaultPayRouter._reentrancyGuardEntered (lib/openzeppelin-contracts/contracts/utils/ReentrancyGuardTransient.sol#58-60):
+ 'NoneType' object has no attribute 'parameters'
+ERROR:ContractSolcParsing:Impossible to generate IR for X402SessionEscrow._nonReentrantBefore (lib/openzeppelin-contracts/contracts/utils/ReentrancyGuardTransient.sol#40-48):
+ 'NoneType' object has no attribute 'parameters'
+ERROR:ContractSolcParsing:Impossible to generate IR for X402SessionEscrow._nonReentrantAfter (lib/openzeppelin-contracts/contracts/utils/ReentrancyGuardTransient.sol#50-52):
+ 'NoneType' object has no attribute 'parameters'
+ERROR:ContractSolcParsing:Impossible to generate IR for X402SessionEscrow._reentrancyGuardEntered (lib/openzeppelin-contracts/contracts/utils/ReentrancyGuardTransient.sol#58-60):
+ 'NoneType' object has no attribute 'parameters'
+INFO:Detectors:
+Detector: cyclomatic-complexity
+VaultPayRouter.pay(VaultPayRouter.PayIntent,bytes,VaultPayRouter.Permit) (src/vault/VaultPayRouter.sol#136-205) has a high cyclomatic complexity (17).
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#cyclomatic-complexity
+INFO:Slither:. analyzed (27 contracts with 102 detectors), 1 result(s) found
+
+== sizes
+    |
+373 |             s.claimed = uint128(claimed);
+    |                         ^^^^^^^^^^^^^^^^
+    |
+    = note: consider disabling this lint if you're certain the cast is safe
+            
+            // casting to 'uint128' is safe because [explain why]
+            // forge-lint: disable-next-line(unsafe-typecast)
+            
+            
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unsafe-typecast
+
+
+== tests
+No files changed, compilation skipped
+
+Ran 1 test for test/vault/review/session/SessionGuards.t.sol:X402SessionReview_GuardS4Test
+[PASS] test_guardS4_redeemableAgreesWithRedeem() (gas: 245924)
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 1.85ms (751.52µs CPU time)
+
+Ran 1 test for test/vault/review/session/SessionGuards.t.sol:X402SessionReview_GuardS5Test
+[PASS] test_guardS5_theEscrowCannotBeThePayee() (gas: 16574)
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 862.90µs (37.00µs CPU time)
+
+Ran 3 tests for test/vault/review/RegressionF3.t.sol:VaultPayRouterReview_RegressionF3Test
+[PASS] test_F3_aContractWalletStillRejectsAStrangersKey() (gas: 461019)
+[PASS] test_F3_aDelegatedEoaPaysWithItsOwnKey() (gas: 354392)
+[PASS] test_F3_aWrappingDelegatePaysWithThePlainSignature() (gas: 360837)
+Suite result: ok. 3 passed; 0 failed; 0 skipped; finished in 2.94ms (1.80ms CPU time)
+
+Ran 1 test for test/vault/review/RegressionF4.t.sol:VaultPayRouterReview_RegressionF4Test
+[PASS] test_F4_aPermitExpiringBeforeTheIntentFailsInSimulation() (gas: 192837)
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 2.04ms (1.14ms CPU time)
+
+Ran 3 tests for test/vault/review/session/SessionGuards.t.sol:X402SessionReview_GuardS1Test
+[PASS] test_guardS1_aBlockDependentSignerNeverPassesASimulation() (gas: 487636)
+[PASS] test_guardS1_aDelegatedEoaSignsWithItsOwnKeyOnly() (gas: 475639)
+[PASS] test_guardS1_aSmartAccountCannotSignVouchers() (gas: 492751)
+Suite result: ok. 3 passed; 0 failed; 0 skipped; finished in 5.40ms (4.42ms CPU time)
+
+Ran 1 test for test/vault/review/RegressionF5.t.sol:VaultPayRouterReview_RegressionF5Test
+[PASS] test_F5_aSelfReferentialVaultIsRefused() (gas: 816292)
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 1.40ms (533.41µs CPU time)
+
+Ran 1 test for test/vault/review/FacilitatorGrief.t.sol:VaultPayRouterReview_FacilitatorGriefTest
+[PASS] test_aWalletKeyedOnBlockParityBurnsTheGasLimit() (gas: 994349)
+Logs:
+  gas the submitter pays for nothing: 291392
+
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 6.69ms (4.32ms CPU time)
+
+Ran 2 tests for test/vault/review/RefundPaths.t.sol:VaultPayRouterReview_RefundPathsTest
+[PASS] test_extraAssetGoesBackToThePayerAndStraysStay() (gas: 1962142)
+[PASS] test_overQuotedSharesGoBackAndTheCostIsWhatWasBurned() (gas: 1917792)
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 4.29ms (3.06ms CPU time)
+
+Ran 11 tests for test/vault/review/session/SessionSoundness.t.sol:X402SessionReview_SoundnessTest
+[PASS] test_aDepositAboveUint128IsRefused() (gas: 148866)
+[PASS] test_aFeeOnTransferTokenCannotOpen() (gas: 958630)
+[PASS] test_aRacedOpenIsTheSameSession() (gas: 249830)
+[PASS] test_aStolenSignerKeyPaysOnlyEachSessionsOwnPayee() (gas: 416667)
+[PASS] test_aTokenHookCannotReenter() (gas: 1290505)
+[PASS] test_aTopUpAuthorizationIsBoundToItsSession() (gas: 444917)
+[FAIL: InvalidVoucher()] test_aVoucherDoesNotReplayOnAnotherChain() (gas: 217353)
+Traces:
+  [217353] X402SessionReview_SoundnessTest::test_aVoucherDoesNotReplayOnAnotherChain()
+    ├─ [0] VM::getBlockTimestamp() [staticcall]
+    │   └─ ← [Return] 1800000000 [1.8e9]
+    ├─ [0] VM::prank(0x2FbE5d18a830ABF220ccf3c4E74253Ef91496B41)
+    │   └─ ← [Return]
+    ├─ [183332] X402SessionEscrow::open(merchant: [0x00655EA989254C13e93C5a1F74C4636b5B9926B5], FiatTokenV22Mock: [0x2e234DAe75C793f67A35089C9d99245E1C58470b], 0x3805Ecc0043365A3d1c6b68ABD41dEC19C988d08, 1800086400 [1.8e9], 0x636861696e000000000000000000000000000000000000000000000000000000, 10000000 [1e7])
+    │   ├─ emit SessionOpened(sessionId: 0x568f0191f1edb82bc15d4f9b3943cfbe670c7a7a2cf24df4863b0510f318223a, funder: 0x2FbE5d18a830ABF220ccf3c4E74253Ef91496B41, payee: merchant: [0x00655EA989254C13e93C5a1F74C4636b5B9926B5], token: FiatTokenV22Mock: [0x2e234DAe75C793f67A35089C9d99245E1C58470b], signer: 0x3805Ecc0043365A3d1c6b68ABD41dEC19C988d08, amount: 10000000 [1e7], expiry: 1800086400 [1.8e9])
+    │   ├─ [2598] FiatTokenV22Mock::balanceOf(X402SessionEscrow: [0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f]) [staticcall]
+    │   │   └─ ← [Return] 0
+    │   ├─ [36630] FiatTokenV22Mock::transferFrom(0x2FbE5d18a830ABF220ccf3c4E74253Ef91496B41, X402SessionEscrow: [0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f], 10000000 [1e7])
+    │   │   ├─ emit Transfer(from: 0x2FbE5d18a830ABF220ccf3c4E74253Ef91496B41, to: X402SessionEscrow: [0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f], value: 10000000 [1e7])
+    │   │   └─ ← [Return] true
+    │   ├─ [598] FiatTokenV22Mock::balanceOf(X402SessionEscrow: [0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f]) [staticcall]
+    │   │   └─ ← [Return] 10000000 [1e7]
+    │   └─ ← [Return] 0x568f0191f1edb82bc15d4f9b3943cfbe670c7a7a2cf24df4863b0510f318223a
+    ├─ [1090] X402SessionEscrow::voucherDigest(0x568f0191f1edb82bc15d4f9b3943cfbe670c7a7a2cf24df4863b0510f318223a, 1000000 [1e6]) [staticcall]
+    │   └─ ← [Return] 0xe7477b59d0b9a398dcbd942bc152a21cd650715c91f82546cb31a4ed550f7448
+    ├─ [0] VM::sign("<pk>", 0xe7477b59d0b9a398dcbd942bc152a21cd650715c91f82546cb31a4ed550f7448) [staticcall]
+    │   └─ ← [Return] 28, 0x4e67ef6456340f122bf7e5453c6bc499be99365a5b2fe9d47a1298e631df8f22, 0x68d9a9fd5418854f0e3c5e1b178d9c09dd8265e148cb3d8070c022c6eede5624
+    ├─ [0] VM::chainId(31338 [3.133e4])
+    │   └─ ← [Return]
+    ├─ [0] VM::expectRevert(custom error 0xc31eb0e0: 6d67dbd600000000000000000000000000000000000000000000000000000000)
+    │   └─ ← [Return]
+    ├─ [5896] X402SessionEscrow::redeem(0x568f0191f1edb82bc15d4f9b3943cfbe670c7a7a2cf24df4863b0510f318223a, 1000000 [1e6], 0x4e67ef6456340f122bf7e5453c6bc499be99365a5b2fe9d47a1298e631df8f2268d9a9fd5418854f0e3c5e1b178d9c09dd8265e148cb3d8070c022c6eede56241c)
+    │   ├─ [3000] PRECOMPILES::ecrecover(0x96683bf32a0f0940c23fc0e37f97b5fadd52b90d80ea16673f1663524961f7b2, 28, 35464039659616774399753229979435453609660824564970483141936246562096938979106, 47425115290572047931239948270671305193051666385745531774580578428183365178916) [staticcall]
+    │   │   └─ ← [Return] 0xB3731359Aa8B57888ea7e5b4d05e7a645D63B9c2
+    │   └─ ← [Revert] InvalidVoucher()
+    ├─ [0] VM::chainId(31338 [3.133e4])
+    │   └─ ← [Return]
+    ├─ [5896] X402SessionEscrow::redeem(0x568f0191f1edb82bc15d4f9b3943cfbe670c7a7a2cf24df4863b0510f318223a, 1000000 [1e6], 0x4e67ef6456340f122bf7e5453c6bc499be99365a5b2fe9d47a1298e631df8f2268d9a9fd5418854f0e3c5e1b178d9c09dd8265e148cb3d8070c022c6eede56241c)
+    │   ├─ [3000] PRECOMPILES::ecrecover(0x96683bf32a0f0940c23fc0e37f97b5fadd52b90d80ea16673f1663524961f7b2, 28, 35464039659616774399753229979435453609660824564970483141936246562096938979106, 47425115290572047931239948270671305193051666385745531774580578428183365178916) [staticcall]
+    │   │   └─ ← [Return] 0xB3731359Aa8B57888ea7e5b4d05e7a645D63B9c2
+    │   └─ ← [Revert] InvalidVoucher()
+    └─ ← [Revert] InvalidVoucher()
+
+Backtrace:
+  at X402SessionEscrow.redeem
+  at X402SessionReview_SoundnessTest.test_aVoucherDoesNotReplayOnAnotherChain
+
+[PASS] test_anOldVoucherNeverCountsTwice_evenAfterATopUp() (gas: 271357)
+[PASS] test_closeByPayeeAfterItsVoucherWasRedeemed() (gas: 235408)
+[PASS] test_expiryEdges_andNoEarlyExitForTheFunder() (gas: 252654)
+[PASS] test_theOpenAuthorizationBindsEveryTerm() (gas: 3167090)
+Suite result: FAILED. 10 passed; 1 failed; 0 skipped; finished in 8.23ms (7.05ms CPU time)
+
+Ran 2 tests for test/vault/review/session/OpenGriefing.t.sol:X402SessionReview_OpenGriefingTest
+[PASS] test_aCanceledAuthorizationRevertsTheOpenAfterACleanSimulation() (gas: 431850)
+[PASS] test_anExpiryOnTheMinimumPassesTheSimulationAndFailsOneBlockLater() (gas: 245334)
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 5.37ms (4.41ms CPU time)
+
+Ran 1 test for test/vault/review/RegressionF2.t.sol:VaultPayRouterReview_RegressionF2Test
+[PASS] test_F2_anAssetSwapAfterSigningReverts() (gas: 1888126)
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 1.67ms (705.17µs CPU time)
+
+Ran 3 tests for test/vault/review/RegressionF1.t.sol:VaultPayRouterReview_RegressionF1Test
+[PASS] test_F1_aCancelSurvivesReapproval() (gas: 96615)
+[PASS] test_F1_aCancelledAttemptCannotBeSettled() (gas: 593844)
+[PASS] test_F1_cancelIsPayerScopedAndOneShot() (gas: 107852)
+Suite result: ok. 3 passed; 0 failed; 0 skipped; finished in 3.47ms (2.51ms CPU time)
+
+Ran 3 tests for test/vault/review/session/SessionGuards.t.sol:X402SessionReview_GuardS2Test
+[PASS] test_guardS2_aBlacklistedPayeeIsSkippedAndItsSessionUntouched() (gas: 643014)
+[PASS] test_guardS2_anEntrySettledFirstDoesNotSinkTheBatch() (gas: 631910)
+[PASS] test_guardS2_everyKindOfDeadEntryIsSkipped() (gas: 747415)
+Suite result: ok. 3 passed; 0 failed; 0 skipped; finished in 11.18ms (6.92ms CPU time)
+
+Ran 1 test for test/vault/review/session/SessionGuards.t.sol:X402SessionReview_GuardS3Test
+[PASS] test_guardS3_aShortLivedSessionCannotTakeTheOpensId() (gas: 402375)
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 4.85ms (3.91ms CPU time)
+
+Ran 4 tests for test/vault/review/session/UsdcControls.t.sol:X402SessionReview_UsdcControlsTest
+[PASS] test_aBlacklistedEscrow() (gas: 377656)
+[PASS] test_aBlacklistedFunder() (gas: 313383)
+[PASS] test_aBlacklistedPayee() (gas: 272141)
+[PASS] test_aPauseThatSpansExpiry() (gas: 206829)
+Suite result: ok. 4 passed; 0 failed; 0 skipped; finished in 5.24ms (4.20ms CPU time)
+
+Ran 1 test for test/vault/X402SessionEscrowBaseMainnetFork.t.sol:X402SessionEscrowBaseMainnetForkTest
+[PASS] test_fork_gaslessOpenThenAThousandCallsInOneSettlement() (gas: 292252)
+Logs:
+  gas: openWithAuthorization on real USDC: 213695
+  gas: redeem, covering 1,000 calls: 37021
+  gas per call at 1,000 calls per redemption: 37
+
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 2.04s (1.21s CPU time)
+
+Ran 3 tests for test/vault/review/session/UsdcBaseMainnetFork.t.sol:X402SessionReview_UsdcBaseMainnetForkTest
+[PASS] test_fork_I1_aCanceledAuthorizationRevertsTheOpenAfterACleanSimulation() (gas: 446440)
+[PASS] test_fork_I2_aPauseThatSpansExpiryVoidsHeldVouchers() (gas: 227606)
+[PASS] test_fork_S2_aBlacklistedPayeeIsSkippedAndTheRestPays() (gas: 467542)
+Suite result: ok. 3 passed; 0 failed; 0 skipped; finished in 2.41s (711.42ms CPU time)
+
+Ran 21 tests for test/vault/X402SessionEscrow.t.sol:X402SessionEscrowTest
+[PASS] testFuzz_settlesExactly(uint96,uint256[6],uint8) (runs: 10000, μ: 238990, ~: 242313)
+[PASS] test_aDelegatedEoaSignsWithItsOwnKey() (gas: 231869)
+[PASS] test_aStolenAgentKeyCanOnlyOverpayTheNamedMerchant_upToTheDeposit() (gas: 216982)
+[PASS] test_aThousandCallsSettleInOneRedemption() (gas: 7969666)
+[PASS] test_anERC1271SignerCannotSignVouchers() (gas: 542739)
+[PASS] test_anyoneMayRedeem_butOnlyThePayeeIsPaid() (gas: 235939)
+[PASS] test_checkVoucher_answersWhatARedemptionWouldDo() (gas: 255956)
+[PASS] test_closeByPayee_settlesTheLastVoucherAndReleasesTheRest() (gas: 224905)
+[PASS] test_isVoucherSignedBy_worksBeforeTheSessionExists() (gas: 33032)
+[PASS] test_openWithAuthorization_isGaslessForTheFunder_andBindsTheTerms() (gas: 383080)
+[PASS] test_open_holdsTheDepositUnderTheSessionsTerms() (gas: 199936)
+[PASS] test_open_rejectsBadTerms() (gas: 326962)
+[PASS] test_reclaim_returnsTheUnclaimedAfterExpiry() (gas: 226771)
+[PASS] test_redeemMany_settlesSeveralSessionsInOneTransaction() (gas: 558660)
+[PASS] test_redeem_endsAtExpiry() (gas: 198755)
+[PASS] test_redeem_isIncremental_andAnOldVoucherCountsOnce() (gas: 249223)
+[PASS] test_redeem_neverExceedsTheDeposit() (gas: 198104)
+[PASS] test_redeem_onlyTheSessionSignerCanAuthorise() (gas: 202875)
+[PASS] test_topUp_extendsTheSession() (gas: 222017)
+[PASS] test_unknownSession() (gas: 11462)
+[PASS] test_voucher_isBoundToItsSessionAndAmount() (gas: 355962)
+Suite result: ok. 21 passed; 0 failed; 0 skipped; finished in 5.45s (5.62s CPU time)
+
+Ran 4 tests for test/vault/VaultPayRouterBaseMainnetFork.t.sol:VaultPayRouterBaseMainnetForkTest
+[PASS] test_fork_paysFiveCentsFromAnAavePosition() (gas: 398295)
+Logs:
+  gas: pay() with permit on waBasUSDC: 368582
+
+[PASS] test_fork_paysWithAStandingAllowance() (gas: 353332)
+Logs:
+  gas: pay() without permit on waBasUSDC: 317159
+
+[PASS] test_fork_spendsAWholePosition() (gas: 406199)
+[PASS] test_fork_waBasUSDCAcceptsAPermit() (gas: 83091)
+Suite result: ok. 4 passed; 0 failed; 0 skipped; finished in 6.14s (776.14ms CPU time)
+
+Ran 24 tests for test/vault/VaultPayRouter.t.sol:VaultPayRouterTest
+[PASS] testFuzz_pay_exactEmptyAndConserving(uint256,uint256,uint256) (runs: 10000, μ: 1820832, ~: 1821277)
+[PASS] test_domainSeparator_isStandardEIP712() (gas: 6058)
+[PASS] test_intentDigest_matchesTheTypedDataSpec() (gas: 30818)
+[PASS] test_pay_aFrontRunSubmissionPaysExactlyAsSigned() (gas: 201876)
+[PASS] test_pay_aVaultCannotBurnSharesThePaymentDidNotBring() (gas: 1876242)
+[PASS] test_pay_blocksReentry() (gas: 1946762)
+[PASS] test_pay_deliversExactPriceAndKeepsNothing() (gas: 201080)
+[PASS] test_pay_emitsPaidFromVault() (gas: 192283)
+[PASS] test_pay_failedPaymentLeavesTheIntentUnused() (gas: 190066)
+[PASS] test_pay_fromAnERC1271Wallet() (gas: 541224)
+[PASS] test_pay_neverHandsAPayerSomeoneElsesTokens() (gas: 291623)
+[PASS] test_pay_refusesAShortWithdrawal() (gas: 1775800)
+[PASS] test_pay_refusesToSpendAboveTheCeiling() (gas: 73076)
+[PASS] test_pay_rejectsAZeroPrice() (gas: 33950)
+[PASS] test_pay_rejectsAnotherKeysSignature() (gas: 66688)
+[PASS] test_pay_rejectsEveryTamperedField() (gas: 1799799)
+[PASS] test_pay_rejectsInvalidRecipients() (gas: 78460)
+[PASS] test_pay_rejectsReplay() (gas: 191327)
+[PASS] test_pay_respectsTheValidityWindow() (gas: 192140)
+[PASS] test_pay_survivesAFrontRunPermit() (gas: 193150)
+[PASS] test_pay_theCeilingProtectsThePayerFromALoss() (gas: 85457)
+[PASS] test_pay_toSelfConvertsSharesToTheAsset() (gas: 183084)
+[PASS] test_pay_usesAStandingAllowanceWithoutAPermit() (gas: 154699)
+[PASS] test_sharesToAuthorize_coversTodayWithOneBasisPoint() (gas: 24543)
+Suite result: ok. 24 passed; 0 failed; 0 skipped; finished in 9.22s (9.23s CPU time)
+
+Ran 2 tests for test/vault/VaultPayRouterInvariant.t.sol:VaultPayRouterInvariantTest
+[PASS] invariant_merchantsReceiveExactlyWhatWasPaid() (runs: 256, calls: 32768, reverts: 0)
+
+╭-----------------+----------+-------+---------+----------╮
+| Contract        | Selector | Calls | Reverts | Discards |
++=========================================================+
+| VaultPayHandler | accrue   | 8029  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | elapse   | 8201  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | pay      | 8209  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | topUp    | 8329  | 0       | 0        |
+╰-----------------+----------+-------+---------+----------╯
+
+[PASS] invariant_routerHoldsNothing() (runs: 256, calls: 32768, reverts: 0)
+
+╭-----------------+----------+-------+---------+----------╮
+| Contract        | Selector | Calls | Reverts | Discards |
++=========================================================+
+| VaultPayHandler | accrue   | 8029  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | elapse   | 8201  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | pay      | 8209  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | topUp    | 8329  | 0       | 0        |
+╰-
+...
+== exit codes: build 0, test 1, slither 0, deploy-simulation router 0, escrow 0
+
+== deployment simulations on Base mainnet (no broadcast)
+
+== Logs ==
+  VaultPayRouter 0x2e665A5E6C636fA00DBf1C0A845eB07929D51d6f
+  chain id       8453
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 8453
+
+Estimated gas price: 0.010316576 gwei
+
+Estimated total gas used for script: 2525201
+
+Estimated amount required: 0.000026051428031776 ETH
+
+==========================
+
+SIMULATION COMPLETE. To broadcast these transactions, add --broadcast and wallet configuration(s) to the previous command. See forge script --help for more.
+
+Transactions saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/broadcast/DeployVaultPayRouter.s.sol/8453/dry-run/run-latest.json
+
+Sensitive values saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/cache/DeployVaultPayRouter.s.sol/8453/dry-run/run-latest.json
+
+
+== Logs ==
+  X402SessionEscrow 0x175925a679f389D905686D7E484b030Ccd7992CB
+  chain id          8453
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 8453
+
+Estimated gas price: 0.010312578 gwei
+
+Estimated total gas used for script: 3521521
+
+Estimated amount required: 0.000036315959991138 ETH
+
+==========================
+
+SIMULATION COMPLETE. To broadcast these transactions, add --broadcast and wallet configuration(s) to the previous command. See forge script --help for more.
+
+Transactions saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/broadcast/DeployX402SessionEscrow.s.sol/8453/dry-run/run-latest.json
+
+Sensitive values saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/cache/DeployX402SessionEscrow.s.sol/8453/dry-run/run-latest.json
+
+
+== slither
+'forge clean' running (wd: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin)
+'forge config --json' running
+'forge build --build-info --deny never --skip ./test/vault/** ./script/vault/** --force' running (wd: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin)
+ERROR:ContractSolcParsing:Impossible to generate IR for VaultPayRouter._nonReentrantBefore (lib/openzeppelin-contracts/contracts/utils/ReentrancyGuardTransient.sol#40-48):
+ 'NoneType' object has no attribute 'parameters'
+ERROR:ContractSolcParsing:Impossible to generate IR for VaultPayRouter._nonReentrantAfter (lib/openzeppelin-contracts/contracts/utils/ReentrancyGuardTransient.sol#50-52):
+ 'NoneType' object has no attribute 'parameters'
+ERROR:ContractSolcParsing:Impossible to generate IR for VaultPayRouter._reentrancyGuardEntered (lib/openzeppelin-contracts/contracts/utils/ReentrancyGuardTransient.sol#58-60):
+ 'NoneType' object has no attribute 'parameters'
+ERROR:ContractSolcParsing:Impossible to generate IR for X402SessionEscrow._nonReentrantBefore (lib/openzeppelin-contracts/contracts/utils/ReentrancyGuardTransient.sol#40-48):
+ 'NoneType' object has no attribute 'parameters'
+ERROR:ContractSolcParsing:Impossible to generate IR for X402SessionEscrow._nonReentrantAfter (lib/openzeppelin-contracts/contracts/utils/ReentrancyGuardTransient.sol#50-52):
+ 'NoneType' object has no attribute 'parameters'
+ERROR:ContractSolcParsing:Impossible to generate IR for X402SessionEscrow._reentrancyGuardEntered (lib/openzeppelin-contracts/contracts/utils/ReentrancyGuardTransient.sol#58-60):
+ 'NoneType' object has no attribute 'parameters'
+INFO:Detectors:
+Detector: cyclomatic-complexity
+VaultPayRouter.pay(VaultPayRouter.PayIntent,bytes,VaultPayRouter.Permit) (src/vault/VaultPayRouter.sol#136-205) has a high cyclomatic complexity (17).
+Reference: https://github.com/crytic/slither/wiki/Detector-Documentation#cyclomatic-complexity
+INFO:Slither:. analyzed (27 contracts with 102 detectors), 1 result(s) found
+
+== sizes
+    |
+373 |             s.claimed = uint128(claimed);
+    |                         ^^^^^^^^^^^^^^^^
+    |
+    = note: consider disabling this lint if you're certain the cast is safe
+            
+            // casting to 'uint128' is safe because [explain why]
+            // forge-lint: disable-next-line(unsafe-typecast)
+            
+            
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unsafe-typecast
+
+
+== tests
+No files changed, compilation skipped
+
+Ran 1 test for test/vault/review/session/SessionGuards.t.sol:X402SessionReview_GuardS4Test
+[PASS] test_guardS4_redeemableAgreesWithRedeem() (gas: 245924)
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 1.85ms (751.52µs CPU time)
+
+Ran 1 test for test/vault/review/session/SessionGuards.t.sol:X402SessionReview_GuardS5Test
+[PASS] test_guardS5_theEscrowCannotBeThePayee() (gas: 16574)
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 862.90µs (37.00µs CPU time)
+
+Ran 3 tests for test/vault/review/RegressionF3.t.sol:VaultPayRouterReview_RegressionF3Test
+[PASS] test_F3_aContractWalletStillRejectsAStrangersKey() (gas: 461019)
+[PASS] test_F3_aDelegatedEoaPaysWithItsOwnKey() (gas: 354392)
+[PASS] test_F3_aWrappingDelegatePaysWithThePlainSignature() (gas: 360837)
+Suite result: ok. 3 passed; 0 failed; 0 skipped; finished in 2.94ms (1.80ms CPU time)
+
+Ran 1 test for test/vault/review/RegressionF4.t.sol:VaultPayRouterReview_RegressionF4Test
+[PASS] test_F4_aPermitExpiringBeforeTheIntentFailsInSimulation() (gas: 192837)
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 2.04ms (1.14ms CPU time)
+
+Ran 3 tests for test/vault/review/session/SessionGuards.t.sol:X402SessionReview_GuardS1Test
+[PASS] test_guardS1_aBlockDependentSignerNeverPassesASimulation() (gas: 487636)
+[PASS] test_guardS1_aDelegatedEoaSignsWithItsOwnKeyOnly() (gas: 475639)
+[PASS] test_guardS1_aSmartAccountCannotSignVouchers() (gas: 492751)
+Suite result: ok. 3 passed; 0 failed; 0 skipped; finished in 5.40ms (4.42ms CPU time)
+
+Ran 1 test for test/vault/review/RegressionF5.t.sol:VaultPayRouterReview_RegressionF5Test
+[PASS] test_F5_aSelfReferentialVaultIsRefused() (gas: 816292)
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 1.40ms (533.41µs CPU time)
+
+Ran 1 test for test/vault/review/FacilitatorGrief.t.sol:VaultPayRouterReview_FacilitatorGriefTest
+[PASS] test_aWalletKeyedOnBlockParityBurnsTheGasLimit() (gas: 994349)
+Logs:
+  gas the submitter pays for nothing: 291392
+
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 6.69ms (4.32ms CPU time)
+
+Ran 2 tests for test/vault/review/RefundPaths.t.sol:VaultPayRouterReview_RefundPathsTest
+[PASS] test_extraAssetGoesBackToThePayerAndStraysStay() (gas: 1962142)
+[PASS] test_overQuotedSharesGoBackAndTheCostIsWhatWasBurned() (gas: 1917792)
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 4.29ms (3.06ms CPU time)
+
+Ran 11 tests for test/vault/review/session/SessionSoundness.t.sol:X402SessionReview_SoundnessTest
+[PASS] test_aDepositAboveUint128IsRefused() (gas: 148866)
+[PASS] test_aFeeOnTransferTokenCannotOpen() (gas: 958630)
+[PASS] test_aRacedOpenIsTheSameSession() (gas: 249830)
+[PASS] test_aStolenSignerKeyPaysOnlyEachSessionsOwnPayee() (gas: 416667)
+[PASS] test_aTokenHookCannotReenter() (gas: 1290505)
+[PASS] test_aTopUpAuthorizationIsBoundToItsSession() (gas: 444917)
+[FAIL: InvalidVoucher()] test_aVoucherDoesNotReplayOnAnotherChain() (gas: 217353)
+Traces:
+  [217353] X402SessionReview_SoundnessTest::test_aVoucherDoesNotReplayOnAnotherChain()
+    ├─ [0] VM::getBlockTimestamp() [staticcall]
+    │   └─ ← [Return] 1800000000 [1.8e9]
+    ├─ [0] VM::prank(0x2FbE5d18a830ABF220ccf3c4E74253Ef91496B41)
+    │   └─ ← [Return]
+    ├─ [183332] X402SessionEscrow::open(merchant: [0x00655EA989254C13e93C5a1F74C4636b5B9926B5], FiatTokenV22Mock: [0x2e234DAe75C793f67A35089C9d99245E1C58470b], 0x3805Ecc0043365A3d1c6b68ABD41dEC19C988d08, 1800086400 [1.8e9], 0x636861696e000000000000000000000000000000000000000000000000000000, 10000000 [1e7])
+    │   ├─ emit SessionOpened(sessionId: 0x568f0191f1edb82bc15d4f9b3943cfbe670c7a7a2cf24df4863b0510f318223a, funder: 0x2FbE5d18a830ABF220ccf3c4E74253Ef91496B41, payee: merchant: [0x00655EA989254C13e93C5a1F74C4636b5B9926B5], token: FiatTokenV22Mock: [0x2e234DAe75C793f67A35089C9d99245E1C58470b], signer: 0x3805Ecc0043365A3d1c6b68ABD41dEC19C988d08, amount: 10000000 [1e7], expiry: 1800086400 [1.8e9])
+    │   ├─ [2598] FiatTokenV22Mock::balanceOf(X402SessionEscrow: [0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f]) [staticcall]
+    │   │   └─ ← [Return] 0
+    │   ├─ [36630] FiatTokenV22Mock::transferFrom(0x2FbE5d18a830ABF220ccf3c4E74253Ef91496B41, X402SessionEscrow: [0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f], 10000000 [1e7])
+    │   │   ├─ emit Transfer(from: 0x2FbE5d18a830ABF220ccf3c4E74253Ef91496B41, to: X402SessionEscrow: [0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f], value: 10000000 [1e7])
+    │   │   └─ ← [Return] true
+    │   ├─ [598] FiatTokenV22Mock::balanceOf(X402SessionEscrow: [0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f]) [staticcall]
+    │   │   └─ ← [Return] 10000000 [1e7]
+    │   └─ ← [Return] 0x568f0191f1edb82bc15d4f9b3943cfbe670c7a7a2cf24df4863b0510f318223a
+    ├─ [1090] X402SessionEscrow::voucherDigest(0x568f0191f1edb82bc15d4f9b3943cfbe670c7a7a2cf24df4863b0510f318223a, 1000000 [1e6]) [staticcall]
+    │   └─ ← [Return] 0xe7477b59d0b9a398dcbd942bc152a21cd650715c91f82546cb31a4ed550f7448
+    ├─ [0] VM::sign("<pk>", 0xe7477b59d0b9a398dcbd942bc152a21cd650715c91f82546cb31a4ed550f7448) [staticcall]
+    │   └─ ← [Return] 28, 0x4e67ef6456340f122bf7e5453c6bc499be99365a5b2fe9d47a1298e631df8f22, 0x68d9a9fd5418854f0e3c5e1b178d9c09dd8265e148cb3d8070c022c6eede5624
+    ├─ [0] VM::chainId(31338 [3.133e4])
+    │   └─ ← [Return]
+    ├─ [0] VM::expectRevert(custom error 0xc31eb0e0: 6d67dbd600000000000000000000000000000000000000000000000000000000)
+    │   └─ ← [Return]
+    ├─ [5896] X402SessionEscrow::redeem(0x568f0191f1edb82bc15d4f9b3943cfbe670c7a7a2cf24df4863b0510f318223a, 1000000 [1e6], 0x4e67ef6456340f122bf7e5453c6bc499be99365a5b2fe9d47a1298e631df8f2268d9a9fd5418854f0e3c5e1b178d9c09dd8265e148cb3d8070c022c6eede56241c)
+    │   ├─ [3000] PRECOMPILES::ecrecover(0x96683bf32a0f0940c23fc0e37f97b5fadd52b90d80ea16673f1663524961f7b2, 28, 35464039659616774399753229979435453609660824564970483141936246562096938979106, 47425115290572047931239948270671305193051666385745531774580578428183365178916) [staticcall]
+    │   │   └─ ← [Return] 0xB3731359Aa8B57888ea7e5b4d05e7a645D63B9c2
+    │   └─ ← [Revert] InvalidVoucher()
+    ├─ [0] VM::chainId(31338 [3.133e4])
+    │   └─ ← [Return]
+    ├─ [5896] X402SessionEscrow::redeem(0x568f0191f1edb82bc15d4f9b3943cfbe670c7a7a2cf24df4863b0510f318223a, 1000000 [1e6], 0x4e67ef6456340f122bf7e5453c6bc499be99365a5b2fe9d47a1298e631df8f2268d9a9fd5418854f0e3c5e1b178d9c09dd8265e148cb3d8070c022c6eede56241c)
+    │   ├─ [3000] PRECOMPILES::ecrecover(0x96683bf32a0f0940c23fc0e37f97b5fadd52b90d80ea16673f1663524961f7b2, 28, 35464039659616774399753229979435453609660824564970483141936246562096938979106, 47425115290572047931239948270671305193051666385745531774580578428183365178916) [staticcall]
+    │   │   └─ ← [Return] 0xB3731359Aa8B57888ea7e5b4d05e7a645D63B9c2
+    │   └─ ← [Revert] InvalidVoucher()
+    └─ ← [Revert] InvalidVoucher()
+
+Backtrace:
+  at X402SessionEscrow.redeem
+  at X402SessionReview_SoundnessTest.test_aVoucherDoesNotReplayOnAnotherChain
+
+[PASS] test_anOldVoucherNeverCountsTwice_evenAfterATopUp() (gas: 271357)
+[PASS] test_closeByPayeeAfterItsVoucherWasRedeemed() (gas: 235408)
+[PASS] test_expiryEdges_andNoEarlyExitForTheFunder() (gas: 252654)
+[PASS] test_theOpenAuthorizationBindsEveryTerm() (gas: 3167090)
+Suite result: FAILED. 10 passed; 1 failed; 0 skipped; finished in 8.23ms (7.05ms CPU time)
+
+Ran 2 tests for test/vault/review/session/OpenGriefing.t.sol:X402SessionReview_OpenGriefingTest
+[PASS] test_aCanceledAuthorizationRevertsTheOpenAfterACleanSimulation() (gas: 431850)
+[PASS] test_anExpiryOnTheMinimumPassesTheSimulationAndFailsOneBlockLater() (gas: 245334)
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 5.37ms (4.41ms CPU time)
+
+Ran 1 test for test/vault/review/RegressionF2.t.sol:VaultPayRouterReview_RegressionF2Test
+[PASS] test_F2_anAssetSwapAfterSigningReverts() (gas: 1888126)
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 1.67ms (705.17µs CPU time)
+
+Ran 3 tests for test/vault/review/RegressionF1.t.sol:VaultPayRouterReview_RegressionF1Test
+[PASS] test_F1_aCancelSurvivesReapproval() (gas: 96615)
+[PASS] test_F1_aCancelledAttemptCannotBeSettled() (gas: 593844)
+[PASS] test_F1_cancelIsPayerScopedAndOneShot() (gas: 107852)
+Suite result: ok. 3 passed; 0 failed; 0 skipped; finished in 3.47ms (2.51ms CPU time)
+
+Ran 3 tests for test/vault/review/session/SessionGuards.t.sol:X402SessionReview_GuardS2Test
+[PASS] test_guardS2_aBlacklistedPayeeIsSkippedAndItsSessionUntouched() (gas: 643014)
+[PASS] test_guardS2_anEntrySettledFirstDoesNotSinkTheBatch() (gas: 631910)
+[PASS] test_guardS2_everyKindOfDeadEntryIsSkipped() (gas: 747415)
+Suite result: ok. 3 passed; 0 failed; 0 skipped; finished in 11.18ms (6.92ms CPU time)
+
+Ran 1 test for test/vault/review/session/SessionGuards.t.sol:X402SessionReview_GuardS3Test
+[PASS] test_guardS3_aShortLivedSessionCannotTakeTheOpensId() (gas: 402375)
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 4.85ms (3.91ms CPU time)
+
+Ran 4 tests for test/vault/review/session/UsdcControls.t.sol:X402SessionReview_UsdcControlsTest
+[PASS] test_aBlacklistedEscrow() (gas: 377656)
+[PASS] test_aBlacklistedFunder() (gas: 313383)
+[PASS] test_aBlacklistedPayee() (gas: 272141)
+[PASS] test_aPauseThatSpansExpiry() (gas: 206829)
+Suite result: ok. 4 passed; 0 failed; 0 skipped; finished in 5.24ms (4.20ms CPU time)
+
+Ran 1 test for test/vault/X402SessionEscrowBaseMainnetFork.t.sol:X402SessionEscrowBaseMainnetForkTest
+[PASS] test_fork_gaslessOpenThenAThousandCallsInOneSettlement() (gas: 292252)
+Logs:
+  gas: openWithAuthorization on real USDC: 213695
+  gas: redeem, covering 1,000 calls: 37021
+  gas per call at 1,000 calls per redemption: 37
+
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 2.04s (1.21s CPU time)
+
+Ran 3 tests for test/vault/review/session/UsdcBaseMainnetFork.t.sol:X402SessionReview_UsdcBaseMainnetForkTest
+[PASS] test_fork_I1_aCanceledAuthorizationRevertsTheOpenAfterACleanSimulation() (gas: 446440)
+[PASS] test_fork_I2_aPauseThatSpansExpiryVoidsHeldVouchers() (gas: 227606)
+[PASS] test_fork_S2_aBlacklistedPayeeIsSkippedAndTheRestPays() (gas: 467542)
+Suite result: ok. 3 passed; 0 failed; 0 skipped; finished in 2.41s (711.42ms CPU time)
+
+Ran 21 tests for test/vault/X402SessionEscrow.t.sol:X402SessionEscrowTest
+[PASS] testFuzz_settlesExactly(uint96,uint256[6],uint8) (runs: 10000, μ: 238990, ~: 242313)
+[PASS] test_aDelegatedEoaSignsWithItsOwnKey() (gas: 231869)
+[PASS] test_aStolenAgentKeyCanOnlyOverpayTheNamedMerchant_upToTheDeposit() (gas: 216982)
+[PASS] test_aThousandCallsSettleInOneRedemption() (gas: 7969666)
+[PASS] test_anERC1271SignerCannotSignVouchers() (gas: 542739)
+[PASS] test_anyoneMayRedeem_butOnlyThePayeeIsPaid() (gas: 235939)
+[PASS] test_checkVoucher_answersWhatARedemptionWouldDo() (gas: 255956)
+[PASS] test_closeByPayee_settlesTheLastVoucherAndReleasesTheRest() (gas: 224905)
+[PASS] test_isVoucherSignedBy_worksBeforeTheSessionExists() (gas: 33032)
+[PASS] test_openWithAuthorization_isGaslessForTheFunder_andBindsTheTerms() (gas: 383080)
+[PASS] test_open_holdsTheDepositUnderTheSessionsTerms() (gas: 199936)
+[PASS] test_open_rejectsBadTerms() (gas: 326962)
+[PASS] test_reclaim_returnsTheUnclaimedAfterExpiry() (gas: 226771)
+[PASS] test_redeemMany_settlesSeveralSessionsInOneTransaction() (gas: 558660)
+[PASS] test_redeem_endsAtExpiry() (gas: 198755)
+[PASS] test_redeem_isIncremental_andAnOldVoucherCountsOnce() (gas: 249223)
+[PASS] test_redeem_neverExceedsTheDeposit() (gas: 198104)
+[PASS] test_redeem_onlyTheSessionSignerCanAuthorise() (gas: 202875)
+[PASS] test_topUp_extendsTheSession() (gas: 222017)
+[PASS] test_unknownSession() (gas: 11462)
+[PASS] test_voucher_isBoundToItsSessionAndAmount() (gas: 355962)
+Suite result: ok. 21 passed; 0 failed; 0 skipped; finished in 5.45s (5.62s CPU time)
+
+Ran 4 tests for test/vault/VaultPayRouterBaseMainnetFork.t.sol:VaultPayRouterBaseMainnetForkTest
+[PASS] test_fork_paysFiveCentsFromAnAavePosition() (gas: 398295)
+Logs:
+  gas: pay() with permit on waBasUSDC: 368582
+
+[PASS] test_fork_paysWithAStandingAllowance() (gas: 353332)
+Logs:
+  gas: pay() without permit on waBasUSDC: 317159
+
+[PASS] test_fork_spendsAWholePosition() (gas: 406199)
+[PASS] test_fork_waBasUSDCAcceptsAPermit() (gas: 83091)
+Suite result: ok. 4 passed; 0 failed; 0 skipped; finished in 6.14s (776.14ms CPU time)
+
+Ran 24 tests for test/vault/VaultPayRouter.t.sol:VaultPayRouterTest
+[PASS] testFuzz_pay_exactEmptyAndConserving(uint256,uint256,uint256) (runs: 10000, μ: 1820832, ~: 1821277)
+[PASS] test_domainSeparator_isStandardEIP712() (gas: 6058)
+[PASS] test_intentDigest_matchesTheTypedDataSpec() (gas: 30818)
+[PASS] test_pay_aFrontRunSubmissionPaysExactlyAsSigned() (gas: 201876)
+[PASS] test_pay_aVaultCannotBurnSharesThePaymentDidNotBring() (gas: 1876242)
+[PASS] test_pay_blocksReentry() (gas: 1946762)
+[PASS] test_pay_deliversExactPriceAndKeepsNothing() (gas: 201080)
+[PASS] test_pay_emitsPaidFromVault() (gas: 192283)
+[PASS] test_pay_failedPaymentLeavesTheIntentUnused() (gas: 190066)
+[PASS] test_pay_fromAnERC1271Wallet() (gas: 541224)
+[PASS] test_pay_neverHandsAPayerSomeoneElsesTokens() (gas: 291623)
+[PASS] test_pay_refusesAShortWithdrawal() (gas: 1775800)
+[PASS] test_pay_refusesToSpendAboveTheCeiling() (gas: 73076)
+[PASS] test_pay_rejectsAZeroPrice() (gas: 33950)
+[PASS] test_pay_rejectsAnotherKeysSignature() (gas: 66688)
+[PASS] test_pay_rejectsEveryTamperedField() (gas: 1799799)
+[PASS] test_pay_rejectsInvalidRecipients() (gas: 78460)
+[PASS] test_pay_rejectsReplay() (gas: 191327)
+[PASS] test_pay_respectsTheValidityWindow() (gas: 192140)
+[PASS] test_pay_survivesAFrontRunPermit() (gas: 193150)
+[PASS] test_pay_theCeilingProtectsThePayerFromALoss() (gas: 85457)
+[PASS] test_pay_toSelfConvertsSharesToTheAsset() (gas: 183084)
+[PASS] test_pay_usesAStandingAllowanceWithoutAPermit() (gas: 154699)
+[PASS] test_sharesToAuthorize_coversTodayWithOneBasisPoint() (gas: 24543)
+Suite result: ok. 24 passed; 0 failed; 0 skipped; finished in 9.22s (9.23s CPU time)
+
+Ran 2 tests for test/vault/VaultPayRouterInvariant.t.sol:VaultPayRouterInvariantTest
+[PASS] invariant_merchantsReceiveExactlyWhatWasPaid() (runs: 256, calls: 32768, reverts: 0)
+
+╭-----------------+----------+-------+---------+----------╮
+| Contract        | Selector | Calls | Reverts | Discards |
++=========================================================+
+| VaultPayHandler | accrue   | 8029  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | elapse   | 8201  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | pay      | 8209  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | topUp    | 8329  | 0       | 0        |
+╰-----------------+----------+-------+---------+----------╯
+
+[PASS] invariant_routerHoldsNothing() (runs: 256, calls: 32768, reverts: 0)
+
+╭-----------------+----------+-------+---------+----------╮
+| Contract        | Selector | Calls | Reverts | Discards |
++=========================================================+
+| VaultPayHandler | accrue   | 8029  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | elapse   | 8201  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | pay      | 8209  | 0       | 0        |
+|-----------------+----------+-------+---------+----------|
+| VaultPayHandler | topUp    | 8329  | 0       | 0        |
+╰-----------------+----------+-------+---------+----------╯
+
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 7.38s (8.89s CPU time)
+
+Ran 2 tests for test/vault/X402SessionEscrowInvariant.t.sol:X402SessionEscrowInvariantTest
+[PASS] invariant_escrowHoldsExactlyWhatOpenSessionsOwe() (runs: 256, calls: 32768, reverts: 0)
+
+╭----------------+------------+-------+---------+----------╮
+| Contract       | Selector   | Calls | Reverts | Discards |
++==========================================================+
+| SessionHandler | closeEarly | 4678  | 0       | 0        |
+|----------------+------------+-------+---------+----------|
+| SessionHandler | elapse     | 4667  | 0       | 0        |
+|----------------+------------+-------+---------+----------|
+| SessionHandler | open       | 4798  | 0       | 0        |
+|----------------+------------+-------+---------+----------|
+| SessionHandler | pay        | 4560  | 0       | 0        |
+|----------------+------------+-------+---------+----------|
+| SessionHandler | reclaim    | 4735  | 0       | 0        |
+|----------------+------------+-------+---------+----------|
+| SessionHandler | redeem     | 4648  | 0       | 0        |
+|----------------+------------+-------+---------+----------|
+| SessionHandler | topUp      | 4682  | 0       | 0        |
+╰----------------+------------+-------+---------+----------╯
+
+[PASS] invariant_nothingIsCreatedOrLost() (runs: 256, calls: 32768, reverts: 0)
+
+╭----------------+------------+-------+---------+----------╮
+| Contract       | Selector   | Calls | Reverts | Discards |
++==========================================================+
+| SessionHandler | closeEarly | 4678  | 0       | 0        |
+|----------------+------------+-------+---------+----------|
+| SessionHandler | elapse     | 4667  | 0       | 0        |
+|----------------+------------+-------+---------+----------|
+| SessionHandler | open       | 4798  | 0       | 0        |
+|----------------+------------+-------+---------+----------|
+| SessionHandler | pay        | 4560  | 0       | 0        |
+|----------------+------------+-------+---------+----------|
+| SessionHandler | reclaim    | 4735  | 0       | 0        |
+|----------------+------------+-------+---------+----------|
+| SessionHandler | redeem     | 4648  | 0       | 0        |
+|----------------+------------+-------+---------+----------|
+| SessionHandler | topUp      | 4682  | 0       | 0        |
+╰----------------+------------+-------+---------+----------╯
+
+Suite result: ok. 2 passed; 0 failed; 0 skipped; finished in 13.15s (16.73s CPU time)
+
+Ran 22 test suites in 15.22s (45.87s CPU time): 94 tests passed, 1 failed, 0 skipped (95 total tests)
+
+Failing tests:
+Encountered 1 failing test in test/vault/review/session/SessionSoundness.t.sol:X402SessionReview_SoundnessTest
+[FAIL: InvalidVoucher()] test_aVoucherDoesNotReplayOnAnotherChain() (gas: 217353)
+
+Encountered a total of 1 failing tests, 94 tests succeeded
+
+Tip: Run `forge test --rerun` to retry only the 1 failed test
