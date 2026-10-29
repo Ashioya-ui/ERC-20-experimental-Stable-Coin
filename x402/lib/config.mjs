@@ -3,6 +3,7 @@
 //   deployments/<chainId>.json               a Spectrum deployment (sUSD, stabilizer, ...), optional
 //   deployments/<chainId>-router.json        the sUSD pay router, optional (needs the above)
 //   deployments/<chainId>-vault-router.json  VaultPayRouter, optional
+//   deployments/<chainId>-session-escrow.json X402SessionEscrow, optional
 //   config/<chainId>.json                    the network: USDC and the vaults it trusts
 //
 // A chain with no Spectrum deployment is complete with USDC and VaultPayRouter alone: that is the
@@ -24,6 +25,7 @@ export async function loadDeployment(chain) {
   const net = readIf(process.env.NETWORK_CONFIG || resolve(ROOT, 'config', `${chainId}.json`));
   const sUSDRouter = main ? readIf(process.env.ROUTER_DEPLOYMENT || resolve(dir, `${chainId}-router.json`))?.router : null;
   const vaultRouter = readIf(process.env.VAULT_ROUTER_DEPLOYMENT || resolve(dir, `${chainId}-vault-router.json`))?.router;
+  const sessionEscrow = readIf(process.env.SESSION_ESCROW_DEPLOYMENT || resolve(dir, `${chainId}-session-escrow.json`))?.escrow;
 
   const usdc = main?.usdc ?? net?.external?.usdc;
   if (!isAddress(usdc)) {
@@ -47,6 +49,7 @@ export async function loadDeployment(chain) {
     router: sUSDRouter ? lc(sUSDRouter) : null,
     vaultRouter: isAddress(vaultRouter) ? lc(vaultRouter) : null,
     vaults: [...new Set(vaults)],
+    sessionEscrow: isAddress(sessionEscrow) ? lc(sessionEscrow) : null,
   };
   const strip = (s) => String(s).replace(/^"|"$/g, '');
   const usdcDomain = {

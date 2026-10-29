@@ -2,7 +2,6 @@
 pragma solidity ^0.8.26;
 
 import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
-import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 import {VaultPayRouter} from "../../../src/vault/VaultPayRouter.sol";
@@ -39,44 +38,11 @@ contract ParityWallet is IERC1271 {
 /// F-4 (audit/vault-router-review.md). A payer can hand a facilitator an intent that simulates
 /// cleanly against the latest block, which is what x402/facilitator.mjs does twice before sending,
 /// and that reverts once included. It costs the payer nothing and can be repeated with fresh salts.
-/// These tests PASS while the router accepts a permit that expires before the intent and while
-/// signature validity may depend on the block.
+/// The permit half is fixed (PermitExpiresBeforeIntent; guarded in RegressionF4.t.sol). What is
+/// left is a known limitation, kept as a test: a signature whose validity depends on the block,
+/// which no router can rule out. This test PASSES while that remains true; the facilitator's
+/// per-payer failure budget is what bounds it.
 contract VaultPayRouterReview_FacilitatorGriefTest is VaultPayRouterReviewFixture {
-    /// An EOA with shares and no allowance signs a permit that expires one second after the latest
-    /// block. validBefore is a minute out, so facilitator.mjs windowError() is satisfied, and
-    /// nothing checks the permit's own deadline (facilitator.mjs:224 only checks that it is a uint).
-    function test_aPermitExpiringBeforeInclusionBurnsTheSubmittersGas() public {
-        uint256 price = 1e6;
-        uint256 t0 = vm.getBlockTimestamp();
-        VaultPayRouter.PayIntent memory it =
-            _intentFor(payer, address(vault), merchant, price, keccak256("grief"));
-        bytes memory sig = _sign(PAYER_PK, it);
-        VaultPayRouter.Permit memory p = _permit(PAYER_PK, vault, it.maxShares, t0 + 1);
-
-        // eth_call against the latest block: the payment simulates and pays.
-        uint256 snap = vm.snapshotState();
-        vm.prank(facilitator);
-        router.pay(it, sig, p);
-        assertEq(usdc.balanceOf(merchant), price, "the simulation pays");
-        vm.revertToState(snap);
-
-        // Included in the next Base block, two seconds on. The router swallows the expired permit
-        // and the payment reverts late, at the share transfer.
-        vm.warp(t0 + 2);
-        vm.roll(vm.getBlockNumber() + 1);
-        uint256 needed = vault.previewWithdraw(price);
-        (bool ok, bytes memory ret, uint256 used) = _payRaw(facilitator, it, sig, p, 500_000);
-        assertFalse(ok, "reverts once included");
-        assertEq(
-            ret,
-            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, address(router), 0, needed)
-        );
-        assertGt(used, 20_000, "the revert comes after the intentUsed SSTORE and the vault calls");
-        emit log_named_uint("execution gas the submitter pays for nothing", used);
-        assertEq(usdc.balanceOf(merchant), 0, "nobody was paid");
-        assertFalse(router.intentUsed(payer, router.intentDigest(it)), "and the payer can do it again");
-    }
-
     /// An ERC-1271 wallet (or an EIP-7702 delegate) keyed on block parity: valid in the simulation
     /// at the latest block, invalid one block later, after burning nearly all the gas the submitter
     /// allowed for the transaction.

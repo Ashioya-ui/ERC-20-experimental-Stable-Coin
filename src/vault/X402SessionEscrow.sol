@@ -35,7 +35,7 @@ interface IERC3009Receive {
 ///            serves at once. Nothing touches the chain.
 ///         3. Whenever it likes, the merchant -- or a facilitator on its behalf -- redeems the
 ///            latest voucher. One transaction settles every call since the last one, and
-///            claimMany settles many sessions in one transaction.
+///            redeemMany settles many sessions in one transaction.
 ///         4. After expiry the funder takes back whatever was never claimed.
 ///
 ///         Safety, both ways. The merchant can never receive more than the deposit or more than the

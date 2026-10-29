@@ -2,6 +2,7 @@
 pragma solidity ^0.8.26;
 
 import {Test} from "forge-std/Test.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 import {VaultPayRouter} from "../../../src/vault/VaultPayRouter.sol";
 import {MockUSDC, MockVault} from "../mocks/VaultMocks.sol";
@@ -54,6 +55,7 @@ abstract contract VaultPayRouterReviewFixture is Test {
         return VaultPayRouter.PayIntent({
             payer: who,
             vault: vault_,
+            asset: IERC4626(vault_).asset(),
             payTo: payTo,
             assets: assets,
             maxShares: router.sharesToAuthorize(vault_, assets),

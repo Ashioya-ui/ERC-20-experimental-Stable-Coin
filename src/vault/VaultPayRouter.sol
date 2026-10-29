@@ -7,6 +7,7 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 
@@ -50,14 +51,18 @@ contract VaultPayRouter is EIP712, ReentrancyGuardTransient {
 
     /// @notice EIP-712 type of the payment intent.
     bytes32 public constant PAY_INTENT_TYPEHASH = keccak256(
-        "PayIntent(address payer,address vault,address payTo,uint256 assets,uint256 maxShares,bytes32 salt,uint256 validAfter,uint256 validBefore)"
+        "PayIntent(address payer,address vault,address asset,address payTo,uint256 assets,uint256 maxShares,bytes32 salt,uint256 validAfter,uint256 validBefore)"
     );
+
+    /// @notice EIP-712 type a payer signs to cancel one of its intents without sending a transaction.
+    bytes32 public constant CANCEL_INTENT_TYPEHASH = keccak256("CancelIntent(address payer,bytes32 digest)");
 
     /// @notice Headroom `sharesToAuthorize` adds on top of today's cost, in basis points.
     uint256 public constant AUTHORIZE_HEADROOM_BPS = 1;
 
     /// @param payer       Signer of the intent, and owner of the shares spent.
     /// @param vault       ERC-4626 vault whose shares pay; the price is in `vault.asset()`.
+    /// @param asset       The token `payTo` receives; must be `vault.asset()` when the payment settles.
     /// @param payTo       Recipient of the asset.
     /// @param assets      Exact amount of the asset `payTo` receives.
     /// @param maxShares   Most shares the payment may cost; the payer's protection against a
@@ -68,6 +73,7 @@ contract VaultPayRouter is EIP712, ReentrancyGuardTransient {
     struct PayIntent {
         address payer;
         address vault;
+        address asset;
         address payTo;
         uint256 assets;
         uint256 maxShares;
@@ -111,6 +117,12 @@ contract VaultPayRouter is EIP712, ReentrancyGuardTransient {
     error InvalidSignature();
     error SharesAboveCeiling(uint256 needed, uint256 maxShares);
     error ShortWithdrawal(uint256 received, uint256 assets);
+    error AssetIsShareToken(address vault);
+    error PermitExpiresBeforeIntent(uint256 deadline, uint256 validBefore);
+    error AssetMismatch(address vaultAsset, address signedAsset);
+
+    /// @notice `payer` gave up the intent with this digest without paying it.
+    event IntentCancelled(address indexed payer, bytes32 indexed digest);
 
     constructor() EIP712("VaultPayRouter", "1") {}
 
@@ -135,16 +147,23 @@ contract VaultPayRouter is EIP712, ReentrancyGuardTransient {
         if (block.timestamp <= it.validAfter) revert NotYetValid(it.validAfter);
         // slither-disable-next-line timestamp
         if (block.timestamp >= it.validBefore) revert Expired(it.validBefore);
+        // The intent is valid while t <= validBefore - 1, the permit while t <= deadline. A permit
+        // that lapses first turns a clean simulation into a revert the submitter pays for.
+        if (permit.deadline != 0 && permit.deadline < it.validBefore - 1) {
+            revert PermitExpiresBeforeIntent(permit.deadline, it.validBefore);
+        }
 
         bytes32 digest = intentDigest(it);
         if (intentUsed[it.payer][digest]) revert IntentAlreadyUsed(digest);
-        if (!SignatureChecker.isValidSignatureNow(it.payer, digest, signature)) revert InvalidSignature();
+        if (!_isValidSignature(it.payer, digest, signature)) revert InvalidSignature();
         // Spent before any external call: a reentrant or repeated submission finds it used.
         intentUsed[it.payer][digest] = true;
 
         IERC4626 vault = IERC4626(it.vault);
         IERC20 shares = IERC20(it.vault);
         IERC20 asset = IERC20(vault.asset());
+        if (address(asset) == it.vault) revert AssetIsShareToken(it.vault);
+        if (address(asset) != it.asset) revert AssetMismatch(address(asset), it.asset);
 
         // ERC-4626 requires previewWithdraw to be no fewer than the shares the same withdrawal
         // burns in the same transaction, so taking this many always covers it.
@@ -185,6 +204,41 @@ contract VaultPayRouter is EIP712, ReentrancyGuardTransient {
         emit PaidFromVault(it.payer, it.payTo, digest, it.vault, it.assets, sharesSpent, sharesBack, assetsBack);
     }
 
+    /// @dev ECDSA first, then ERC-1271 for a signer with code. A contract address has no private
+    ///      key, so the ECDSA branch only ever accepts an EOA, including one delegated under
+    ///      EIP-7702, whose own key already controls the account.
+    function _isValidSignature(address signer, bytes32 hash, bytes calldata signature)
+        private
+        view
+        returns (bool)
+    {
+        // The third return value only describes a failure; recovered and err decide.
+        // slither-disable-next-line unused-return
+        (address recovered, ECDSA.RecoverError err,) = ECDSA.tryRecover(hash, signature);
+        if (err == ECDSA.RecoverError.NoError && recovered == signer) return true;
+        return signer.code.length != 0 && SignatureChecker.isValidERC1271SignatureNow(signer, hash, signature);
+    }
+
+    // ---------------------------------------------------------------------- cancel
+
+    /// @notice Spend `digest` without paying: the caller's intent with this digest can never settle.
+    function cancel(bytes32 digest) external {
+        _cancel(msg.sender, digest);
+    }
+
+    /// @notice The same, gasless: anyone may submit the payer's EIP-712 CancelIntent signature.
+    function cancelWithSignature(address payer, bytes32 digest, bytes calldata signature) external {
+        bytes32 hash = _hashTypedDataV4(keccak256(abi.encode(CANCEL_INTENT_TYPEHASH, payer, digest)));
+        if (!_isValidSignature(payer, hash, signature)) revert InvalidSignature();
+        _cancel(payer, digest);
+    }
+
+    function _cancel(address payer, bytes32 digest) private {
+        if (intentUsed[payer][digest]) revert IntentAlreadyUsed(digest);
+        intentUsed[payer][digest] = true;
+        emit IntentCancelled(payer, digest);
+    }
+
     // ---------------------------------------------------------------------- views
 
     /// @notice The EIP-712 digest the payer signs for `it`.
@@ -195,6 +249,7 @@ contract VaultPayRouter is EIP712, ReentrancyGuardTransient {
                     PAY_INTENT_TYPEHASH,
                     it.payer,
                     it.vault,
+                    it.asset,
                     it.payTo,
                     it.assets,
                     it.maxShares,

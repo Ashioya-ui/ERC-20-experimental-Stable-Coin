@@ -4,11 +4,10 @@ pragma solidity ^0.8.26;
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import {VaultPayRouter} from "../../../src/vault/VaultPayRouter.sol";
 import {MockUSDC} from "../mocks/VaultMocks.sol";
-import {VaultPayRouterReviewFixture} from "./ReviewFixture.sol";
 
-/// @dev A 1:1 vault over USDC whose owner can repoint asset(). Once repointed, it pays out a
+/// @dev Kept for RegressionF2.t.sol, which replaced the F-2 PoC once the asset became part of the
+///      signed intent. A 1:1 vault over USDC whose owner can repoint asset(). Once repointed, it pays out a
 ///      lookalike token instead of USDC.
 contract AssetSwitchVault is ERC20 {
     IERC20 public immutable usdc;
@@ -52,46 +51,5 @@ contract AssetSwitchVault is ERC20 {
         if (reported == address(usdc)) require(usdc.transfer(receiver, assets), "transfer failed");
         else lookalike.mint(receiver, assets);
         return assets;
-    }
-}
-
-/// F-2 (audit/vault-router-review.md). The intent names the vault, not the asset. A vault the payer
-/// controls answers asset() with USDC while it is checked and simulated, and with a lookalike when
-/// the payment lands. pay() succeeds and emits the same PaidFromVault an honest payment emits; the
-/// event has no asset field. This test PASSES while the asset is not part of the signed intent.
-contract VaultPayRouterReview_AssetNotBoundTest is VaultPayRouterReviewFixture {
-    function test_aPayerControlledVaultSwapsTheAssetAfterVerification() public {
-        MockUSDC lookalike = new MockUSDC(); // name "USD Coin", symbol "USDC", 6 decimals
-        AssetSwitchVault hv = new AssetSwitchVault(usdc, lookalike, payer); // the payer's own vault
-        usdc.mint(payer, 10e6);
-        vm.startPrank(payer);
-        usdc.approve(address(hv), 10e6);
-        hv.deposit(10e6, payer);
-        hv.approve(address(router), type(uint256).max);
-        vm.stopPrank();
-
-        uint256 price = 1e6;
-        VaultPayRouter.PayIntent memory it = _intentFor(payer, address(hv), merchant, price, keccak256("swap"));
-        bytes memory sig = _sign(PAYER_PK, it);
-        bytes32 digest = router.intentDigest(it);
-
-        // Everything a facilitator can check says USDC: asset(), and the exact call, simulated.
-        assertEq(hv.asset(), address(usdc));
-        uint256 snap = vm.snapshotState();
-        router.pay(it, sig, _noPermit());
-        assertEq(usdc.balanceOf(merchant), price, "the simulation pays USDC");
-        vm.revertToState(snap);
-
-        // Between verify and settle: one storage write.
-        vm.prank(payer);
-        hv.setReported(address(lookalike));
-
-        vm.expectEmit(address(router));
-        emit VaultPayRouter.PaidFromVault(payer, merchant, digest, address(hv), price, price, 0, 0);
-        router.pay(it, sig, _noPermit());
-
-        assertEq(usdc.balanceOf(merchant), 0, "no USDC reached the merchant");
-        assertEq(lookalike.balanceOf(merchant), price, "it holds a lookalike instead");
-        assertEq(usdc.balanceOf(address(hv)), 10e6, "the payer's USDC never moved");
     }
 }

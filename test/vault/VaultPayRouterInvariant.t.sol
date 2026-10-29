@@ -39,6 +39,7 @@ contract VaultPayHandler is CommonBase, StdCheats, StdUtils {
         VaultPayRouter.PayIntent memory it = VaultPayRouter.PayIntent({
             payer: payer,
             vault: address(vault),
+            asset: address(usdc),
             payTo: merchants[who % 3],
             assets: price,
             maxShares: router.sharesToAuthorize(address(vault), price),

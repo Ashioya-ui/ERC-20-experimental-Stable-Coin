@@ -51,6 +51,7 @@ abstract contract VaultPayFixture is Test {
         return VaultPayRouter.PayIntent({
             payer: payer,
             vault: vault_,
+            asset: address(usdc),
             payTo: payTo,
             assets: assets,
             maxShares: router.sharesToAuthorize(vault_, assets),
@@ -62,7 +63,7 @@ abstract contract VaultPayFixture is Test {
 
     function _copy(VaultPayRouter.PayIntent memory a) internal pure returns (VaultPayRouter.PayIntent memory) {
         return VaultPayRouter.PayIntent(
-            a.payer, a.vault, a.payTo, a.assets, a.maxShares, a.salt, a.validAfter, a.validBefore
+            a.payer, a.vault, a.asset, a.payTo, a.assets, a.maxShares, a.salt, a.validAfter, a.validBefore
         );
     }
 
@@ -191,6 +192,9 @@ contract VaultPayRouterTest is VaultPayFixture {
         _expectInvalidSignature(t, sig);
         t = _copy(signed);
         t.vault = address(other);
+        _expectInvalidSignature(t, sig);
+        t = _copy(signed);
+        t.asset = address(other);
         _expectInvalidSignature(t, sig);
         t = _copy(signed);
         t.payer = makeAddr("someone else");
@@ -417,10 +421,11 @@ contract VaultPayRouterTest is VaultPayFixture {
         bytes32 structHash = keccak256(
             abi.encode(
                 keccak256(
-                    "PayIntent(address payer,address vault,address payTo,uint256 assets,uint256 maxShares,bytes32 salt,uint256 validAfter,uint256 validBefore)"
+                    "PayIntent(address payer,address vault,address asset,address payTo,uint256 assets,uint256 maxShares,bytes32 salt,uint256 validAfter,uint256 validBefore)"
                 ),
                 it.payer,
                 it.vault,
+                it.asset,
                 it.payTo,
                 it.assets,
                 it.maxShares,
@@ -430,7 +435,7 @@ contract VaultPayRouterTest is VaultPayFixture {
             )
         );
         assertEq(router.PAY_INTENT_TYPEHASH(), keccak256(
-            "PayIntent(address payer,address vault,address payTo,uint256 assets,uint256 maxShares,bytes32 salt,uint256 validAfter,uint256 validBefore)"
+            "PayIntent(address payer,address vault,address asset,address payTo,uint256 assets,uint256 maxShares,bytes32 salt,uint256 validAfter,uint256 validBefore)"
         ));
         assertEq(
             router.intentDigest(it), keccak256(abi.encodePacked("\x19\x01", router.domainSeparator(), structHash))

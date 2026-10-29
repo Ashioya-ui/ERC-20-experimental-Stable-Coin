@@ -15,7 +15,9 @@ name: vault-router-ci
 #             new tests can be merged into .gas-snapshot without guesswork.
 #   rail-fork the x402 rail end to end on an anvil fork of Base mainnet: the router deployed as it
 #             will be on mainnet, then facilitator, merchant and agent over HTTP, paying from a
-#             real waBasUSDC position in real USDC.
+#             real waBasUSDC position in real USDC. Then x402 sessions (X402SessionEscrow): 1,000
+#             paid calls on one deposit, on a fresh anvil running Circle's FiatToken v2.2 bytecode and
+#             on the Base fork against Circle's live USDC; one open and one redemption each.
 #   publish   no compiler, no secrets: writes the outputs and pushes them to ci/vault-router-<run>.
 
 on:
@@ -64,10 +66,13 @@ jobs:
             --triage-database audit/slither.db.json --fail-medium > /tmp/slither.txt 2>&1; S=$?
           forge script script/vault/DeployVaultPayRouter.s.sol --rpc-url "$BASE_RPC_URL" \
             --sender 0x000000000000000000000000000000000000bEEF > /tmp/deploy.txt 2>&1; D=$?
+          forge script script/vault/DeployX402SessionEscrow.s.sol --rpc-url "$BASE_RPC_URL" \
+            --sender 0x000000000000000000000000000000000000bEEF > /tmp/deploy-escrow.txt 2>&1; E=$?
           set -e
           {
-            echo "== exit codes: build $B, test $T, slither $S, deploy-simulation $D"
-            echo; echo "== deployment simulation on Base mainnet (no broadcast)"; tail -25 /tmp/deploy.txt
+            echo "== exit codes: build $B, test $T, slither $S, deploy-simulation router $D, escrow $E"
+            echo; echo "== deployment simulations on Base mainnet (no broadcast)"; tail -25 /tmp/deploy.txt
+            tail -25 /tmp/deploy-escrow.txt
             echo; echo "== slither"; tail -40 /tmp/slither.txt
             echo; echo "== sizes"; tail -12 /tmp/build.txt
             echo; echo "== tests"; cat /tmp/test.txt
@@ -75,7 +80,7 @@ jobs:
           # Summary first and the test log last: if anything is cut, it is the passing middle.
           { echo "report<<VPR_REPORT_EOF"; head -c 20000 /tmp/report.txt; echo; echo "...";
             tail -c 40000 /tmp/report.txt; echo "VPR_REPORT_EOF"; } >> "$GITHUB_OUTPUT"
-          if [ $B -eq 0 ] && [ $T -eq 0 ] && [ $S -eq 0 ] && [ $D -eq 0 ]; then OK=true; else OK=false; fi
+          if [ $B -eq 0 ] && [ $T -eq 0 ] && [ $S -eq 0 ] && [ $D -eq 0 ] && [ $E -eq 0 ]; then OK=true; else OK=false; fi
           echo "ok=$OK" >> "$GITHUB_OUTPUT"
           head -c 6000 /tmp/report.txt
           [ "$OK" = true ]
@@ -109,13 +114,14 @@ jobs:
           cat /tmp/vault.snap 2>/dev/null || tail -30 /tmp/snap.log
 
   rail-fork:
-    name: x402 rail end to end on a Base mainnet fork
+    name: x402 rail and sessions end to end, locally and on a Base mainnet fork
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     permissions:
       contents: read
     outputs:
       report: ${{ steps.run.outputs.report }}
+      session: ${{ steps.run.outputs.session }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -135,11 +141,16 @@ jobs:
           set +e
           (cd x402 && node --test --test-reporter=spec test/unit.test.mjs) > /tmp/unit.txt 2>&1; U=$?
           script/rehearsal/x402-vault-fork.sh > /tmp/fork.txt 2>&1; R=$?
+          SESSION_CALLS=1000 script/rehearsal/x402-session.sh > /tmp/session-local.txt 2>&1; L=$?
+          SESSION_CALLS=1000 script/rehearsal/x402-session.sh --fork > /tmp/session-fork.txt 2>&1; F=$?
           set -e
           { echo "report<<VPR_FORK_EOF"; echo "exit unit $U, fork $R"; tail -c 4000 /tmp/unit.txt; echo;
             tail -c 36000 /tmp/fork.txt; echo "VPR_FORK_EOF"; } >> "$GITHUB_OUTPUT"
-          tail -80 /tmp/fork.txt
-          [ $U -eq 0 ] && [ $R -eq 0 ]
+          { echo "session<<VPR_SESSION_EOF"; echo "exit session-local $L, session-fork $F";
+            echo "== local anvil, FiatToken v2.2"; tail -c 24000 /tmp/session-local.txt; echo;
+            echo "== Base mainnet fork, live USDC"; tail -c 24000 /tmp/session-fork.txt; echo "VPR_SESSION_EOF"; } >> "$GITHUB_OUTPUT"
+          tail -80 /tmp/fork.txt; tail -60 /tmp/session-local.txt; tail -60 /tmp/session-fork.txt
+          [ $U -eq 0 ] && [ $R -eq 0 ] && [ $L -eq 0 ] && [ $F -eq 0 ]
 
   publish:
     name: Commit the reports
@@ -156,14 +167,16 @@ jobs:
           REPORT: ${{ needs.test.outputs.report }}
           SNAP: ${{ needs.snapshot.outputs.lines }}
           FORK: ${{ needs.rail-fork.outputs.report }}
+          SESSION: ${{ needs.rail-fork.outputs.session }}
         run: |
           set -euo pipefail
           mkdir -p ci
           printf 'ok=%s\n%s\n' "${OK:-unknown}" "$REPORT" > ci/vault-router-report.txt
           printf '%s\n' "$SNAP" > ci/vault-router-snapshot.txt
           printf '%s\n' "$FORK" > ci/vault-rail-fork.txt
+          printf '%s\n' "$SESSION" > ci/vault-session.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f ci/vault-router-report.txt ci/vault-router-snapshot.txt ci/vault-rail-fork.txt
+          git add -f ci/vault-router-report.txt ci/vault-router-snapshot.txt ci/vault-rail-fork.txt ci/vault-session.txt
           git commit -q -m "ci(vault-router): reports from run ${{ github.run_id }}"
           git push origin "HEAD:refs/heads/ci/vault-router-${{ github.run_id }}"

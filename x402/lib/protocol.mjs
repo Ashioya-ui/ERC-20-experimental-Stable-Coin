@@ -59,6 +59,7 @@ const DOMAIN_FIELDS = [
 export const PAY_INTENT_FIELDS = [
   { name: 'payer', type: 'address' },
   { name: 'vault', type: 'address' },
+  { name: 'asset', type: 'address' },
   { name: 'payTo', type: 'address' },
   { name: 'assets', type: 'uint256' },
   { name: 'maxShares', type: 'uint256' },
@@ -114,6 +115,22 @@ export const intentTuple = (it) => `(${PAY_INTENT_FIELDS.map(({ name }) => Strin
 /** The cast argument for a Permit tuple; deadline 0 means none. */
 export const permitTuple = (p) =>
   p ? `(${p.value},${p.deadline},${p.v},${p.r},${p.s})` : `(0,0,0,0x${'0'.repeat(64)},0x${'0'.repeat(64)})`;
+
+/** The voucher an agent signs for each call of a session: everything owed so far. */
+export function voucherTypedData({ chainId, escrow, sessionId, cumulative }) {
+  return {
+    types: {
+      EIP712Domain: DOMAIN_FIELDS,
+      Voucher: [
+        { name: 'sessionId', type: 'bytes32' },
+        { name: 'cumulative', type: 'uint256' },
+      ],
+    },
+    primaryType: 'Voucher',
+    domain: { name: 'X402SessionEscrow', version: '1', chainId: Number(chainId), verifyingContract: escrow },
+    message: { sessionId, cumulative: String(cumulative) },
+  };
+}
 
 /** Same requirement (the fields that decide what is paid, to whom, on which chain). */
 export function sameRequirement(a, b) {

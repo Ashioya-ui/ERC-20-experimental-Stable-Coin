@@ -9,13 +9,18 @@
 //   GET /api/v1/compute     0.005 sUSD, paid in sUSD
 //   GET /api/v1/premium     0.05 USDC, paid in USDC or, by an sUSD holder, through the router
 //   GET /api/v1/usdc-only   0.02 USDC, plain x402 USDC (what any public facilitator offers)
+//   GET /api/v1/tick        0.0001 USDC a call, paid through an x402 session (X402SessionEscrow):
+//                           a price per-payment settlement could never carry, since settling one
+//                           payment on Base costs more than ten of these calls
 //   GET /work/<id>          an item of the agent marketplace (MARKET_FILE), priced and paid to
 //                           the agent that made it
 //   GET /api/v1/race        test only (MERCHANT_TEST_ROUTES=1): the handler empties the payer's
 //                           balance before settlement, so settlement fails and the result is
 //                           discarded
 //
-// Env: RPC_URL, FACILITATOR_URL, MERCHANT_PORT (4021), MERCHANT_PAYTO, MARKET_FILE (optional).
+// Env: RPC_URL, FACILITATOR_URL, MERCHANT_PORT (4021), MERCHANT_PAYTO, MARKET_FILE (optional),
+//      MERCHANT_TICK_PRICE (USDC units, default 100), MERCHANT_SESSION_MIN_REMAINING (seconds, 900),
+//      MERCHANT_SESSION_DEPOSIT (suggested deposit in USDC units, default 1000000).
 
 import http from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
@@ -23,7 +28,12 @@ import { cast, first, makeChain } from './lib/cast.mjs';
 import { loadDeployment } from './lib/config.mjs';
 import { X402_VERSION, HEADER, encode, decode, sameRequirement, sendJson } from './lib/protocol.mjs';
 
-export async function createMerchant({ rpcUrl, facilitatorUrl, payTo, marketFile, testRoutes = false }) {
+export async function createMerchant({
+  rpcUrl, facilitatorUrl, payTo, marketFile, testRoutes = false,
+  tickPrice = process.env.MERCHANT_TICK_PRICE || '100',
+  sessionMinRemaining = process.env.MERCHANT_SESSION_MIN_REMAINING || '900',
+  sessionDeposit = process.env.MERCHANT_SESSION_DEPOSIT || '1000000',
+}) {
   const chain = makeChain(rpcUrl);
   const dep = await loadDeployment(chain);
   const A = dep.addresses;
@@ -43,7 +53,18 @@ export async function createMerchant({ rpcUrl, facilitatorUrl, payTo, marketFile
     },
   });
 
+  // A per-call price paid through a session: the agent deposits once into the escrow, then sends a
+  // voucher with each call; the facilitator redeems them in batches.
+  const session = (amount, to = payTo) => ({
+    scheme: 'session', network: dep.network, amount: String(amount), asset: A.usdc, payTo: to, maxTimeoutSeconds: 60,
+    extra: {
+      ...dep.domains.usdc, escrow: A.sessionEscrow, minRemainingSeconds: String(sessionMinRemaining),
+      suggestedDeposit: String(sessionDeposit),
+    },
+  });
+
   const json = (body) => ({ type: 'application/json', body: JSON.stringify(body) });
+  let ticks = 0;
   const routes = [
     // Priced in sUSD, so only where Spectrum is deployed.
     ...(A.sUSD
@@ -65,6 +86,13 @@ export async function createMerchant({ rpcUrl, facilitatorUrl, payTo, marketFile
       handler: async () => json({ data: 'usdc-only', servedAt: new Date().toISOString() }),
     },
   ];
+  if (A.sessionEscrow) {
+    routes.push({
+      path: '/api/v1/tick', description: 'One metered call, paid through an x402 session', mimeType: 'application/json',
+      accepts: () => [session(tickPrice)],
+      handler: async () => json({ tick: ++ticks, price: `${tickPrice} USDC units`, servedAt: new Date().toISOString() }),
+    });
+  }
   if (testRoutes && A.sUSD) {
     routes.push({
       path: '/api/v1/race', description: 'Test: the payer spends its balance before settlement', mimeType: 'application/json',

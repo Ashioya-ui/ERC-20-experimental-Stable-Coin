@@ -15,17 +15,24 @@
 //            exactly the price, pays the merchant, returns the rest. Nothing is issued.
 //   convert  the merchant takes only plain USDC: convert just enough sUSD to USDC through the
 //            facilitator's /convert, then pay in USDC
+//   session  the merchant offers an x402 session on X402SessionEscrow: deposit once (a gasless
+//            EIP-3009 open the facilitator submits), then send a voucher with each call, the
+//            cumulative amount owed so far. A session already open with that merchant pays without
+//            a single chain read. Every signed voucher counts against the budget at once, served or
+//            not: it is money the merchant could redeem.
 //
 // Trust: token, routers, vaults and EIP-712 domains come from the agent's own deployment files,
 // never from the merchant's 402. A merchant-supplied router address is ignored unless it is the
 // known router, because a receive authorization lets its `to` move the whole value.
 //
 // Library: createAgent({ rpcUrl, signer, payer?, facilitatorUrl?, policy? }).
-// CLI:     agent.mjs address | balance | pay <url> [--prefer <mode>] [--out <file>] | convert <usd> | sweep <to>
+// CLI:     agent.mjs address | balance | sessions | pay <url> [--prefer <mode>] [--out <file>] [--times <n>]
+//                    | convert <usd> | sweep <to>
 //          Env: RPC_URL, AGENT_KEYSTORE, AGENT_PASSWORD_FILE, AGENT_PAYER (an ERC-1271 account
 //          the key controls), FACILITATOR_URL, AGENT_MAX_PER_REQUEST and AGENT_BUDGET (USD),
 //          AGENT_ALLOWED_PAYTO (comma-separated), AGENT_LEDGER (a JSON file that keeps the
-//          amount spent across runs).
+//          amount spent and the open sessions across runs), AGENT_SESSION_DEPOSIT and
+//          AGENT_MAX_SESSION_DEPOSIT (USD), AGENT_SESSION_SECONDS.
 
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -35,8 +42,9 @@ import { cast, first, makeChain, signTypedData, signerAddress } from './lib/cast
 import { loadDeployment } from './lib/config.mjs';
 import {
   X402_VERSION, HEADER, encode, decode, lc, isAddress, isUint, authorizationTypedData, vaultIntentTypedData,
-  permitTypedData, splitSignature,
+  permitTypedData, splitSignature, voucherTypedData,
 } from './lib/protocol.mjs';
+import { MAX_DURATION, MIN_DURATION, openNonce, readSession, sessionIdOf } from './lib/session.mjs';
 
 export class PolicyError extends Error {
   constructor(message) {
@@ -51,7 +59,9 @@ const SCALE = 10n ** 12n; // sUSD has 18 decimals, USDC 6
 // redeems more of the earning balance and hands back yet more idle change. Routing comes before
 // convert because it is one transaction instead of two (A-04).
 // A vault position is spent after idle USDC, for the same reason, and before the sUSD router.
-const MODES = ['sUSD', 'USDC', 'vault', 'router', 'convert'];
+// A new session comes last: it locks a deposit, which a one-off call does not justify. A session
+// that is already open with the merchant comes first (see choose()).
+const MODES = ['sUSD', 'USDC', 'vault', 'router', 'convert', 'session'];
 
 /** "1.25" (US dollars) -> 1_250_000n (6 decimals). */
 export function parseUsd(s) {
@@ -84,11 +94,19 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
     maxPerRequest: policy.maxPerRequest ?? null, // bigint, USD with 6 decimals
     budget: policy.budget ?? null, // bigint, USD with 6 decimals
     allowedPayTo: policy.allowedPayTo ? new Set(policy.allowedPayTo.map(lc)) : null,
+    sessionDeposit: policy.sessionDeposit ?? null, // bigint, USDC units: overrides the merchant's suggestion
+    maxSessionDeposit: policy.maxSessionDeposit ?? null, // bigint, USDC units
+    sessionSeconds: policy.sessionSeconds ?? 86_400n, // bigint
   };
   const ledger = ledgerFile && existsSync(ledgerFile) ? JSON.parse(readFileSync(ledgerFile, 'utf8')) : { spent: '0', payments: [] };
+  ledger.sessions ??= {}; // open sessions, by escrow:payee:token
+  ledger.retired ??= []; // sessions replaced by a newer one; what is left in them returns at expiry
   let spent = BigInt(ledger.spent);
+  const saveLedger = () => {
+    if (ledgerFile) writeFileSync(ledgerFile, JSON.stringify(ledger, null, 2));
+  };
 
-  const usdOf = (mode, cost) => (mode === 'USDC' || mode === 'vault' ? cost : (cost + SCALE - 1n) / SCALE);
+  const usdOf = (mode, cost) => (mode === 'USDC' || mode === 'vault' || mode === 'session' ? cost : (cost + SCALE - 1n) / SCALE);
 
   async function balances() {
     const vaults = {};
@@ -146,11 +164,140 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
     return signTypedData(typed, signer, work);
   }
 
+  // ------------------------------------------------------------------------------------- sessions
+
+  /** A session requirement this agent can pay: its own escrow, in USDC, on this chain. */
+  const sessionRequirement = (r) =>
+    r?.scheme === 'session' && r.network === dep.network && isAddress(r.payTo) && isUint(r.amount) && BigInt(r.amount) > 0n &&
+    !!A.sessionEscrow && lc(r.extra?.escrow) === A.sessionEscrow && lc(r.asset) === A.usdc;
+  const sessionKey = (r) => `${A.sessionEscrow}:${lc(r.payTo)}:${lc(r.asset)}`;
+  // The shortest remaining life the merchant accepts (and never under the 15 minutes facilitators
+  // keep for getting a redemption in before expiry), plus a minute so the voucher is not refused on
+  // the way.
+  const minRemainingOf = (r) => {
+    const asked = isUint(r?.extra?.minRemainingSeconds) ? BigInt(r.extra.minRemainingSeconds) : 0n;
+    return (asked > 900n ? asked : 900n) + 60n;
+  };
+  // Answers that mean the session itself can take no more calls: closed by the payee, too near its
+  // expiry, unknown on-chain, or spent.
+  const DEAD_SESSION = new Set([
+    'session_closed', 'session_expiring', 'unknown_session', 'session_above_deposit', 'invalid_session_payee', 'invalid_session_asset',
+  ]);
+
+  // Chain time, read at most every 15 s and carried forward by the local clock in between, so a
+  // call on an open session costs no chain read at all.
+  let clock = null;
+  const chainNow = async () => {
+    if (!clock || Date.now() - clock.at > 15_000) clock = { t: await chain.timestamp(), at: Date.now() };
+    return clock.t + BigInt(Math.floor((Date.now() - clock.at) / 1000));
+  };
+
+  // Vault payments sent but not settled, by what they pay for (see pay()).
+  const unsettled = new Map();
+
+  // Calls on one session go out one at a time: vouchers are cumulative, so they must arrive in order.
+  const locks = new Map();
+  const withLock = (key, fn) => {
+    const run = (locks.get(key) || Promise.resolve()).then(fn, fn);
+    const tail = run.then(() => {}, () => {});
+    locks.set(key, tail);
+    tail.then(() => {
+      if (locks.get(key) === tail) locks.delete(key);
+    });
+    return run;
+  };
+
+  /** The open session that can pay `r` now, or null if a new one is needed. */
+  async function usableSession(r) {
+    const s = ledger.sessions[sessionKey(r)];
+    if (!s) return null;
+    const now = await chainNow();
+    if (BigInt(s.deposit) - BigInt(s.cumulative) < BigInt(r.amount)) return null;
+    if (BigInt(s.expiry) < now + minRemainingOf(r)) return null;
+    if (s.open && BigInt(s.open.validBefore) <= now + 15n) {
+      // The open's authorization is about to lapse. If the facilitator did open the session, carry
+      // on with it; if not, it never can now, and a new session is needed.
+      if (!(await readSession(chain, s.escrow, s.sessionId))) return null;
+      s.open = null;
+      saveLedger();
+    }
+    return s;
+  }
+
+  /** Sign the open of a new session with the merchant of `r`: a deposit, an expiry, this agent's key. */
+  async function newSession(r) {
+    const price = BigInt(r.amount);
+    const payee = lc(r.payTo);
+    let deposit = limits.sessionDeposit ?? (isUint(r.extra?.suggestedDeposit) ? BigInt(r.extra.suggestedDeposit) : price * 1000n);
+    if (limits.maxSessionDeposit != null && deposit > limits.maxSessionDeposit) deposit = limits.maxSessionDeposit;
+    if (limits.budget != null && deposit > limits.budget - spent) deposit = limits.budget - spent; // never lock more than it may spend
+    const held = await chain.uint(A.usdc, 'balanceOf(address)(uint256)', [from]);
+    if (deposit > held) deposit = held;
+    if (deposit < price) {
+      if (held < price) throw new Error('insufficient funds for a session deposit');
+      throw new PolicyError(`policy allows no session deposit of at least $${formatUnits(price, 6)}`);
+    }
+    const w = await timeWindow(r.maxTimeoutSeconds);
+    const now = BigInt(w.validBefore) - BigInt(Math.max(10, Math.min(Number(r.maxTimeoutSeconds ?? 60), 600)));
+    // Long enough for the merchant's minimum and for the escrow's MIN_DURATION at the latest moment
+    // the open can land (validBefore), and never beyond MAX_DURATION.
+    let expiry = now + limits.sessionSeconds;
+    const floor = BigInt(w.validBefore) + MIN_DURATION + 300n;
+    if (expiry < floor) expiry = floor;
+    if (expiry < now + minRemainingOf(r) + 600n) expiry = now + minRemainingOf(r) + 600n;
+    if (expiry > now + MAX_DURATION - 600n) expiry = now + MAX_DURATION - 600n;
+    const salt = rand32();
+    const sessionId = await sessionIdOf({ funder: from, payee, token: A.usdc, signer: owner, salt });
+    const nonce = await openNonce({ payee, token: A.usdc, signer: owner, expiry, salt });
+    const authorization = await sign('ReceiveWithAuthorization', A.usdc, {
+      from, to: A.sessionEscrow, value: String(deposit), validAfter: w.validAfter, validBefore: w.validBefore, nonce,
+    });
+    const s = {
+      sessionId, escrow: A.sessionEscrow, payee, token: A.usdc, funder: from, signer: owner, salt,
+      expiry: String(expiry), deposit: String(deposit), cumulative: '0', calls: 0, served: 0, openedAt: new Date().toISOString(),
+      open: {
+        funder: from, signer: owner, expiry: String(expiry), salt, amount: String(deposit), validAfter: w.validAfter,
+        validBefore: w.validBefore, authorization,
+      },
+    };
+    const key = sessionKey(r);
+    if (ledger.sessions[key]) ledger.retired.push(ledger.sessions[key]);
+    ledger.sessions[key] = s;
+    saveLedger();
+    return s;
+  }
+
+  /** The next voucher on the session for `o.r` (opening one first if none can pay). */
+  async function authorizeSession(o) {
+    const price = BigInt(o.r.amount);
+    const s = (await usableSession(o.r)) ?? (await newSession(o.r));
+    const cumulative = BigInt(s.cumulative) + price;
+    const voucher = await signTypedData(
+      voucherTypedData({ chainId: dep.chainId, escrow: s.escrow, sessionId: s.sessionId, cumulative }), signer, work,
+    );
+    // Signed is spent: the merchant may redeem this voucher whether or not it serves the call.
+    s.cumulative = String(cumulative);
+    s.calls += 1;
+    spent += price;
+    ledger.spent = String(spent);
+    saveLedger();
+    return {
+      session: {
+        escrow: s.escrow, sessionId: s.sessionId, cumulative: String(cumulative), voucher, ...(s.open ? { open: s.open } : {}),
+      },
+    };
+  }
+
   /** The ways this agent could pay each requirement, cheapest-to-run first. */
   async function options(accepts) {
     const bal = await balances();
     const out = [];
     for (const r of Array.isArray(accepts) ? accepts : []) {
+      if (sessionRequirement(r)) {
+        const live = !!(await usableSession(r));
+        out.push({ mode: 'session', r, cost: BigInt(r.amount), live, have: live || bal.usdc >= BigInt(r.amount) });
+        continue;
+      }
       if (r?.scheme !== 'exact' || r.network !== dep.network || !isAddress(r.payTo) || !isUint(r.amount)) continue;
       const amount = BigInt(r.amount);
       if (amount === 0n) continue;
@@ -189,6 +336,14 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
 
   /** Pick how to pay: the first mode in preference order that is funded and allowed. */
   async function choose(accepts, prefer) {
+    // A session already open with this merchant pays first, and without reading any balance.
+    if (!prefer || prefer === 'session') {
+      for (const r of Array.isArray(accepts) ? accepts : []) {
+        if (!sessionRequirement(r)) continue;
+        const o = { mode: 'session', r, cost: BigInt(r.amount), usd: BigInt(r.amount), live: true, have: true };
+        if (!refusal(o) && (await usableSession(r))) return o;
+      }
+    }
     const all = await options(accepts);
     if (!all.length) throw new Error('no payment option this agent understands');
     const order = prefer ? [prefer, ...MODES.filter((m) => m !== prefer)] : MODES;
@@ -206,6 +361,7 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
 
   /** Sign the authorization for option `o` (no network call except chain reads). */
   async function authorize(o) {
+    if (o.mode === 'session') return authorizeSession(o);
     const { r } = o;
     const w = await timeWindow(r.maxTimeoutSeconds);
     if (o.mode === 'sUSD' || o.mode === 'USDC') {
@@ -218,8 +374,8 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
       // changes any of them invalidates the signature.
       const maxShares = await chain.uint(A.vaultRouter, 'sharesToAuthorize(address,uint256)(uint256)', [o.vault, r.amount]);
       const intent = {
-        payer: from, vault: o.vault, payTo: lc(r.payTo), assets: String(r.amount), maxShares: String(maxShares),
-        salt: rand32(), validAfter: w.validAfter, validBefore: w.validBefore,
+        payer: from, vault: o.vault, asset: lc(r.asset), payTo: lc(r.payTo), assets: String(r.amount),
+        maxShares: String(maxShares), salt: rand32(), validAfter: w.validAfter, validBefore: w.validBefore,
       };
       const signature = await signTypedData(
         vaultIntentTypedData({ chainId: dep.chainId, router: A.vaultRouter, intent }), signer, work,
@@ -255,7 +411,50 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
     spent += entry.usd;
     ledger.spent = String(spent);
     ledger.payments.push({ ...entry, usd: formatUnits(entry.usd, 6), at: new Date().toISOString() });
-    if (ledgerFile) writeFileSync(ledgerFile, JSON.stringify(ledger, null, 2));
+    saveLedger();
+  }
+
+  /** The `error` of a 402 answer to a paid request. */
+  async function errorOf(res, body) {
+    try {
+      return (await requiredOf(new Response(body, { headers: res.headers }))).error;
+    } catch {
+      return 'payment rejected';
+    }
+  }
+
+  /**
+   * One call paid on a session: the next voucher, sent to the URL that asked for it. If the answer
+   * says the session can take no more calls, it is retired and the call is paid once more from a
+   * new session.
+   */
+  async function paySession(url, payUrl, required, o, method, headers, retried = false) {
+    const payload = await authorize(o);
+    const s = ledger.sessions[sessionKey(o.r)];
+    const paymentPayload = { x402Version: X402_VERSION, resource: required.resource, accepted: o.r, payload };
+    const res = await fetch(payUrl, { method, redirect: 'manual', headers: { ...headers, [HEADER.signature]: encode(paymentPayload) } });
+    const body = await res.text();
+    const receipt = res.headers.get(HEADER.response);
+    const settlement = receipt ? decode(receipt) : null;
+    const paid = res.status === 200 && settlement?.success === true;
+    const error = !paid && res.status === 402 ? await errorOf(res, body) : undefined;
+    if (paid) {
+      s.open = null; // the facilitator accepts a voucher only once the session is open on-chain
+      s.served += 1;
+      saveLedger();
+    } else if (!retried && DEAD_SESSION.has(error)) {
+      const key = sessionKey(o.r);
+      if (ledger.sessions[key] === s) {
+        ledger.retired.push({ ...s, retiredBecause: error });
+        delete ledger.sessions[key];
+        saveLedger();
+      }
+      return paySession(url, payUrl, required, o, method, headers, true);
+    }
+    return {
+      status: res.status, paid, mode: 'session', requirement: o.r, settlement, body, error, paymentPayload,
+      session: { id: s.sessionId, cumulative: s.cumulative, deposit: s.deposit },
+    };
   }
 
   /** Convert sUSD to exactly `amount` USDC (6 decimals) for this agent, through /convert. */
@@ -322,13 +521,23 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
     if (required?.x402Version !== X402_VERSION) throw new Error(`unsupported x402 version ${required?.x402Version}`);
 
     const chosen = await choose(required.accepts, prefer);
+    if (chosen.mode === 'session') {
+      return withLock(sessionKey(chosen.r), () => paySession(url, payUrl, required, chosen, method, headers));
+    }
     let o = chosen;
     let conversion = null;
     if (o.mode === 'convert') {
       conversion = await convert(o.r.amount); // USDC lands in this account; pay as plain USDC next
       o = { ...o, mode: 'USDC', cost: BigInt(o.r.amount) };
     }
-    const payload = await authorize(o);
+    // A vault intent that was not settled stays good until its validBefore, and the merchant still
+    // holds it. Paying the same thing again inside that window re-sends that same intent, so a
+    // merchant that held the first back can settle it once, never twice (review F-1).
+    const retryKey = o.mode === 'vault' ? `${payUrl}|${lc(o.r.payTo)}|${o.r.amount}|${o.vault}` : null;
+    const prior = retryKey ? unsettled.get(retryKey) : null;
+    const payload = prior && BigInt(prior.vaultPay.intent.validBefore) > (await chain.timestamp()) + 15n
+      ? prior
+      : await authorize(o);
     const paymentPayload = { x402Version: X402_VERSION, resource: required.resource, accepted: o.r, payload };
     // The signed payment goes to the URL that asked for it and nowhere else: no redirects.
     const res = await fetch(payUrl, { method, redirect: 'manual', headers: { ...headers, [HEADER.signature]: encode(paymentPayload) } });
@@ -336,13 +545,10 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
     const receipt = res.headers.get(HEADER.response);
     const settlement = receipt ? decode(receipt) : null;
     const paid = res.status === 200 && settlement?.success === true;
-    let error;
-    if (!paid && res.status === 402) {
-      try {
-        error = (await requiredOf(new Response(body, { headers: res.headers }))).error;
-      } catch {
-        error = 'payment rejected';
-      }
+    const error = !paid && res.status === 402 ? await errorOf(res, body) : undefined;
+    if (retryKey) {
+      if (paid) unsettled.delete(retryKey);
+      else unsettled.set(retryKey, payload);
     }
     if (paid || conversion) {
       // The budget is charged the most this payment could have cost (for the router: the
@@ -357,6 +563,7 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
 
   return {
     address: from, owner, deployment: dep, balances, pay, convert, sweep, choose, authorize,
+    sessions: () => ledger.sessions,
     get spent() { return spent; }, ledger: () => ledger,
   };
 }
@@ -382,6 +589,9 @@ async function main(argv) {
       maxPerRequest: env.AGENT_MAX_PER_REQUEST ? parseUsd(env.AGENT_MAX_PER_REQUEST) : null,
       budget: env.AGENT_BUDGET ? parseUsd(env.AGENT_BUDGET) : null,
       allowedPayTo: env.AGENT_ALLOWED_PAYTO ? env.AGENT_ALLOWED_PAYTO.split(',') : null,
+      sessionDeposit: env.AGENT_SESSION_DEPOSIT ? parseUsd(env.AGENT_SESSION_DEPOSIT) : null,
+      maxSessionDeposit: env.AGENT_MAX_SESSION_DEPOSIT ? parseUsd(env.AGENT_MAX_SESSION_DEPOSIT) : null,
+      sessionSeconds: env.AGENT_SESSION_SECONDS ? BigInt(env.AGENT_SESSION_SECONDS) : undefined,
     },
   });
   const show = (o) => console.log(JSON.stringify(o, (_, v) => (typeof v === 'bigint' ? v.toString() : v), 2));
@@ -397,6 +607,30 @@ async function main(argv) {
     return show({ converted: rest[0], transaction: out.transaction, balances: await bal() });
   }
   if (cmd === 'sweep') return show({ sweptTo: rest[0], payments: await agent.sweep(rest[0]), balances: await bal() });
+  if (cmd === 'sessions') return show({ address: agent.address, sessions: agent.sessions(), spentUSD: formatUnits(agent.spent, 6) });
+  if (cmd === 'pay' && flag('times')) {
+    // Many calls in a row (a metered API): the summary, not every body.
+    const url = rest[0];
+    const n = Number(flag('times'));
+    if (!Number.isInteger(n) || n < 1) throw new Error('--times takes a positive whole number');
+    const before = await bal();
+    const started = Date.now();
+    let paid = 0;
+    let last;
+    const modes = {};
+    for (let i = 0; i < n; i++) {
+      last = await agent.pay(url, { prefer: flag('prefer') });
+      if (!last.paid) break;
+      paid += 1;
+      modes[last.mode] = (modes[last.mode] || 0) + 1;
+    }
+    show({
+      url, calls: n, paid, modes, seconds: (Date.now() - started) / 1000, lastStatus: last?.status, error: last?.error,
+      session: last?.session, spentUSD: formatUnits(agent.spent, 6), before, after: await bal(),
+    });
+    if (paid !== n) process.exitCode = 2;
+    return;
+  }
   if (cmd === 'pay') {
     const url = rest[0];
     const before = await bal();
@@ -411,7 +645,10 @@ async function main(argv) {
     if (!r.paid) process.exitCode = 2;
     return;
   }
-  console.error('usage: agent.mjs address | balance | pay <url> [--prefer sUSD|USDC|vault|router|convert] [--out <file>] | convert <usd> | sweep <to>');
+  console.error(
+    'usage: agent.mjs address | balance | sessions | pay <url> [--prefer sUSD|USDC|vault|router|convert|session] [--out <file>] [--times <n>]'
+      + ' | convert <usd> | sweep <to>',
+  );
   process.exitCode = 64;
 }
 

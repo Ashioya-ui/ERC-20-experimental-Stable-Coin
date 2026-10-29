@@ -112,6 +112,7 @@ contract VaultPayRouterBaseMainnetForkTest is Test {
         return VaultPayRouter.PayIntent({
             payer: payer,
             vault: WA_BAS_USDC,
+            asset: USDC,
             payTo: payTo,
             assets: assets,
             maxShares: router.sharesToAuthorize(WA_BAS_USDC, assets),
