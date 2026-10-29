@@ -1,9 +1,10 @@
 // The x402 "session" scheme on X402SessionEscrow, shared by the facilitator and the agent.
 //
 // A session is a deposit in the escrow that names one payee, one token, an expiry and the key that
-// signs for it. Each paid call carries a voucher: an EIP-712 signature over the session and the
-// cumulative amount owed so far. Nothing touches the chain per call; the facilitator redeems the
-// latest voucher in batches, always before expiry.
+// signs for it: an ECDSA key, since the escrow takes no ERC-1271 signer, whose answer could change
+// after the merchant has served against a voucher. Each paid call carries a voucher: an EIP-712
+// signature over the session and the cumulative amount owed so far. Nothing touches the chain per
+// call; the facilitator redeems the latest voucher in batches, always before expiry.
 //
 // Wire format (inside the x402 v2 PAYMENT-SIGNATURE payload):
 //   payload.session = {
@@ -26,9 +27,14 @@ export const UINT128_MAX = (1n << 128n) - 1n;
 const OPEN_TYPE = 'SessionOpen(address payee,address token,address signer,uint64 expiry,bytes32 salt)';
 let openTypehash = null;
 
-/** keccak256(abi.encode(funder, payee, token, signer, salt)), as X402SessionEscrow.sessionIdOf. */
-export async function sessionIdOf({ funder, payee, token, signer, salt }) {
-  const enc = await cast(['abi-encode', 'f(address,address,address,address,bytes32)', funder, payee, token, signer, salt]);
+/**
+ * keccak256(abi.encode(funder, payee, token, signer, expiry, salt)), as X402SessionEscrow.sessionIdOf:
+ * the id commits to every term, the expiry included, so no session of other terms can take it.
+ */
+export async function sessionIdOf({ funder, payee, token, signer, expiry, salt }) {
+  const enc = await cast([
+    'abi-encode', 'f(address,address,address,address,uint64,bytes32)', funder, payee, token, signer, String(expiry), salt,
+  ]);
   return lc(await cast(['keccak', enc]));
 }
 

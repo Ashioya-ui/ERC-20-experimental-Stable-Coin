@@ -35,6 +35,9 @@ contract X402SessionEscrowBaseMainnetForkTest is Test {
         vm.createSelectFork(rpc);
         escrow = new X402SessionEscrow();
         funder = vm.addr(FUNDER_PK);
+        // A well-known test key may carry an EIP-7702 delegation on live Base, and USDC v2.2 would
+        // then check the open through ERC-1271: clear it, so the test is about the escrow alone.
+        vm.etch(funder, "");
         agent = vm.addr(AGENT_PK);
         merchant = makeAddr("merchant");
         deal(USDC, funder, 10e6); // USDC only: the funder never holds ETH

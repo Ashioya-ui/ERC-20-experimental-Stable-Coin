@@ -1,0 +1,18 @@
+--- a/src/vault/X402SessionEscrow.sol
++++ b/src/vault/X402SessionEscrow.sol
+@@ -90,6 +90,7 @@
+     event SessionClosed(bytes32 indexed sessionId, uint256 claimed, uint256 refunded);
+ 
+     error ZeroAddress();
++    error EscrowAsPayee();
+     error ZeroAmount();
+     error BadExpiry(uint64 expiry);
+     error SessionExists(bytes32 sessionId);
+@@ -292,6 +293,7 @@
+         if (funder == address(0) || payee == address(0) || token == address(0) || signer == address(0)) {
+             revert ZeroAddress();
+         }
++        if (payee == address(this)) revert EscrowAsPayee(); // its payouts would belong to no session
+         // slither-disable-next-line timestamp
+         if (expiry < block.timestamp + MIN_DURATION || expiry > block.timestamp + MAX_DURATION) revert BadExpiry(expiry);
+         sessionId = sessionIdOf(funder, payee, token, signer, salt);

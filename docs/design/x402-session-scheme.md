@@ -18,14 +18,15 @@ Reference implementation: `src/vault/X402SessionEscrow.sol`, `x402/facilitator.m
 
 One ownerless, immutable contract per chain, at the same CREATE2 address everywhere (salt
 `keccak256("spectrum.x402-session-escrow.v1")`). A session is
-`keccak256(abi.encode(funder, payee, token, signer, salt))` and holds:
+`keccak256(abi.encode(funder, payee, token, signer, expiry, salt))`, which commits to every term, and
+holds:
 
 | field | meaning |
 |---|---|
 | `funder` | deposits; takes back what is unclaimed after expiry |
 | `payee` | the only address that can ever be paid from the session |
 | `token` | the payment token (USDC) |
-| `signer` | signs vouchers: normally the agent's hot key, not the funder's |
+| `signer` | signs vouchers with its own ECDSA key: normally the agent's hot key, not the funder's. No ERC-1271 signer: its answer could change after the merchant served against a voucher |
 | `deposited`, `claimed` | `claimed <= deposited` always |
 | `expiry` | between 1 hour and 365 days after opening |
 
@@ -103,8 +104,11 @@ transaction before redemption), and answers paid only after the voucher is writt
 storage. The answer's `transaction` is the open's hash on the first call and empty afterwards.
 
 Redemption: whenever a session's unredeemed amount reaches a threshold, has waited long enough, or
-its expiry comes within twice the margin. Each voucher is simulated alone first, so one session that
-can no longer pay never sinks a batch; then one `redeem` or `redeemMany` per batch.
+its expiry comes within twice the margin. Each voucher is simulated alone first; then one `redeem`
+or `redeemMany` per batch. `redeemMany` is best effort: an entry that cannot pay in that block
+(claimed by someone else first, closed, expired, refused by the token) is skipped with a
+`VoucherSkipped` event and left exactly as it was, so the facilitator reads each session's
+`claimed` back from the chain after a batch.
 
 ## Agent rules
 
@@ -123,3 +127,9 @@ can no longer pay never sinks a batch; then one `redeem` or `redeemMany` per bat
 - A stolen signer key can overpay only the named payee, only up to the deposit.
 - A merchant served by two facilitators that do not share voucher state can be shown the same
   cumulative twice; run one facilitator per payee, or share its store.
+- USDC's own controls still apply: a blacklisted payee cannot be paid (its deposit can still go home:
+  the payee may close without a voucher, or the funder reclaims at expiry), and a pause that spans
+  expiry voids the vouchers held. Settling on a threshold bounds a merchant's exposure.
+- Tokens sent to the escrow directly, outside a session, can never be moved: there is no owner.
+
+Independent review: `audit/x402-session-escrow-review.md`.

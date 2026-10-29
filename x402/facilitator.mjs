@@ -104,6 +104,7 @@ export async function createFacilitator({
     'InexactTransfer()': 'unsupported_asset',
     'AmountOverflow()': 'invalid_payload',
     'ZeroAddress()': 'invalid_payload',
+    'EscrowAsPayee()': 'invalid_pay_to',
     'LengthMismatch()': 'invalid_payload',
   };
   for (const [sig, reason] of Object.entries(map)) errors[(await cast(['sig', sig])).toLowerCase()] = reason;
@@ -414,7 +415,9 @@ export async function createFacilitator({
     const expiry = BigInt(o.expiry);
     const deposit = BigInt(o.amount);
     if (deposit === 0n || deposit > UINT128_MAX || expiry >= 1n << 64n) return bad('invalid_payload', payer);
-    const expected = await sessionIdOf({ funder: payer, payee: payTo, token: A.usdc, signer: signerAddress, salt: lc(o.salt) });
+    const expected = await sessionIdOf({
+      funder: payer, payee: payTo, token: A.usdc, signer: signerAddress, expiry, salt: lc(o.salt),
+    });
     if (expected !== id) return bad('invalid_session_id', payer);
     if (cumulative < price) return bad('session_voucher_stale', payer);
     if (cumulative > deposit) return bad('session_above_deposit', payer);
@@ -609,13 +612,23 @@ export async function createFacilitator({
         if (e instanceof UnconfirmedError) transactions.push({ hash: e.hash, ok: null, sessions: batch.length });
         continue;
       }
-      transactions.push({ hash: sent.hash, ok: sent.ok, sessions: batch.length });
-      if (!sent.ok) continue;
+      if (!sent.ok) {
+        transactions.push({ hash: sent.hash, ok: false, sessions: batch.length, paid: 0 });
+        continue;
+      }
+      // redeemMany is best effort: an entry that could not pay in the block is skipped, not
+      // reverted, so what was claimed is read back from the chain, never assumed.
+      let paid = 0;
       for (const b of batch) {
         const s = sessions.get(b.id);
-        if (b.cumulative > s.claimed) s.claimed = b.cumulative;
+        const fresh = batch.length === 1 ? null : await readSession(chain, A.sessionEscrow, b.id).catch(() => null);
+        const claimed = fresh ? fresh.claimed : b.cumulative;
+        if (claimed >= b.cumulative) paid += 1;
+        if (claimed > s.claimed) s.claimed = claimed;
+        if (fresh) s.closed = fresh.closed;
         s.pendingSince = s.accepted > s.claimed ? Date.now() : null;
       }
+      transactions.push({ hash: sent.hash, ok: true, sessions: batch.length, paid });
       persist();
     }
     return {

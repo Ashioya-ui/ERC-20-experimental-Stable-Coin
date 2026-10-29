@@ -247,7 +247,7 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
     if (expiry < now + minRemainingOf(r) + 600n) expiry = now + minRemainingOf(r) + 600n;
     if (expiry > now + MAX_DURATION - 600n) expiry = now + MAX_DURATION - 600n;
     const salt = rand32();
-    const sessionId = await sessionIdOf({ funder: from, payee, token: A.usdc, signer: owner, salt });
+    const sessionId = await sessionIdOf({ funder: from, payee, token: A.usdc, signer: owner, expiry, salt });
     const nonce = await openNonce({ payee, token: A.usdc, signer: owner, expiry, salt });
     const authorization = await sign('ReceiveWithAuthorization', A.usdc, {
       from, to: A.sessionEscrow, value: String(deposit), validAfter: w.validAfter, validBefore: w.validBefore, nonce,

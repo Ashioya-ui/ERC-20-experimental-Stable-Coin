@@ -1,0 +1,76 @@
+--- a/src/vault/X402SessionEscrow.sol
++++ b/src/vault/X402SessionEscrow.sol
+@@ -110,7 +110,7 @@
+     // ---------------------------------------------------------------------- open and fund
+ 
+     /// @notice Open a session funded by the caller.
+-    /// @return sessionId keccak256(funder, payee, token, signer, salt): computable before opening.
++    /// @return sessionId keccak256(funder, payee, token, signer, expiry, salt): computable before opening.
+     function open(address payee, address token, address signer, uint64 expiry, bytes32 salt, uint256 amount)
+         external
+         nonReentrant
+@@ -255,12 +255,17 @@
+         return _validSignature(signer, voucherDigest(sessionId, cumulative), signature);
+     }
+ 
+-    function sessionIdOf(address funder, address payee, address token, address signer, bytes32 salt)
+-        public
+-        pure
+-        returns (bytes32)
+-    {
+-        return keccak256(abi.encode(funder, payee, token, signer, salt));
++    /// @notice The id of the session these terms open. It commits to every term the open nonce
++    ///         binds, the expiry included, so no session of other terms can ever take it.
++    function sessionIdOf(
++        address funder,
++        address payee,
++        address token,
++        address signer,
++        uint64 expiry,
++        bytes32 salt
++    ) public pure returns (bytes32) {
++        return keccak256(abi.encode(funder, payee, token, signer, expiry, salt));
+     }
+ 
+     function voucherDigest(bytes32 sessionId, uint256 cumulative) public view returns (bytes32) {
+@@ -294,7 +299,7 @@
+         }
+         // slither-disable-next-line timestamp
+         if (expiry < block.timestamp + MIN_DURATION || expiry > block.timestamp + MAX_DURATION) revert BadExpiry(expiry);
+-        sessionId = sessionIdOf(funder, payee, token, signer, salt);
++        sessionId = sessionIdOf(funder, payee, token, signer, expiry, salt);
+         if (_sessions[sessionId].funder != address(0)) revert SessionExists(sessionId);
+         _sessions[sessionId] = Session({
+             funder: funder,
+--- a/test/vault/X402SessionEscrow.t.sol
++++ b/test/vault/X402SessionEscrow.t.sol
+@@ -53,7 +53,9 @@
+         assertEq(s.signer, agent);
+         assertEq(s.deposited, 10e6);
+         assertEq(s.claimed, 0);
+-        assertEq(id, escrow.sessionIdOf(funder, merchant, address(usdc), agent, "s"), "id computable in advance");
++        bytes32 expected =
++            escrow.sessionIdOf(funder, merchant, address(usdc), agent, uint64(block.timestamp + 1 days), "s");
++        assertEq(id, expected, "id computable in advance");
+         assertEq(usdc.balanceOf(address(escrow)), 10e6);
+     }
+ 
+@@ -201,7 +203,7 @@
+         vm.expectRevert(X402SessionEscrow.ZeroAmount.selector);
+         escrow.open(merchant, address(usdc), agent, uint64(block.timestamp + 1 days), "z", 0);
+         escrow.open(merchant, address(usdc), agent, uint64(block.timestamp + 1 days), "z", 1);
+-        bytes32 id = escrow.sessionIdOf(funder, merchant, address(usdc), agent, "z");
++        bytes32 id = escrow.sessionIdOf(funder, merchant, address(usdc), agent, uint64(block.timestamp + 1 days), "z");
+         vm.expectRevert(abi.encodeWithSelector(X402SessionEscrow.SessionExists.selector, id));
+         escrow.open(merchant, address(usdc), agent, uint64(block.timestamp + 1 days), "z", 1);
+         vm.stopPrank();
+@@ -233,7 +235,8 @@
+     }
+ 
+     function test_isVoucherSignedBy_worksBeforeTheSessionExists() public view {
+-        bytes32 id = escrow.sessionIdOf(funder, merchant, address(usdc), agent, "future");
++        bytes32 id =
++            escrow.sessionIdOf(funder, merchant, address(usdc), agent, uint64(block.timestamp + 1 days), "future");
+         assertTrue(escrow.isVoucherSignedBy(agent, id, 100, _voucher(AGENT_PK, id, 100)));
+         assertFalse(escrow.isVoucherSignedBy(funder, id, 100, _voucher(AGENT_PK, id, 100)));
+     }

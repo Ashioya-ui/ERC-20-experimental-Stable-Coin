@@ -5,7 +5,6 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 
 /// @notice USDC's EIP-3009 receive authorization, as the escrow uses it to open a session gaslessly.
@@ -40,13 +39,14 @@ interface IERC3009Receive {
 ///
 ///         Safety, both ways. The merchant can never receive more than the deposit or more than the
 ///         signer authorised, and vouchers are cumulative, so an old one can never be counted
-///         twice. The funder cannot pull the deposit back before expiry, so a voucher the merchant
-///         holds is good until then. A stolen signing key can only overpay the one merchant the
-///         session names, and only up to the deposit: a per-merchant spending cap for agent keys,
-///         enforced by the chain.
+///         twice. The funder cannot pull the deposit back before expiry, and a voucher is a plain
+///         ECDSA signature, which no one can revoke, so a voucher the merchant holds is good until
+///         then. A stolen signing key can only overpay the one merchant the session names, and only
+///         up to the deposit: a per-merchant spending cap for agent keys, enforced by the chain.
 ///
 ///         Nothing to trust. No owner, no fee, no upgrade path, no oracle. Ownerless and immutable;
-///         the escrow holds exactly the unclaimed balance of its open sessions.
+///         the escrow holds at least the unclaimed balance of its open sessions (exactly that, unless
+///         someone sends it tokens directly: those can never be moved, as there is no owner).
 contract X402SessionEscrow is EIP712, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
@@ -67,7 +67,7 @@ contract X402SessionEscrow is EIP712, ReentrancyGuardTransient {
         address funder; // deposits, and takes back what is unclaimed after expiry
         address payee; // the only address that can ever be paid from this session
         address token;
-        address signer; // signs vouchers: normally the agent's key, not the funder's
+        address signer; // signs vouchers with its own ECDSA key: normally the agent's, not the funder's
         uint128 deposited;
         uint128 claimed;
         uint64 expiry;
@@ -87,9 +87,12 @@ contract X402SessionEscrow is EIP712, ReentrancyGuardTransient {
     );
     event SessionToppedUp(bytes32 indexed sessionId, uint256 amount, uint256 deposited);
     event VoucherRedeemed(bytes32 indexed sessionId, address indexed payee, uint256 amount, uint256 cumulative);
+    /// @notice A redeemMany entry that could not pay right now and was left exactly as it was.
+    event VoucherSkipped(bytes32 indexed sessionId, uint256 cumulative);
     event SessionClosed(bytes32 indexed sessionId, uint256 claimed, uint256 refunded);
 
     error ZeroAddress();
+    error EscrowAsPayee();
     error ZeroAmount();
     error BadExpiry(uint64 expiry);
     error SessionExists(bytes32 sessionId);
@@ -110,7 +113,7 @@ contract X402SessionEscrow is EIP712, ReentrancyGuardTransient {
     // ---------------------------------------------------------------------- open and fund
 
     /// @notice Open a session funded by the caller.
-    /// @return sessionId keccak256(funder, payee, token, signer, salt): computable before opening.
+    /// @return sessionId keccak256(funder, payee, token, signer, expiry, salt): computable before opening.
     function open(address payee, address token, address signer, uint64 expiry, bytes32 salt, uint256 amount)
         external
         nonReentrant
@@ -183,14 +186,20 @@ contract X402SessionEscrow is EIP712, ReentrancyGuardTransient {
     }
 
     /// @notice Redeem many sessions in one transaction: how a facilitator settles for its
-    ///         merchants at the cost of one.
+    ///         merchants at the cost of one. Best effort: an entry that cannot pay right now (its
+    ///         session unknown, closed or expired; its voucher already covered, above the deposit
+    ///         or not the signer's; its transfer refused by the token) is left exactly as it was and
+    ///         reported by VoucherSkipped, so no one session can sink the others.
+    /// @return redeemed How many entries paid.
     function redeemMany(bytes32[] calldata sessionIds, uint256[] calldata cumulatives, bytes[] calldata signatures)
         external
         nonReentrant
+        returns (uint256 redeemed)
     {
         if (sessionIds.length != cumulatives.length || sessionIds.length != signatures.length) revert LengthMismatch();
         for (uint256 i; i < sessionIds.length; ++i) {
-            _redeem(sessionIds[i], cumulatives[i], signatures[i]);
+            if (_tryRedeem(sessionIds[i], cumulatives[i], signatures[i])) ++redeemed;
+            else emit VoucherSkipped(sessionIds[i], cumulatives[i]);
         }
     }
 
@@ -221,13 +230,15 @@ contract X402SessionEscrow is EIP712, ReentrancyGuardTransient {
         return _sessions[sessionId];
     }
 
-    /// @notice What a voucher for `cumulative` could still pay right now (0 if closed or expired).
+    /// @notice What redeeming a voucher for `cumulative` would pay right now, signature aside: 0 if
+    ///         the session is closed or expired, or if redeem would refuse the amount (above the
+    ///         deposit, or nothing beyond what is claimed).
     function redeemable(bytes32 sessionId, uint256 cumulative) external view returns (uint256) {
         Session storage s = _sessions[sessionId];
         // slither-disable-next-line timestamp
         if (s.funder == address(0) || s.closed || block.timestamp > s.expiry) return 0;
-        uint256 capped = cumulative < s.deposited ? cumulative : s.deposited;
-        return capped > s.claimed ? capped - s.claimed : 0;
+        if (cumulative > s.deposited || cumulative <= s.claimed) return 0;
+        return cumulative - s.claimed;
     }
 
     /// @notice Whether a voucher would redeem right now, and for how much: what a merchant or
@@ -245,8 +256,8 @@ contract X402SessionEscrow is EIP712, ReentrancyGuardTransient {
         return (true, cumulative - s.claimed);
     }
 
-    /// @notice Whether `signer` signed this voucher. For the first call of a session that the same
-    ///         payment opens, when there is no session state to check against yet.
+    /// @notice Whether `signer`'s own key signed this voucher. For the first call of a session
+    ///         that the same payment opens, when there is no session state to check against yet.
     function isVoucherSignedBy(address signer, bytes32 sessionId, uint256 cumulative, bytes calldata signature)
         external
         view
@@ -255,12 +266,17 @@ contract X402SessionEscrow is EIP712, ReentrancyGuardTransient {
         return _validSignature(signer, voucherDigest(sessionId, cumulative), signature);
     }
 
-    function sessionIdOf(address funder, address payee, address token, address signer, bytes32 salt)
-        public
-        pure
-        returns (bytes32)
-    {
-        return keccak256(abi.encode(funder, payee, token, signer, salt));
+    /// @notice The id of the session these terms open. It commits to every term the open nonce
+    ///         binds, the expiry included, so no session of other terms can ever take it.
+    function sessionIdOf(
+        address funder,
+        address payee,
+        address token,
+        address signer,
+        uint64 expiry,
+        bytes32 salt
+    ) public pure returns (bytes32) {
+        return keccak256(abi.encode(funder, payee, token, signer, expiry, salt));
     }
 
     function voucherDigest(bytes32 sessionId, uint256 cumulative) public view returns (bytes32) {
@@ -292,9 +308,10 @@ contract X402SessionEscrow is EIP712, ReentrancyGuardTransient {
         if (funder == address(0) || payee == address(0) || token == address(0) || signer == address(0)) {
             revert ZeroAddress();
         }
+        if (payee == address(this)) revert EscrowAsPayee(); // its payouts would belong to no session
         // slither-disable-next-line timestamp
         if (expiry < block.timestamp + MIN_DURATION || expiry > block.timestamp + MAX_DURATION) revert BadExpiry(expiry);
-        sessionId = sessionIdOf(funder, payee, token, signer, salt);
+        sessionId = sessionIdOf(funder, payee, token, signer, expiry, salt);
         if (_sessions[sessionId].funder != address(0)) revert SessionExists(sessionId);
         _sessions[sessionId] = Session({
             funder: funder,
@@ -342,6 +359,24 @@ contract X402SessionEscrow is EIP712, ReentrancyGuardTransient {
         emit VoucherRedeemed(sessionId, s.payee, amount, cumulative);
     }
 
+    /// @dev _redeem's checks, answered instead of reverted. If the token refuses the payee's
+    ///      transfer (a USDC blacklisting), the claim is restored and the session is as it was.
+    function _tryRedeem(bytes32 sessionId, uint256 cumulative, bytes calldata signature) internal returns (bool) {
+        Session storage s = _sessions[sessionId];
+        // slither-disable-next-line timestamp
+        if (s.funder == address(0) || s.closed || block.timestamp > s.expiry) return false;
+        uint256 claimed = s.claimed;
+        if (cumulative > s.deposited || cumulative <= claimed) return false;
+        if (!_validSignature(s.signer, voucherDigest(sessionId, cumulative), signature)) return false;
+        s.claimed = uint128(cumulative); // cumulative <= deposited <= type(uint128).max
+        if (!IERC20(s.token).trySafeTransfer(s.payee, cumulative - claimed)) {
+            s.claimed = uint128(claimed);
+            return false;
+        }
+        emit VoucherRedeemed(sessionId, s.payee, cumulative - claimed, cumulative);
+        return true;
+    }
+
     function _close(bytes32 sessionId, Session storage s) internal {
         s.closed = true;
         uint256 refund = s.deposited - s.claimed;
@@ -361,15 +396,15 @@ contract X402SessionEscrow is EIP712, ReentrancyGuardTransient {
         if (block.timestamp > s.expiry) revert SessionExpired(sessionId);
     }
 
-    /// @dev ECDSA first, then ERC-1271. OpenZeppelin 5.4's SignatureChecker sends any signer that
-    ///      has code straight to ERC-1271, which strands an EIP-7702 account whose delegate does not
-    ///      implement it: its own key would never be checked. A contract address has no private
-    ///      key, so trying ECDSA first cannot let anyone sign for one.
-    function _validSignature(address signer, bytes32 digest, bytes calldata signature) internal view returns (bool) {
+    /// @dev ECDSA only, against the signer's own key. A voucher must stay valid from the moment the
+    ///      merchant serves against it until it is redeemed, and an ERC-1271 answer is the signer
+    ///      contract's to change at will (a key rotation, a flag, the block number): a contract
+    ///      signer could void every voucher the merchant holds, or pass a simulation and fail in
+    ///      the block. An EIP-7702 account signs with its own key, which no delegation revokes.
+    function _validSignature(address signer, bytes32 digest, bytes calldata signature) internal pure returns (bool) {
         // The third return value only describes a failure; recovered and err decide.
         // slither-disable-next-line unused-return
         (address recovered, ECDSA.RecoverError err,) = ECDSA.tryRecover(digest, signature);
-        if (err == ECDSA.RecoverError.NoError && recovered == signer) return true;
-        return signer.code.length != 0 && SignatureChecker.isValidERC1271SignatureNow(signer, digest, signature);
+        return err == ECDSA.RecoverError.NoError && recovered == signer;
     }
 }

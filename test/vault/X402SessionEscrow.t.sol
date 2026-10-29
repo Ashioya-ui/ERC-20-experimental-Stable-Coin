@@ -53,7 +53,9 @@ contract X402SessionEscrowTest is SessionFixture {
         assertEq(s.signer, agent);
         assertEq(s.deposited, 10e6);
         assertEq(s.claimed, 0);
-        assertEq(id, escrow.sessionIdOf(funder, merchant, address(usdc), agent, "s"), "id computable in advance");
+        bytes32 expected =
+            escrow.sessionIdOf(funder, merchant, address(usdc), agent, uint64(block.timestamp + 1 days), "s");
+        assertEq(id, expected, "id computable in advance");
         assertEq(usdc.balanceOf(address(escrow)), 10e6);
     }
 
@@ -201,7 +203,7 @@ contract X402SessionEscrowTest is SessionFixture {
         vm.expectRevert(X402SessionEscrow.ZeroAmount.selector);
         escrow.open(merchant, address(usdc), agent, uint64(block.timestamp + 1 days), "z", 0);
         escrow.open(merchant, address(usdc), agent, uint64(block.timestamp + 1 days), "z", 1);
-        bytes32 id = escrow.sessionIdOf(funder, merchant, address(usdc), agent, "z");
+        bytes32 id = escrow.sessionIdOf(funder, merchant, address(usdc), agent, uint64(block.timestamp + 1 days), "z");
         vm.expectRevert(abi.encodeWithSelector(X402SessionEscrow.SessionExists.selector, id));
         escrow.open(merchant, address(usdc), agent, uint64(block.timestamp + 1 days), "z", 1);
         vm.stopPrank();
@@ -233,19 +235,25 @@ contract X402SessionEscrowTest is SessionFixture {
     }
 
     function test_isVoucherSignedBy_worksBeforeTheSessionExists() public view {
-        bytes32 id = escrow.sessionIdOf(funder, merchant, address(usdc), agent, "future");
+        bytes32 id =
+            escrow.sessionIdOf(funder, merchant, address(usdc), agent, uint64(block.timestamp + 1 days), "future");
         assertTrue(escrow.isVoucherSignedBy(agent, id, 100, _voucher(AGENT_PK, id, 100)));
         assertFalse(escrow.isVoucherSignedBy(funder, id, 100, _voucher(AGENT_PK, id, 100)));
     }
 
     // ------------------------------------------------------------------ signers
 
-    function test_anERC1271SignerCanSignVouchers() public {
+    /// An ERC-1271 answer can change after the merchant has served against it, so a contract
+    /// cannot sign vouchers, not even one that would accept its owner's signature.
+    function test_anERC1271SignerCannotSignVouchers() public {
         Mock1271Wallet wallet = new Mock1271Wallet(agent);
         vm.prank(funder);
         bytes32 id = escrow.open(merchant, address(usdc), address(wallet), uint64(block.timestamp + 1 days), "w", 1e6);
-        escrow.redeem(id, 4e5, _voucher(AGENT_PK, id, 4e5)); // the wallet accepts its owner's signature
-        assertEq(usdc.balanceOf(merchant), 4e5);
+        bytes memory v = _voucher(AGENT_PK, id, 4e5); // the wallet would accept its owner's signature
+        (bool ok,) = escrow.checkVoucher(id, 4e5, v);
+        assertFalse(ok);
+        vm.expectRevert(X402SessionEscrow.InvalidVoucher.selector);
+        escrow.redeem(id, 4e5, v);
     }
 
     /// An EIP-7702 account has code, and its delegate may not implement ERC-1271. Its own key
