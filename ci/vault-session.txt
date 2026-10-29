@@ -1,0 +1,48 @@
+exit session-local 0, session-fork 0
+== local anvil, FiatToken v2.2
+local chain 31337, FiatToken v2.2 USDC at 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
+{
+  "chainId": 31337,
+  "codehash": "0xbd364e4ba7f1157327478fd3eef6d1b7dbbea3fa5b0e12a5eca2d0dc4523fd39",
+  "escrow": "0x570d8996f00DdEF3eC89D597f41FEC0f6C5d78e4",
+  "salt": "0x9383312313a340cbd3216a09ac566520fbf38296d2c0ae74b6c3244fb9c96664"
+}
+✔ the facilitator offers sessions on its own escrow (1314.614177ms)
+✔ 1000 paid calls cost one open and one redemption, and the agent never holds ETH (74629.675564ms)
+ℹ 1000 calls in 72.0 s (72.0 ms a call)
+✔ an old voucher is refused, and so is one above the deposit or signed by another key (272.482194ms)
+✔ the payee closes the session: its last calls are paid and the rest of the deposit goes home (1739.799797ms)
+✔ after the close, the agent retires the session and pays from a new one (1919.095307ms)
+✔ the owner takes the agent's free USDC home, gaslessly (2014.805805ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 81996.020354
+
+== Base mainnet fork, live USDC
+fork of Base mainnet at block 53237628
+{
+  "chainId": 8453,
+  "codehash": "0x2a3400a0d1479f030945bd04c4d651e4542f6b1f1a28d7c220653cb123eeda30",
+  "escrow": "0x570d8996f00DdEF3eC89D597f41FEC0f6C5d78e4",
+  "salt": "0x9383312313a340cbd3216a09ac566520fbf38296d2c0ae74b6c3244fb9c96664"
+}
+✔ the facilitator offers sessions on its own escrow (1386.80071ms)
+✔ 1000 paid calls cost one open and one redemption, and the agent never holds ETH (72590.328195ms)
+ℹ 1000 calls in 71.6 s (71.6 ms a call)
+✔ an old voucher is refused, and so is one above the deposit or signed by another key (283.689432ms)
+✔ the payee closes the session: its last calls are paid and the rest of the deposit goes home (1810.701701ms)
+✔ after the close, the agent retires the session and pays from a new one (1746.248861ms)
+✔ the owner takes the agent's free USDC home, gaslessly (2116.233068ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 80041.222342
