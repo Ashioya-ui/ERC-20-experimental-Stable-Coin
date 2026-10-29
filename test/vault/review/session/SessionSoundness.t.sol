@@ -78,7 +78,9 @@ contract X402SessionReview_SoundnessTest is SessionReviewFixture {
     function test_aVoucherDoesNotReplayOnAnotherChain() public {
         bytes32 id = _open(10e6, "chain");
         bytes memory v = _voucher(AGENT_PK, id, 1e6);
-        uint256 home = block.chainid;
+        // vm.getChainId(), not block.chainid: under via-IR the optimizer may re-read CHAINID after
+        // vm.chainId() below, and `home` would then be the other chain.
+        uint256 home = vm.getChainId();
         vm.chainId(home + 1);
         vm.expectRevert(X402SessionEscrow.InvalidVoucher.selector);
         escrow.redeem(id, 1e6, v);
