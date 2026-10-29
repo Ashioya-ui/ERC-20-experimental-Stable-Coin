@@ -118,7 +118,7 @@ contract X402SessionEscrow is EIP712, ReentrancyGuardTransient {
     {
         sessionId = _create(msg.sender, payee, token, signer, expiry, salt);
         _credit(sessionId, amount, true);
-        _pullExact(IERC20(token), msg.sender, amount);
+        _pullFromCaller(IERC20(token), amount);
     }
 
     /// @notice Open a session gaslessly: the funder signs one EIP-3009 receive authorization of the
@@ -151,7 +151,7 @@ contract X402SessionEscrow is EIP712, ReentrancyGuardTransient {
     function topUp(bytes32 sessionId, uint256 amount) external nonReentrant {
         Session storage s = _live(sessionId);
         _credit(sessionId, amount, false);
-        _pullExact(IERC20(s.token), msg.sender, amount);
+        _pullFromCaller(IERC20(s.token), amount);
     }
 
     /// @notice Add funds gaslessly with an EIP-3009 receive authorization whose nonce is
@@ -230,6 +230,31 @@ contract X402SessionEscrow is EIP712, ReentrancyGuardTransient {
         return capped > s.claimed ? capped - s.claimed : 0;
     }
 
+    /// @notice Whether a voucher would redeem right now, and for how much: what a merchant or
+    ///         facilitator checks on every call with one eth_call, broadcasting nothing.
+    function checkVoucher(bytes32 sessionId, uint256 cumulative, bytes calldata signature)
+        external
+        view
+        returns (bool valid, uint256 amount)
+    {
+        Session storage s = _sessions[sessionId];
+        // slither-disable-next-line timestamp
+        if (s.funder == address(0) || s.closed || block.timestamp > s.expiry) return (false, 0);
+        if (cumulative > s.deposited || cumulative <= s.claimed) return (false, 0);
+        if (!_validSignature(s.signer, voucherDigest(sessionId, cumulative), signature)) return (false, 0);
+        return (true, cumulative - s.claimed);
+    }
+
+    /// @notice Whether `signer` signed this voucher. For the first call of a session that the same
+    ///         payment opens, when there is no session state to check against yet.
+    function isVoucherSignedBy(address signer, bytes32 sessionId, uint256 cumulative, bytes calldata signature)
+        external
+        view
+        returns (bool)
+    {
+        return _validSignature(signer, voucherDigest(sessionId, cumulative), signature);
+    }
+
     function sessionIdOf(address funder, address payee, address token, address signer, bytes32 salt)
         public
         pure
@@ -286,9 +311,9 @@ contract X402SessionEscrow is EIP712, ReentrancyGuardTransient {
     /// @dev Effects first: the session is credited before any token moves, and the transfer must
     ///      then deliver exactly that amount. A fee-on-transfer or rebasing token cannot be used,
     ///      which keeps every session's balance an exact claim on the escrow's.
-    function _pullExact(IERC20 token, address from, uint256 amount) internal {
+    function _pullFromCaller(IERC20 token, uint256 amount) internal {
         uint256 before = token.balanceOf(address(this));
-        token.safeTransferFrom(from, address(this), amount);
+        token.safeTransferFrom(msg.sender, address(this), amount);
         _checkArrived(token, before, amount);
     }
 
@@ -341,6 +366,8 @@ contract X402SessionEscrow is EIP712, ReentrancyGuardTransient {
     ///      implement it: its own key would never be checked. A contract address has no private
     ///      key, so trying ECDSA first cannot let anyone sign for one.
     function _validSignature(address signer, bytes32 digest, bytes calldata signature) internal view returns (bool) {
+        // The third return value only describes a failure; recovered and err decide.
+        // slither-disable-next-line unused-return
         (address recovered, ECDSA.RecoverError err,) = ECDSA.tryRecover(digest, signature);
         if (err == ECDSA.RecoverError.NoError && recovered == signer) return true;
         return signer.code.length != 0 && SignatureChecker.isValidERC1271SignatureNow(signer, digest, signature);

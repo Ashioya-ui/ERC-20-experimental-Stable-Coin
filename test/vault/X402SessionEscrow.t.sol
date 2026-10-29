@@ -212,6 +212,32 @@ contract X402SessionEscrowTest is SessionFixture {
         escrow.reclaim("nope");
     }
 
+    // ------------------------------------------------------------------ the facilitator's views
+
+    function test_checkVoucher_answersWhatARedemptionWouldDo() public {
+        bytes32 id = _open(1e6, "cv");
+        bytes memory v = _voucher(AGENT_PK, id, 4e5);
+        (bool ok, uint256 amount) = escrow.checkVoucher(id, 4e5, v);
+        assertTrue(ok);
+        assertEq(amount, 4e5);
+        (ok,) = escrow.checkVoucher(id, 4e5, _voucher(FUNDER_PK, id, 4e5)); // wrong key
+        assertFalse(ok);
+        (ok,) = escrow.checkVoucher(id, 2e6, _voucher(AGENT_PK, id, 2e6)); // above the deposit
+        assertFalse(ok);
+        escrow.redeem(id, 4e5, v);
+        (ok,) = escrow.checkVoucher(id, 4e5, v); // already redeemed
+        assertFalse(ok);
+        vm.warp(block.timestamp + 1 days + 1);
+        (ok,) = escrow.checkVoucher(id, 5e5, _voucher(AGENT_PK, id, 5e5)); // expired
+        assertFalse(ok);
+    }
+
+    function test_isVoucherSignedBy_worksBeforeTheSessionExists() public view {
+        bytes32 id = escrow.sessionIdOf(funder, merchant, address(usdc), agent, "future");
+        assertTrue(escrow.isVoucherSignedBy(agent, id, 100, _voucher(AGENT_PK, id, 100)));
+        assertFalse(escrow.isVoucherSignedBy(funder, id, 100, _voucher(AGENT_PK, id, 100)));
+    }
+
     // ------------------------------------------------------------------ signers
 
     function test_anERC1271SignerCanSignVouchers() public {
