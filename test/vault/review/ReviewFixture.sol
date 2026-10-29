@@ -85,8 +85,12 @@ abstract contract VaultPayRouterReviewFixture is Test {
 
     function _noPermit() internal pure returns (VaultPayRouter.Permit memory p) {}
 
-    /// @dev pay() as a raw call from `from` with `gasLimit`: whether it succeeded, its return or
-    ///      revert data, and the gas the call consumed.
+    /// @dev pay() as a raw call with `gasLimit`: whether it succeeded, its return or revert data, and
+    ///      the gas the call consumed. Measured from inside a contract call: `gasleft()` in the test
+    ///      body reads nearly nothing under
+    ///      `forge test --isolate` (the call becomes its own transaction), and `vm.lastCallGas()`
+    ///      cannot be decoded with this toolchain (see test/mocks/OracleGasMeter.sol). `pay` is
+    ///      permissionless, so the meter submitting it in `from`'s place changes nothing measured.
     function _payRaw(
         address from,
         VaultPayRouter.PayIntent memory it,
@@ -95,9 +99,20 @@ abstract contract VaultPayRouterReviewFixture is Test {
         uint256 gasLimit
     ) internal returns (bool ok, bytes memory ret, uint256 used) {
         bytes memory data = abi.encodeWithSelector(VaultPayRouter.pay.selector, it, sig, p);
+        CallMeter meter = new CallMeter();
         vm.prank(from);
+        (ok, ret, used) = meter.callWithGas(address(router), data, gasLimit);
+    }
+}
+
+/// @dev Makes one call with a fixed gas limit and reports the gas it consumed, measured inside the EVM.
+contract CallMeter {
+    function callWithGas(address target, bytes calldata data, uint256 gasLimit)
+        external
+        returns (bool ok, bytes memory ret, uint256 used)
+    {
         uint256 g = gasleft();
-        (ok, ret) = address(router).call{gas: gasLimit}(data);
+        (ok, ret) = target.call{gas: gasLimit}(data);
         used = g - gasleft();
     }
 }
