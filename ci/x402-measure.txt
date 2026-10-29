@@ -1,0 +1,159 @@
+exit 0
+x402 on Base mainnet, measured at block 53,227,444 (last 7 days, 14,400 blocks sampled)
+
+EIP-3009 authorizations in sample   101,181   (~303,543 per day, extrapolated)
+receipts inspected                  1,500
+top submitters (facilitators)       0xc8d6bac2.. 37%, 0x7f72a02c.. 5%, 0x950158b9.. 4%, 0x14fda139.. 3%, 0xca5e87f8.. 3%
+payment size, USDC                  median 0.02, mean 0.83, p90 0.20
+
+Aave USDC supply rate on Base       4.47% APY (live, from the pool)
+
+                         PAYERS                MERCHANTS
+wallets measured         8,000                 620
+USDC held, median        0.03                  0.00
+USDC held, mean          289.07                175.84
+USDC held, p90           2.11                  13.24
+USDC held, total         2,312,560.92          109,023.02
+held by top 10%          100%                  100%
+holding zero USDC        26%                   75%
+already in Aave          0.1%                  0.3%
+contracts (code sample)  185/400               335/400
+idle yield / year (USD)  103,360.98            4,872.83
+
+Top merchants by USDC held (address, USDC, already in Aave, payments in receipt sample):
+  0xba2304d1f48ac01cf01427fc9d9ae3d21e71b536       24,856.77        0.02  1
+  0x325bdf6f7efab24a2210c48c1b64cab2eae1d430       13,304.09        0.00  37
+  0x7284d41b5b852f2bd4c99bdf95043d84452d299c       13,265.92        0.00  249
+  0x0f99fc0cbd7a114b2da171fda5a0167858f7afc2       12,638.68        0.00  1
+  0xaf36084a4dc0ce760a6dcfa46cf129e140c92aa9        8,965.30        0.00  623
+  0x2670b922ef37c7df47158725c0cc407b5382293f        5,976.50        0.00  1
+  0x5aae638ccd22a4117c0441331e8e86ca979d482e        4,497.08        0.00  1
+  0x98886846918c7debe86e1d74e249dcdd64a9d367        3,455.48        0.00  1
+  0x480cd46e6fade651a0437deadda53d5c8e7d846a        3,000.00        0.00  1
+  0x86b1b1be6caa9c46583ae5e414f4b348efa92f66        2,621.23        0.00  1
+  0xa9dd7cc9cbf0e05551332209289f04be36bc2315        2,106.00        0.00  67
+  0xb648eb7904e6204a8e6f46643f3e384206719494        1,552.85        0.00  2
+  0xa8b2c2594ec5774479749d26105c9fb6cdca1d68        1,362.42        0.00  56
+  0xe9030014f5dae217d0a152f02a043567b16c1abf        1,054.87        0.00  29
+  0xa58851b98a53a5559a340ddbfc597ec109b6014c        1,052.29        0.00  2
+  0xdc59fa7b64988b846e76ec9849bb68f889071506        1,029.52        0.00  1
+  0x66d7c2f952362bfb24fd7f02a9bec9c754ea83bc          993.92        0.00  3
+  0x47d3394c7234714e4b9e9b74827c12be847f9dda          914.10        0.00  4
+  0x3e0a7c9a79f0646fc4e72d52b5ee8877f5aa78e7          600.40        0.00  9
+  0xe813d34c0525e0fbb1e6478b86d40b83603c2008          537.14        0.00  2
+
+Who holds the payer-side money: the 200 biggest payers, classified by their own payments
+  x402 payers (facilitator-submitted micro-payments)    99 wallets      2,172,761.61 USDC
+  everything else (large or non-facilitator transfers)  101 wallets        135,789.02 USDC
+  idle yield / year, x402 payers only (at 4.47%)          97,112.59 USD
+
+Biggest x402 payers (address, USDC, authorizations in sample, median payment):
+  0xd34ea7278e6bd48defe656bbe263aef11101469c      583,984.43      1  0.05
+  0xd86cadb414171d1155aa88076504763f7de32805      536,548.18      1  0.05
+  0xb4807865a786e9e9e26e6a9610f2078e7fc507fb      519,714.80      1  0.05
+  0x1985ea6e9c68e1c272d8209f3b478ac2fdb25c87      515,318.38      1  0.05
+  0x73b4c9335fa239f9c6df3d28d5bf5d3cdf4de736        6,702.40      1  1.0
+  0xd719ffe304878a10c84881059ffe030072bdeeca        2,186.75      5  0.01
+  0xca0aa070354ebbb91ee2c29c69e299a496652d7a        1,180.89     12  0.546372
+  0x98978c8926ac59325b74c7070d9b71fe8d8de042        1,031.52     12  0.01
+  0x8a69a52b3444ca81b18d06d4158feac79e16f390          537.83      2  0.14500000000000002
+  0x4bea629d95522b9c60bb26b2ab90ab40c3da1ce7          431.65     11  0.002
+  0xa7b7646045cbac71da28803d94c72f282a28ac11          298.50      7  4.5
+  0x6fafb2af65ae78a7b677173df18d7ecf164409f3          225.00     14  0.6
+  0x02b43334f675e02636816e6f5c0ec6072be2df8c          199.82      1  0.02
+  0x6a1637683f11e0bcb14fbad60c651c7e96fc3b5e          175.10     14  5.0
+  0xac26b6d7d9e6980012d5619c8665d5d8f0b1255b          153.18      3  0.01
+  0xdeafcd44c2509ac1ac6ea431a8b8701b337cb943          147.99      5  0.06
+  0x0fcbd49bf5faa1a132835e66ecf065bedd5a8774          137.82      1  0.03
+  0x60797741cc3bf6899a68cb66dd8157199b8260d3          134.03      1  4.0
+  0xc26ab79b21827b54f9c8732c8e5cdc4b370f3b7e          128.01      1  0.1
+  0xc9c7b38c0942914fc8ea12063bc92dcd3b581670          125.91     21  0.005
+
+What settling one payment costs (ETH at $2,302.17, 2,188 payments priced)
+  gas per payment, USD           median 0.00129   p90 0.00199
+  gas as share of the payment    median 10.0%   p90 68.2%
+  payments where gas > 10%       50%
+  payments per settlement tx     median 2.0   max 20
+  gas spent settling, all x402   ~$456 per day
+  by submitter (share of payments, gas USD/day, gas as share of value):
+    0xc8d6bac2ff7182d22c4f316bfff9f713261a6cec    57%        216    0.2%
+    0x7f72a02c682e908d46a5677fe937cdb612d94a3b     3%         21  200.0%
+    0x950158b9be56b9893c77089e129b73ea62bbc677     3%          9   12.0%
+    0x14fda13953fc30428938e6bf950d036e77214e52     2%         12   12.8%
+    0xca5e87f82b3fa093800e6ad67d621a427d79c70d     2%         11   12.2%
+    0x64cc42b1ce598e3abcfbb64df4688521ddbf1f0a     2%         10   13.3%
+
+How the heaviest payers stay funded (payments/wk, refills/wk, USDC in/wk, funders, held, top payTo):
+  0x64e8ffb436..    119,574      126   589,953.00    2      22.35  0x524c827c,0xaf36084a
+  0x00cf9902a0..    111,426    1,155       823.20    1      68.27  0x8bc2aecd
+  0xd97c63d050..     24,024        0         0.00    0     114.50  0x325bdf6f
+  0x0c073e8266..     18,543        0         0.00    0      41.13  0x7284d41b
+  0xe6d81674b3..     16,359       21        63.00    1       0.00  0xa9dd7cc9
+  0x9d3d9410be..     14,238       84        97.87    1     198.88  0x4df66b6c
+  0xbfca25404c..     13,650        0         0.00    0       3.76  0xa9dd7cc9
+  0x0000000000..     13,629        0         0.00    0      99.42  0x6d6e695b
+  0x52ad2c4ed3..     12,327        0         0.00    0       0.00  0xa9dd7cc9
+  0x82207aac77..     12,180       21     2,452.36    1      26.06  0x7284d41b
+  0x52af3e6d13..     11,319       21       199.50    1      10.04  0x44adc7d3
+  0x01dd817a71..     11,235        0         0.00    0      59.84  0x7284d41b
+  funders shared by several heavy payers: 0
+
+Heaviest payers by frequency (address, authorizations/week est, USDC held):
+  0x64e8ffb436a236da487d1c20ff2548a70cf82c13     119,574           22.35
+  0x00cf9902a0c936d5342ac076a57047a2aaefddef     111,426           68.27
+  0xd97c63d0503b506b63cae11128cc09d7c1220093      24,024          114.50
+  0x0c073e8266a02d734274fc51b3952c6ed63eb964      18,543           41.13
+  0xe6d81674b3aa4d335e346d0a285d3e2926ea9ebb      16,359            0.00
+  0x9d3d9410be95fa1d230734b961997427fc61d837      14,238          198.88
+  0xbfca25404c37757949c5dfeab9ee2b427bfd7b0b      13,650            3.76
+  0x000000000040f45bb6722481915df68fd8c4e5cb      13,629           99.42
+  0x52ad2c4ed3a315a4ab6cc631cb5cf1a4428d1fee      12,327            0.00
+  0x82207aac77316911396d0c965dc05d105979c686      12,180           26.06
+  0x52af3e6d13f7c13ec887a2e69058a1432aa5b768      11,319           10.04
+  0x01dd817a7180580057f30f7375dd2486c21f6cf3      11,235           59.84
+  0xd2acfe43ff8802237898e425416ecd7f7968bdcd      10,227           13.02
+  0x7d1ad0dd0175a92eee23e893a1f3d4ba8f0228b6       9,975            4.72
+  0x5ba053f4a76aa7a59f64a4a0be960019383c9019       9,681            0.02
+  0x133243d447026345c2b368d7ffe435dbe3c566eb       7,140           57.78
+  0xd9db1f3f2ecbdbf0484cf68b098cfc901991fdf0       7,077           15.90
+  0x740ce3394a4b3ebc9d0aeb2ecfe3646378cacafa       6,783            0.00
+  0x27abcddd44c4959ac729d080703e677f13a3248c       6,552          116.86
+  0x30a6cb9170bf5dbb9e92614b1bf26a33920a641e       6,300           19.09
+
+Submitters (address, payments in random sample, median USDC, distinct payTo, x402-like):
+  0xc8d6bac2ff7182d22c4f316bfff9f713261a6cec   1246    0.0540    487  True
+  0x7f72a02c682e908d46a5677fe937cdb612d94a3b     75    0.0010      1  True
+  0x950158b9be56b9893c77089e129b73ea62bbc677     56    0.0100      1  True
+  0x14fda13953fc30428938e6bf950d036e77214e52     47    0.0100     18  True
+  0xca5e87f82b3fa093800e6ad67d621a427d79c70d     43    0.0126     18  True
+  0x64cc42b1ce598e3abcfbb64df4688521ddbf1f0a     41    0.0100     17  True
+  0x68efafe862d89ce66dd3d7b07d5a3747a0871164     40    0.0200     11  True
+  0xe72f0af4cf41356d433723547f1412ca27fbb1b8     38    0.0100     14  True
+  0x625d8a65134079f8faaac39a7947c73d93c6ac39     37    0.0100     13  True
+  0x4c934c63c786157fefd990945b25ea60a0fb0205     37    0.0100     11  True
+  0x68a96f41ff1e9f2e7b591a931a4ad224e7c07863     36    0.0100     14  True
+  0xa32ccda98ba7529705a059bd2d213da8de10d101     36    0.0100     16  True
+
+Top merchants by x402 revenue in the receipt sample (address, USDC, payments):
+  0x524c827cd1d5691817706763fb67574d107578b1      750.5010  75
+  0x0e3df9510de65469c4518d7843919c0b8c7a7757      284.0500  12
+  0xce57a6d697cac85397035bbd13540c751a915328      150.0000  1
+  0xccc88a9d1b4ed6b0eaba998850414b24f1c315be       96.6248  2
+  0x4e5707d86a523e44db21d18312fb7eb1ad17cbec       96.4100  1
+  0xaf36084a4dc0ce760a6dcfa46cf129e140c92aa9       92.5670  623
+  0x63d20790087845ffa370a1df10e2ca832f93059c       50.0000  2
+  0x8e7769d440b3460b92159dd9c6d17302b036e2d6       27.0672  1
+  0x6351c235e6f7e08f80974009d01829e5a8250d62       26.9609  1
+  0x47d3394c7234714e4b9e9b74827c12be847f9dda       22.0000  4
+  0xd2e4e3eda25d663b32e321a833d775eaf0b0efe1       20.1000  1
+  0xfd93da7788d4eba95b8498eb249fc8756acd82bd       16.3591  1
+  0xdc14d41bfcd386e035bd1ba3072d2f8c5e21eb9a       14.0000  1
+  0xe742f9df04a61ac0a6aea0b87d3c3b96ac6eea88       12.5539  1
+  0xa107a13a704eac788b79a8eec8c78a9b28fe9f29       12.0000  1
+  0xbf8636d1fd5f136e04bf0ed796e8bdaf27321574        8.0000  1
+  0xc09311bb1f67f4aeadb4898fd211c0218252d6ea        8.0000  2
+  0xb648eb7904e6204a8e6f46643f3e384206719494        8.0000  2
+  0x060d78cd62ed704d8d5314d99d5d5563cbb206d4        5.0400  5
+  0x068f4dbaddd550664ad3c02896daf3c96324da3b        5.0000  1
+
+rpc calls: 286

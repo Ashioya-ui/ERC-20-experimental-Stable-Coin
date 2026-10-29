@@ -1,0 +1,3591 @@
+{
+  "chain": "base-mainnet",
+  "latest_block": 53227444,
+  "window_days": 7,
+  "sampled_blocks": 14400,
+  "sampled_share_of_window": 0.047619047619047616,
+  "authorizations_in_sample": 101181,
+  "authorizations_per_day_est": 303543.0,
+  "receipts_sampled": 1500,
+  "top_submitters": [
+    {
+      "address": "0xc8d6bac2ff7182d22c4f316bfff9f713261a6cec",
+      "share": 0.374
+    },
+    {
+      "address": "0x7f72a02c682e908d46a5677fe937cdb612d94a3b",
+      "share": 0.05
+    },
+    {
+      "address": "0x950158b9be56b9893c77089e129b73ea62bbc677",
+      "share": 0.037333333333333336
+    },
+    {
+      "address": "0x14fda13953fc30428938e6bf950d036e77214e52",
+      "share": 0.03133333333333333
+    },
+    {
+      "address": "0xca5e87f82b3fa093800e6ad67d621a427d79c70d",
+      "share": 0.028666666666666667
+    },
+    {
+      "address": "0x64cc42b1ce598e3abcfbb64df4688521ddbf1f0a",
+      "share": 0.027333333333333334
+    },
+    {
+      "address": "0x68efafe862d89ce66dd3d7b07d5a3747a0871164",
+      "share": 0.02666666666666667
+    },
+    {
+      "address": "0xe72f0af4cf41356d433723547f1412ca27fbb1b8",
+      "share": 0.025333333333333333
+    },
+    {
+      "address": "0x625d8a65134079f8faaac39a7947c73d93c6ac39",
+      "share": 0.024666666666666667
+    },
+    {
+      "address": "0x4c934c63c786157fefd990945b25ea60a0fb0205",
+      "share": 0.024666666666666667
+    }
+  ],
+  "payment_usdc": {
+    "n": 2188,
+    "sum": 1813.110355,
+    "mean": 0.8286610397623401,
+    "median": 0.02,
+    "p75": 0.08,
+    "p90": 0.198,
+    "p99": 18.0,
+    "max": 150.0,
+    "zero_share": 0.0,
+    "share_held_by_top_1pct": 0.4481128314994373,
+    "share_held_by_top_10pct": 0.9658110220213264
+  },
+  "payers": {
+    "unique_in_sample": 10560,
+    "measured_wallets": 8000,
+    "of": 10560,
+    "usdc": {
+      "n": 8000,
+      "sum": 2312560.924001,
+      "mean": 289.070115500125,
+      "median": 0.03,
+      "p75": 0.18,
+      "p90": 2.114256,
+      "p99": 116.860602,
+      "max": 583984.433867,
+      "zero_share": 0.255,
+      "share_held_by_top_1pct": 0.9960029378248736,
+      "share_held_by_top_10pct": 0.9995257418965195
+    },
+    "holding_any_aave_usdc_share": 0.00075,
+    "code_sample": {
+      "n": 400,
+      "eoa": 209,
+      "eip7702_delegated": 6,
+      "contract": 185
+    },
+    "top_by_usdc": [
+      [
+        "0xd34ea7278e6bd48defe656bbe263aef11101469c",
+        583984.433867,
+        0.0
+      ],
+      [
+        "0xd86cadb414171d1155aa88076504763f7de32805",
+        536548.183802,
+        0.0
+      ],
+      [
+        "0xb4807865a786e9e9e26e6a9610f2078e7fc507fb",
+        519714.804556,
+        0.0
+      ],
+      [
+        "0x1985ea6e9c68e1c272d8209f3b478ac2fdb25c87",
+        515318.380877,
+        0.0
+      ],
+      [
+        "0x50630a1454dda66c8d25d0bd9001349d8b858958",
+        23397.609797,
+        0.0
+      ],
+      [
+        "0xa54dc4425190570cb5c841adf445bbecf3b249f5",
+        19877.507838,
+        0.0
+      ],
+      [
+        "0xff2f21a01f6cae3c78afd6f522f92ab88347cbc8",
+        15000.0,
+        0.0
+      ],
+      [
+        "0x30c544045dac14bb74829afce1597c6b6ccced28",
+        12059.436209,
+        30494.328214
+      ],
+      [
+        "0xa08dac76e6b8f940895d71e0ddef56964bbfe153",
+        8240.00024,
+        0.0
+      ],
+      [
+        "0x7b5584426b0ee760f018b37eff2e19a8130ba52b",
+        7628.780037,
+        0.0
+      ],
+      [
+        "0x73b4c9335fa239f9c6df3d28d5bf5d3cdf4de736",
+        6702.403785,
+        0.0
+      ],
+      [
+        "0x650615b1099fd50cc80698c8fbb70b4a292e554f",
+        4855.6831,
+        0.0
+      ],
+      [
+        "0x7718d1ce3dd0c17d0d2087e32c36eaf5f59d27e6",
+        3447.15,
+        0.0
+      ],
+      [
+        "0xb25fd1db465e0ee4d81babee536fa7bc49da7814",
+        3446.213179,
+        0.0
+      ],
+      [
+        "0x898ace94baced8eb55bb88bf8e3775d326b19a4a",
+        3190.4318,
+        0.0
+      ],
+      [
+        "0x5c598596b5d600d9cb3f0bc462a3a7dc51ab728d",
+        3105.1413,
+        0.0
+      ],
+      [
+        "0xc1ab11eecb4a6434a10b4f6c6d2281de2f11429e",
+        3081.2668,
+        0.0
+      ],
+      [
+        "0x07896a94364d7121a6f92ed21092e984e09f128c",
+        2658.264813,
+        0.0
+      ],
+      [
+        "0xa787777b2cf08284358b0cd630db8d9bc52664cf",
+        2566.980752,
+        0.0
+      ],
+      [
+        "0x79ec7f63761c7b98cc19a7240bc09c00c7af5632",
+        2424.95,
+        0.0
+      ],
+      [
+        "0xd719ffe304878a10c84881059ffe030072bdeeca",
+        2186.75,
+        0.0
+      ],
+      [
+        "0xf1073e5c9c15389490a0e3beb14861cfc4e7b588",
+        1848.150194,
+        0.0
+      ],
+      [
+        "0x0a334dd651d81912bee2d05a997a4b1e70596f87",
+        1549.210852,
+        0.0
+      ],
+      [
+        "0xca0aa070354ebbb91ee2c29c69e299a496652d7a",
+        1180.894901,
+        0.0
+      ],
+      [
+        "0xbaf10de3dd737bb75324f8559063be3c69b57b14",
+        1173.650447,
+        0.0
+      ]
+    ]
+  },
+  "facilitator_like_submitters": [
+    "0x103040545ac5031a11e8c03dd11324c7333a13c7",
+    "0x14fda13953fc30428938e6bf950d036e77214e52",
+    "0x2a89407a98a0732b7fd578c4e156b7166540eb5a",
+    "0x42dd53906b49c202e8e934b059dc019e04634b00",
+    "0x4c934c63c786157fefd990945b25ea60a0fb0205",
+    "0x59b7ebc67a3d627fabaf06768c818638452ae704",
+    "0x625d8a65134079f8faaac39a7947c73d93c6ac39",
+    "0x64cc42b1ce598e3abcfbb64df4688521ddbf1f0a",
+    "0x67b9ce703d9ce658d7c4ac3c289cea112fe662af",
+    "0x68a96f41ff1e9f2e7b591a931a4ad224e7c07863",
+    "0x68efafe862d89ce66dd3d7b07d5a3747a0871164",
+    "0x772003a2e9c2ccc8af956870a37a66f64f8cec38",
+    "0x7f72a02c682e908d46a5677fe937cdb612d94a3b",
+    "0x8cda367232d78c067116e3260da881d2da8ffa39",
+    "0x8f5cb67b49555e614892b7233cfddebfb746e531",
+    "0x93f6601151ccb08f333ab4b1cccfb1e188c0be44",
+    "0x950158b9be56b9893c77089e129b73ea62bbc677",
+    "0x97acce27d5069544480bde0f04d9f47d7422a016",
+    "0xa32ccda98ba7529705a059bd2d213da8de10d101",
+    "0xb2bd29925cbbcea7628279c91945ca5b98bf371b",
+    "0xb3ed726d24af7c3ffbf04219a78506170155641b",
+    "0xb87e1a2cc2b4643f2892768e80e41167f17c5860",
+    "0xc8d6bac2ff7182d22c4f316bfff9f713261a6cec",
+    "0xca5e87f82b3fa093800e6ad67d621a427d79c70d",
+    "0xe72f0af4cf41356d433723547f1412ca27fbb1b8",
+    "0xe74817f4cdc15844314812b2271276e64e890fae"
+  ],
+  "submitter_profiles": [
+    {
+      "address": "0xc8d6bac2ff7182d22c4f316bfff9f713261a6cec",
+      "payments_in_sample": 1246,
+      "median_usdc": 0.054,
+      "distinct_payTo": 487,
+      "x402_like": true
+    },
+    {
+      "address": "0x7f72a02c682e908d46a5677fe937cdb612d94a3b",
+      "payments_in_sample": 75,
+      "median_usdc": 0.001,
+      "distinct_payTo": 1,
+      "x402_like": true
+    },
+    {
+      "address": "0x950158b9be56b9893c77089e129b73ea62bbc677",
+      "payments_in_sample": 56,
+      "median_usdc": 0.01,
+      "distinct_payTo": 1,
+      "x402_like": true
+    },
+    {
+      "address": "0x14fda13953fc30428938e6bf950d036e77214e52",
+      "payments_in_sample": 47,
+      "median_usdc": 0.01,
+      "distinct_payTo": 18,
+      "x402_like": true
+    },
+    {
+      "address": "0xca5e87f82b3fa093800e6ad67d621a427d79c70d",
+      "payments_in_sample": 43,
+      "median_usdc": 0.0126,
+      "distinct_payTo": 18,
+      "x402_like": true
+    },
+    {
+      "address": "0x64cc42b1ce598e3abcfbb64df4688521ddbf1f0a",
+      "payments_in_sample": 41,
+      "median_usdc": 0.01,
+      "distinct_payTo": 17,
+      "x402_like": true
+    },
+    {
+      "address": "0x68efafe862d89ce66dd3d7b07d5a3747a0871164",
+      "payments_in_sample": 40,
+      "median_usdc": 0.02,
+      "distinct_payTo": 11,
+      "x402_like": true
+    },
+    {
+      "address": "0xe72f0af4cf41356d433723547f1412ca27fbb1b8",
+      "payments_in_sample": 38,
+      "median_usdc": 0.01,
+      "distinct_payTo": 14,
+      "x402_like": true
+    },
+    {
+      "address": "0x625d8a65134079f8faaac39a7947c73d93c6ac39",
+      "payments_in_sample": 37,
+      "median_usdc": 0.01,
+      "distinct_payTo": 13,
+      "x402_like": true
+    },
+    {
+      "address": "0x4c934c63c786157fefd990945b25ea60a0fb0205",
+      "payments_in_sample": 37,
+      "median_usdc": 0.01,
+      "distinct_payTo": 11,
+      "x402_like": true
+    },
+    {
+      "address": "0x68a96f41ff1e9f2e7b591a931a4ad224e7c07863",
+      "payments_in_sample": 36,
+      "median_usdc": 0.01,
+      "distinct_payTo": 14,
+      "x402_like": true
+    },
+    {
+      "address": "0xa32ccda98ba7529705a059bd2d213da8de10d101",
+      "payments_in_sample": 36,
+      "median_usdc": 0.01,
+      "distinct_payTo": 16,
+      "x402_like": true
+    },
+    {
+      "address": "0x8f5cb67b49555e614892b7233cfddebfb746e531",
+      "payments_in_sample": 36,
+      "median_usdc": 0.01,
+      "distinct_payTo": 18,
+      "x402_like": true
+    },
+    {
+      "address": "0xe74817f4cdc15844314812b2271276e64e890fae",
+      "payments_in_sample": 36,
+      "median_usdc": 0.01,
+      "distinct_payTo": 12,
+      "x402_like": true
+    },
+    {
+      "address": "0x97acce27d5069544480bde0f04d9f47d7422a016",
+      "payments_in_sample": 36,
+      "median_usdc": 0.018273499999999998,
+      "distinct_payTo": 11,
+      "x402_like": true
+    }
+  ],
+  "big_payers_classified": [
+    {
+      "address": "0xd34ea7278e6bd48defe656bbe263aef11101469c",
+      "usdc": 583984.433867,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 1,
+      "median_payment": 0.05,
+      "submitters": [
+        "0x2a89407a98a0732b7fd578c4e156b7166540eb5a"
+      ]
+    },
+    {
+      "address": "0xd86cadb414171d1155aa88076504763f7de32805",
+      "usdc": 536548.183802,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 1,
+      "median_payment": 0.05,
+      "submitters": [
+        "0x14fda13953fc30428938e6bf950d036e77214e52"
+      ]
+    },
+    {
+      "address": "0xb4807865a786e9e9e26e6a9610f2078e7fc507fb",
+      "usdc": 519714.804556,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 1,
+      "median_payment": 0.05,
+      "submitters": [
+        "0xa32ccda98ba7529705a059bd2d213da8de10d101"
+      ]
+    },
+    {
+      "address": "0x1985ea6e9c68e1c272d8209f3b478ac2fdb25c87",
+      "usdc": 515318.380877,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 1,
+      "median_payment": 0.05,
+      "submitters": [
+        "0xe74817f4cdc15844314812b2271276e64e890fae"
+      ]
+    },
+    {
+      "address": "0x50630a1454dda66c8d25d0bd9001349d8b858958",
+      "usdc": 23397.609797,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 4,
+      "median_payment": 10.0,
+      "submitters": [
+        "0xa9236f4950001355455a5b016a25fa27b947c9ac"
+      ]
+    },
+    {
+      "address": "0xa54dc4425190570cb5c841adf445bbecf3b249f5",
+      "usdc": 19877.507838,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 26,
+      "median_payment": 10432.312819,
+      "submitters": [
+        "0x734713ed06d87b623c11ded486cfcec5728cd691"
+      ]
+    },
+    {
+      "address": "0xff2f21a01f6cae3c78afd6f522f92ab88347cbc8",
+      "usdc": 15000.0,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 5000.0,
+      "submitters": [
+        "0x23ef604850b11edc2bd0ef02c0981082c1a52431"
+      ]
+    },
+    {
+      "address": "0x30c544045dac14bb74829afce1597c6b6ccced28",
+      "usdc": 12059.436209,
+      "in_aave": 30494.328214,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 100.0,
+      "submitters": [
+        "0xe1d186458a8d70339882a60de33193834eba1b19"
+      ]
+    },
+    {
+      "address": "0xa08dac76e6b8f940895d71e0ddef56964bbfe153",
+      "usdc": 8240.00024,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 5701.156385,
+      "submitters": [
+        "0xc99d6e641fe5fc285564943d1869f3c821eea8f4"
+      ]
+    },
+    {
+      "address": "0x7b5584426b0ee760f018b37eff2e19a8130ba52b",
+      "usdc": 7628.780037,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 102,
+      "median_payment": 2.5,
+      "submitters": [
+        "0x9f0237b4e1f108bde3f76876eaff6f3abb721bcb"
+      ]
+    },
+    {
+      "address": "0x73b4c9335fa239f9c6df3d28d5bf5d3cdf4de736",
+      "usdc": 6702.403785,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 1,
+      "median_payment": 1.0,
+      "submitters": [
+        "0x68efafe862d89ce66dd3d7b07d5a3747a0871164"
+      ]
+    },
+    {
+      "address": "0x650615b1099fd50cc80698c8fbb70b4a292e554f",
+      "usdc": 4855.6831,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 630.0,
+      "submitters": [
+        "0x816cbd807290474cb939192185b08fb42da79f86"
+      ]
+    },
+    {
+      "address": "0x7718d1ce3dd0c17d0d2087e32c36eaf5f59d27e6",
+      "usdc": 3447.15,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 25,
+      "median_payment": 3.75,
+      "submitters": [
+        "0x4ceff75b53d16b5a6dc929443998713d72b275ee"
+      ]
+    },
+    {
+      "address": "0xb25fd1db465e0ee4d81babee536fa7bc49da7814",
+      "usdc": 3446.213179,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 52.5,
+      "submitters": [
+        "0xc5a19358c305f17200613f45171fff0790b68a34"
+      ]
+    },
+    {
+      "address": "0x898ace94baced8eb55bb88bf8e3775d326b19a4a",
+      "usdc": 3190.4318,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 630.0,
+      "submitters": [
+        "0x6d7b5c7b01e0098b2f3618374db65c1e8adeaade"
+      ]
+    },
+    {
+      "address": "0x5c598596b5d600d9cb3f0bc462a3a7dc51ab728d",
+      "usdc": 3105.1413,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 630.0,
+      "submitters": [
+        "0xfdf61c5d2c656242567f308bcf907f51002861a8"
+      ]
+    },
+    {
+      "address": "0xc1ab11eecb4a6434a10b4f6c6d2281de2f11429e",
+      "usdc": 3081.2668,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 4,
+      "median_payment": 105.0,
+      "submitters": [
+        "0x27406a1ced06d7b511257a3791345f123c71f504",
+        "0x5823d5be3b7d9eb402ea8f549b4b539fd3559b21",
+        "0x731130aa18d2ef8ceb68b12e3854151a0f02c90b"
+      ]
+    },
+    {
+      "address": "0x07896a94364d7121a6f92ed21092e984e09f128c",
+      "usdc": 2658.264813,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 210.0,
+      "submitters": [
+        "0xc2345fc9a0992701e0c52d6f1226a071b9801c38"
+      ]
+    },
+    {
+      "address": "0xa787777b2cf08284358b0cd630db8d9bc52664cf",
+      "usdc": 2566.980752,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 48,
+      "median_payment": 10.5,
+      "submitters": [
+        "0x127ea6d11fa6671e8406312e6d888bfebfa5b24a",
+        "0xd02b8b75dc6973d9f8ef5f19e2696ed65599c379",
+        "0xfec0507a38a61497a79fb3874d02a1869d1cc394"
+      ]
+    },
+    {
+      "address": "0x79ec7f63761c7b98cc19a7240bc09c00c7af5632",
+      "usdc": 2424.95,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 18,
+      "median_payment": 10.5,
+      "submitters": [
+        "0x124154f69bc390b3d9fddc5b2c224d31efa90720",
+        "0x40555647f03d44b09c918aed5e9df5d558e78ed1",
+        "0x6c2042de7c8e9ecfc1c34f18058206b06ae46aed"
+      ]
+    },
+    {
+      "address": "0xd719ffe304878a10c84881059ffe030072bdeeca",
+      "usdc": 2186.75,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 5,
+      "median_payment": 0.01,
+      "submitters": [
+        "0x4c934c63c786157fefd990945b25ea60a0fb0205",
+        "0x625d8a65134079f8faaac39a7947c73d93c6ac39",
+        "0x8f5cb67b49555e614892b7233cfddebfb746e531"
+      ]
+    },
+    {
+      "address": "0xf1073e5c9c15389490a0e3beb14861cfc4e7b588",
+      "usdc": 1848.150194,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 102.0,
+      "submitters": [
+        "0xc99d6e641fe5fc285564943d1869f3c821eea8f4"
+      ]
+    },
+    {
+      "address": "0x0a334dd651d81912bee2d05a997a4b1e70596f87",
+      "usdc": 1549.210852,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 2,
+      "median_payment": 800.0,
+      "submitters": [
+        "0xe7488e7f5c60bfa81d38965c02b4cc5aa6249a11"
+      ]
+    },
+    {
+      "address": "0xca0aa070354ebbb91ee2c29c69e299a496652d7a",
+      "usdc": 1180.894901,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 12,
+      "median_payment": 0.546372,
+      "submitters": [
+        "0x14fda13953fc30428938e6bf950d036e77214e52",
+        "0x68a96f41ff1e9f2e7b591a931a4ad224e7c07863",
+        "0x97acce27d5069544480bde0f04d9f47d7422a016"
+      ]
+    },
+    {
+      "address": "0xbaf10de3dd737bb75324f8559063be3c69b57b14",
+      "usdc": 1173.650447,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 7,
+      "median_payment": 21.0,
+      "submitters": [
+        "0x1cb5897e8bf4c995ef1d88604b041683ed05c0e2",
+        "0x2c2288644710addb7f911de5bcc0ae0a91451f1c",
+        "0xc84ba98659a5bcbfbb7104677abd2f7429610cb3"
+      ]
+    },
+    {
+      "address": "0xad3e43e4f7bdcba0af691c0813142e6e310b8159",
+      "usdc": 1143.729663,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 21.0,
+      "submitters": [
+        "0xbcc0eeca3e474e895b5a1ac1485f5e756df3614b"
+      ]
+    },
+    {
+      "address": "0x5b9525fbb9786ae9bae7ba08aa815078ce35b481",
+      "usdc": 1134.045017,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 550.0,
+      "submitters": [
+        "0x46616a055e7e0e059307a313a9d345e050a493fd"
+      ]
+    },
+    {
+      "address": "0x4ed83dc70c9692bf9cd63a4a90a26fe83b10de2b",
+      "usdc": 1075.347584,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 3001.5,
+      "submitters": [
+        "0xe7488e7f5c60bfa81d38965c02b4cc5aa6249a11"
+      ]
+    },
+    {
+      "address": "0x98978c8926ac59325b74c7070d9b71fe8d8de042",
+      "usdc": 1031.522518,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 12,
+      "median_payment": 0.01,
+      "submitters": [
+        "0x14fda13953fc30428938e6bf950d036e77214e52",
+        "0x4c934c63c786157fefd990945b25ea60a0fb0205",
+        "0x625d8a65134079f8faaac39a7947c73d93c6ac39"
+      ]
+    },
+    {
+      "address": "0xdc1be6f905ea23a6cfd5fb35b12667d9a0a2ddcc",
+      "usdc": 846.093757,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 5.0,
+      "submitters": [
+        "0x96dea7588a8c31908f1571a39cd1dfffd227249b"
+      ]
+    },
+    {
+      "address": "0x894754a240cd4b213287857b3483c3a9d48894f0",
+      "usdc": 802.608292,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 10,
+      "median_payment": 10.5,
+      "submitters": [
+        "0x2fa97ed6103b0956cef076f4f984631fa04a16de",
+        "0x817a7b98fdcd5dc041b47a3a264f5ba7b9e163b5",
+        "0xa2b7e460945e58876ad30abf51f79d18d4082c9a"
+      ]
+    },
+    {
+      "address": "0xa63dfb925a27a448c9b522d3b9efcbd2b40fa19a",
+      "usdc": 760.00004,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 6000.0,
+      "submitters": [
+        "0xc99d6e641fe5fc285564943d1869f3c821eea8f4"
+      ]
+    },
+    {
+      "address": "0x3b3b8c66d39225bb8f2c83be92d8c3fbf38b10fb",
+      "usdc": 731.65,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 2,
+      "median_payment": 15.75,
+      "submitters": [
+        "0xa8e8cb99874a65869eb4273166659b88a4736668",
+        "0xc246c1c6fac6ec84e0242c21ad72e5373012c595"
+      ]
+    },
+    {
+      "address": "0x111dde41d964f28506ae13dfd9ec38ebb22306e5",
+      "usdc": 548.779731,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 20.0,
+      "submitters": [
+        "0xa9236f4950001355455a5b016a25fa27b947c9ac"
+      ]
+    },
+    {
+      "address": "0x8a69a52b3444ca81b18d06d4158feac79e16f390",
+      "usdc": 537.8279,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 2,
+      "median_payment": 0.14500000000000002,
+      "submitters": [
+        "0x625d8a65134079f8faaac39a7947c73d93c6ac39",
+        "0x772003a2e9c2ccc8af956870a37a66f64f8cec38"
+      ]
+    },
+    {
+      "address": "0x4bea629d95522b9c60bb26b2ab90ab40c3da1ce7",
+      "usdc": 431.648905,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 11,
+      "median_payment": 0.002,
+      "submitters": [
+        "0x67b9ce703d9ce658d7c4ac3c289cea112fe662af",
+        "0x97acce27d5069544480bde0f04d9f47d7422a016",
+        "0xb87e1a2cc2b4643f2892768e80e41167f17c5860"
+      ]
+    },
+    {
+      "address": "0xc95e9973005bb18cd36e82cb0ad1903ad448213e",
+      "usdc": 400.002604,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 255.0,
+      "submitters": [
+        "0x96dea7588a8c31908f1571a39cd1dfffd227249b"
+      ]
+    },
+    {
+      "address": "0x28514f1f3d73c6676440a560ee750b43f2094292",
+      "usdc": 392.119307,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 700.0,
+      "submitters": [
+        "0xe8a9701de65ffdaa93ccbe2eae88bfb6ede9c31b"
+      ]
+    },
+    {
+      "address": "0x88e52329bce56bf378720fd9668e6d174491d84b",
+      "usdc": 373.581962,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 221,
+      "median_payment": 0.001,
+      "submitters": [
+        "0x1127cfef5259dcaaf107f878b37840aeb6bce628"
+      ]
+    },
+    {
+      "address": "0xa17c2307ac1bdfe8fb71907b13951060841e60a9",
+      "usdc": 356.796871,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 3,
+      "median_payment": 10.5,
+      "submitters": [
+        "0x12ba4a6d3abd7adb26ac526c6daca8ee9ce26b61",
+        "0x53e7eb396eb6001af88010147c7e5951989dbd10",
+        "0xa0706613b410082f2346913eaf2eec503cd695e0"
+      ]
+    },
+    {
+      "address": "0xa34b19863e7b1b58e707c3a6bfbaa62f0fcca97f",
+      "usdc": 342.527856,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 25.0,
+      "submitters": [
+        "0x2d3faeac23567d32b249b2325689f6f76dda4a28"
+      ]
+    },
+    {
+      "address": "0xa7b7646045cbac71da28803d94c72f282a28ac11",
+      "usdc": 298.5009,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 7,
+      "median_payment": 4.5,
+      "submitters": [
+        "0x68a96f41ff1e9f2e7b591a931a4ad224e7c07863",
+        "0x97acce27d5069544480bde0f04d9f47d7422a016",
+        "0xb87e1a2cc2b4643f2892768e80e41167f17c5860"
+      ]
+    },
+    {
+      "address": "0x4bfb5ca5dbedebd6578cdd48ec9a446dd5310c88",
+      "usdc": 288.919152,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 4,
+      "median_payment": 10.5,
+      "submitters": [
+        "0x62880f82e217279eaa30042b9528c761ec9a8b49",
+        "0x9ce1430204e9e687aecdbb5712735bcd776ffd1c",
+        "0xe9e4eba74c4d465910de0c0d6db63c6431c01963"
+      ]
+    },
+    {
+      "address": "0x76b74337d93dbcb811fcf2dab4a57db2b7058389",
+      "usdc": 287.825063,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 10.5,
+      "submitters": [
+        "0x4e071a2be328c252e564388a7d6732c50106cf7c"
+      ]
+    },
+    {
+      "address": "0x1cfffac9aa5590338f2650f1461b70feddad0fcb",
+      "usdc": 277.967509,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 260.0,
+      "submitters": [
+        "0x3210d7b21bfe1083c9dddbe17e8f947c9029a584"
+      ]
+    },
+    {
+      "address": "0x2e8b62b3d4d2a60b8d0b629281ca034840fd8b85",
+      "usdc": 260.175747,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 1.05201,
+      "submitters": [
+        "0x0c90fa28fa0cd002a6eb42167a929e7f3987f70e"
+      ]
+    },
+    {
+      "address": "0x011f4fab145210f8bde8ec77cb360cea0949e262",
+      "usdc": 255.0,
+      "in_aave": 1.1074,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 1.0,
+      "submitters": [
+        "0x4ef064b2241201ff4a8ae9ff2cdf34502d70af9a"
+      ]
+    },
+    {
+      "address": "0x8cfa8ba17e5ddf9710a5e02de6c762abb5d0be85",
+      "usdc": 233.100711,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 10.5,
+      "submitters": [
+        "0xf11b75463b4f4ebc43b380d5b893521ca3b7db94"
+      ]
+    },
+    {
+      "address": "0xa520c4706ddac043709cb2ac772df117175eeca4",
+      "usdc": 225.015566,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 3,
+      "median_payment": 10.5,
+      "submitters": [
+        "0x1c064cb515cf602a1641fa0f5d89169e26c27baa",
+        "0x8e4de63926678e2bb4cd5b327663444e82f498c0",
+        "0xda2dc71e94c9d5573b3c7ae384f989950777f5ea"
+      ]
+    },
+    {
+      "address": "0x6fafb2af65ae78a7b677173df18d7ecf164409f3",
+      "usdc": 225.0,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 14,
+      "median_payment": 0.6,
+      "submitters": [
+        "0x14fda13953fc30428938e6bf950d036e77214e52",
+        "0x8f5cb67b49555e614892b7233cfddebfb746e531",
+        "0x93f6601151ccb08f333ab4b1cccfb1e188c0be44"
+      ]
+    },
+    {
+      "address": "0xd8ddb8643625019e478f70fc65a69bd8fb41ef58",
+      "usdc": 222.458892,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 10.5,
+      "submitters": [
+        "0xaf65ec1daab7971630b3744f75ce64d2c5bad790"
+      ]
+    },
+    {
+      "address": "0x079e600784adb2a46ebc41d0535a967050c1abd3",
+      "usdc": 218.82861,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 3.0,
+      "submitters": [
+        "0x4b4cd54efcc272572ad878ca64898232a4218d40"
+      ]
+    },
+    {
+      "address": "0xdf049f0490fc6bf2162db7c9c0cdbb79c578018e",
+      "usdc": 205.63613,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 3,
+      "median_payment": 25.0,
+      "submitters": [
+        "0x23ef604850b11edc2bd0ef02c0981082c1a52431",
+        "0xe528637bcc501a587a1bec2beebc8f92942fc028"
+      ]
+    },
+    {
+      "address": "0x02b43334f675e02636816e6f5c0ec6072be2df8c",
+      "usdc": 199.816803,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 1,
+      "median_payment": 0.02,
+      "submitters": [
+        "0x42dd53906b49c202e8e934b059dc019e04634b00"
+      ]
+    },
+    {
+      "address": "0xe29b17ad87b25d6ad0d560469c4718c7c30422ff",
+      "usdc": 196.036408,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 10.5,
+      "submitters": [
+        "0xeb08e3c169a247952d8b02c499ebc3cfcd469f9c"
+      ]
+    },
+    {
+      "address": "0x18c6903d1f305349656dc19d0664455e0eb2990a",
+      "usdc": 190.394464,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 60.0,
+      "submitters": [
+        "0x50eead33b48f7e80023c43984ca1b53626555252"
+      ]
+    },
+    {
+      "address": "0x752f3f8641620b2e1cd586835425ea9b1aafe6a4",
+      "usdc": 186.568276,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 7,
+      "median_payment": 23.155736,
+      "submitters": [
+        "0x3210d7b21bfe1083c9dddbe17e8f947c9029a584"
+      ]
+    },
+    {
+      "address": "0xb09c8ec5e67f7ce8c8bbb27eab30ef054f56771d",
+      "usdc": 180.810927,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 7.6,
+      "submitters": [
+        "0x96dea7588a8c31908f1571a39cd1dfffd227249b"
+      ]
+    },
+    {
+      "address": "0x6a1637683f11e0bcb14fbad60c651c7e96fc3b5e",
+      "usdc": 175.102803,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 14,
+      "median_payment": 5.0,
+      "submitters": [
+        "0x2a89407a98a0732b7fd578c4e156b7166540eb5a",
+        "0x8cda367232d78c067116e3260da881d2da8ffa39",
+        "0xa32ccda98ba7529705a059bd2d213da8de10d101"
+      ]
+    },
+    {
+      "address": "0x04bbecbfff892c5fbbd7eafa56ef208ec7d5ff08",
+      "usdc": 175.045889,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 52.5,
+      "submitters": [
+        "0xbb85bbe93ad79c7d133206c6eeba735df67f6582"
+      ]
+    },
+    {
+      "address": "0xeb19110881f959878e29809f227eee798342e620",
+      "usdc": 174.652923,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 2,
+      "median_payment": 21.525,
+      "submitters": [
+        "0xb7fe28878eacb0b39c3db36f78271a916c7b9d80",
+        "0xfbba03473b1cfef30f76e29546669f8132f9dd90"
+      ]
+    },
+    {
+      "address": "0x0498e5588065ed6d3e9573f1051a848675fb792b",
+      "usdc": 172.554466,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 6.0,
+      "submitters": [
+        "0xc99d6e641fe5fc285564943d1869f3c821eea8f4"
+      ]
+    },
+    {
+      "address": "0x2567cb81cb6352fe8480b7bac0720fdfa0ca5c72",
+      "usdc": 169.326414,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 3,
+      "median_payment": 76.257619,
+      "submitters": [
+        "0xf70da97812cb96acdf810712aa562db8dfa3dbef"
+      ]
+    },
+    {
+      "address": "0x580eeb168b3ae99d7cb441674c2690c62d9c1550",
+      "usdc": 166.860306,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 14,
+      "median_payment": 10.5,
+      "submitters": [
+        "0x58f63febb52ba5aee94013182b38137148524517",
+        "0x78aa61e5d0c25604724cb99f587831f592ce3667",
+        "0x79e1519a797bdd5c7f986aac90a0b230e8d72ea7"
+      ]
+    },
+    {
+      "address": "0x5bae2b7de253fe4e2661bae5d6252c0dfd0f5c97",
+      "usdc": 166.529153,
+      "in_aave": 0.33506,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 21.0,
+      "submitters": [
+        "0xe528637bcc501a587a1bec2beebc8f92942fc028"
+      ]
+    },
+    {
+      "address": "0x04b7c4e5df121ea6d4c4d6bc38e10e3d053c2475",
+      "usdc": 164.170412,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 743.250485,
+      "submitters": [
+        "0xc99d6e641fe5fc285564943d1869f3c821eea8f4"
+      ]
+    },
+    {
+      "address": "0x12c9a08652ee6545510e92d70586e2499b7b091e",
+      "usdc": 164.04146,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 2,
+      "median_payment": 6.0,
+      "submitters": [
+        "0x42dd53906b49c202e8e934b059dc019e04634b00",
+        "0x59b7ebc67a3d627fabaf06768c818638452ae704"
+      ]
+    },
+    {
+      "address": "0x475436ef0a97286081d0fc2a762ad6296949327b",
+      "usdc": 155.169049,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 6,
+      "median_payment": 25.204517,
+      "submitters": [
+        "0x3210d7b21bfe1083c9dddbe17e8f947c9029a584"
+      ]
+    },
+    {
+      "address": "0xac26b6d7d9e6980012d5619c8665d5d8f0b1255b",
+      "usdc": 153.18045,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 3,
+      "median_payment": 0.01,
+      "submitters": [
+        "0x7f72a02c682e908d46a5677fe937cdb612d94a3b"
+      ]
+    },
+    {
+      "address": "0xe853bb8d09e52e952ff8e2872c9b27cc9b46f250",
+      "usdc": 148.379847,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 8742.166072,
+      "submitters": [
+        "0xc99d6e641fe5fc285564943d1869f3c821eea8f4"
+      ]
+    },
+    {
+      "address": "0xdeafcd44c2509ac1ac6ea431a8b8701b337cb943",
+      "usdc": 147.986826,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 5,
+      "median_payment": 0.06,
+      "submitters": [
+        "0x64cc42b1ce598e3abcfbb64df4688521ddbf1f0a",
+        "0x68efafe862d89ce66dd3d7b07d5a3747a0871164",
+        "0x772003a2e9c2ccc8af956870a37a66f64f8cec38"
+      ]
+    },
+    {
+      "address": "0x0fcbd49bf5faa1a132835e66ecf065bedd5a8774",
+      "usdc": 137.819493,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 1,
+      "median_payment": 0.03,
+      "submitters": [
+        "0xe74817f4cdc15844314812b2271276e64e890fae"
+      ]
+    },
+    {
+      "address": "0x60797741cc3bf6899a68cb66dd8157199b8260d3",
+      "usdc": 134.02812,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 1,
+      "median_payment": 4.0,
+      "submitters": [
+        "0x67b9ce703d9ce658d7c4ac3c289cea112fe662af"
+      ]
+    },
+    {
+      "address": "0xc64e2b862ca204708f7c207ee55b72b1eb214860",
+      "usdc": 129.765873,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 5.01,
+      "submitters": [
+        "0x655a77687a0510e86ba0716a948c78ae688d1d71"
+      ]
+    },
+    {
+      "address": "0xc26ab79b21827b54f9c8732c8e5cdc4b370f3b7e",
+      "usdc": 128.01403,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 1,
+      "median_payment": 0.1,
+      "submitters": [
+        "0xb2bd29925cbbcea7628279c91945ca5b98bf371b"
+      ]
+    },
+    {
+      "address": "0xc9c7b38c0942914fc8ea12063bc92dcd3b581670",
+      "usdc": 125.912914,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 21,
+      "median_payment": 0.005,
+      "submitters": [
+        "0x4c934c63c786157fefd990945b25ea60a0fb0205",
+        "0x68efafe862d89ce66dd3d7b07d5a3747a0871164",
+        "0xe72f0af4cf41356d433723547f1412ca27fbb1b8"
+      ]
+    },
+    {
+      "address": "0xc43b42ed396b2ef145350d71a605be8f86ec0904",
+      "usdc": 123.032703,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 2,
+      "median_payment": 3.0,
+      "submitters": [
+        "0x93f6601151ccb08f333ab4b1cccfb1e188c0be44",
+        "0xca5e87f82b3fa093800e6ad67d621a427d79c70d"
+      ]
+    },
+    {
+      "address": "0x088ada98609c43da841799b91a66acf62f2e2fac",
+      "usdc": 121.917327,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 31.5,
+      "submitters": [
+        "0x41739b77a8e96367ecfd9a940c1051e4a2312665"
+      ]
+    },
+    {
+      "address": "0xb718ff136e2383e2c878d36f3a3ca038f660aa64",
+      "usdc": 120.506833,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 10.791,
+      "submitters": [
+        "0x2a89407a98a0732b7fd578c4e156b7166540eb5a"
+      ]
+    },
+    {
+      "address": "0x27abcddd44c4959ac729d080703e677f13a3248c",
+      "usdc": 116.860602,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 312,
+      "median_payment": 0.007,
+      "submitters": [
+        "0x14fda13953fc30428938e6bf950d036e77214e52",
+        "0x67b9ce703d9ce658d7c4ac3c289cea112fe662af",
+        "0x68a96f41ff1e9f2e7b591a931a4ad224e7c07863"
+      ]
+    },
+    {
+      "address": "0x8098c3062a376dfb508cb9cb2314493201f0d783",
+      "usdc": 107.535262,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 9,
+      "median_payment": 2.5,
+      "submitters": [
+        "0x4c934c63c786157fefd990945b25ea60a0fb0205",
+        "0x8cda367232d78c067116e3260da881d2da8ffa39",
+        "0xe74817f4cdc15844314812b2271276e64e890fae"
+      ]
+    },
+    {
+      "address": "0xf465d8adf4071a2fbe1804c269f99da0c12e173c",
+      "usdc": 102.203581,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 405.0,
+      "submitters": [
+        "0xc99d6e641fe5fc285564943d1869f3c821eea8f4"
+      ]
+    },
+    {
+      "address": "0xf5760739832cd021de3a30b2eaf5050005e26592",
+      "usdc": 101.190114,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 11,
+      "median_payment": 0.1,
+      "submitters": [
+        "0x14fda13953fc30428938e6bf950d036e77214e52",
+        "0x42dd53906b49c202e8e934b059dc019e04634b00",
+        "0x8f5cb67b49555e614892b7233cfddebfb746e531"
+      ]
+    },
+    {
+      "address": "0x47e5499c44ecf8c78da82b9b64183df1e301a0b4",
+      "usdc": 100.744,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 23,
+      "median_payment": 0.001,
+      "submitters": [
+        "0x42dd53906b49c202e8e934b059dc019e04634b00",
+        "0x7c766f5fd9ab3dc09acad5ecfacc99c4781efe29"
+      ]
+    },
+    {
+      "address": "0x000000000040f45bb6722481915df68fd8c4e5cb",
+      "usdc": 99.418,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 649,
+      "median_payment": 0.007,
+      "submitters": [
+        "0x2a89407a98a0732b7fd578c4e156b7166540eb5a",
+        "0xb87e1a2cc2b4643f2892768e80e41167f17c5860"
+      ]
+    },
+    {
+      "address": "0x72c573fd7de6a3dec3035d48db938ebf733d159b",
+      "usdc": 98.705,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 158,
+      "median_payment": 0.353,
+      "submitters": [
+        "0x2a89407a98a0732b7fd578c4e156b7166540eb5a",
+        "0x64cc42b1ce598e3abcfbb64df4688521ddbf1f0a",
+        "0x8f5cb67b49555e614892b7233cfddebfb746e531"
+      ]
+    },
+    {
+      "address": "0x0d4d5e5eab1854ebe4a4c875a0e78c2be577555c",
+      "usdc": 91.176891,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 31,
+      "median_payment": 0.014,
+      "submitters": [
+        "0x59b7ebc67a3d627fabaf06768c818638452ae704",
+        "0x67b9ce703d9ce658d7c4ac3c289cea112fe662af",
+        "0x97acce27d5069544480bde0f04d9f47d7422a016"
+      ]
+    },
+    {
+      "address": "0xfdaf0de607dcd1b181bbccd36fb832227a1db636",
+      "usdc": 90.265565,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 2,
+      "median_payment": 0.4724315,
+      "submitters": [
+        "0xe065125b386ec1494412d4bf5ebc23601f5ac2fd"
+      ]
+    },
+    {
+      "address": "0xecbf365ee6db5073c4545995a1902e5d770350d6",
+      "usdc": 89.167232,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 3,
+      "median_payment": 0.01,
+      "submitters": [
+        "0x68efafe862d89ce66dd3d7b07d5a3747a0871164",
+        "0xe72f0af4cf41356d433723547f1412ca27fbb1b8",
+        "0xe74817f4cdc15844314812b2271276e64e890fae"
+      ]
+    },
+    {
+      "address": "0x14b936a2e1e22d3c302727e49422949e46f3f59c",
+      "usdc": 83.762699,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 1,
+      "median_payment": 0.01,
+      "submitters": [
+        "0xe72f0af4cf41356d433723547f1412ca27fbb1b8"
+      ]
+    },
+    {
+      "address": "0xec7ad0baad17c88f5daae99e6a7731b2145f05e8",
+      "usdc": 82.041874,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 19,
+      "median_payment": 1.0,
+      "submitters": [
+        "0x42dd53906b49c202e8e934b059dc019e04634b00",
+        "0x68efafe862d89ce66dd3d7b07d5a3747a0871164",
+        "0x772003a2e9c2ccc8af956870a37a66f64f8cec38"
+      ]
+    },
+    {
+      "address": "0xee7e3047d2d9f6b57b04acb714e0d9c9897e60db",
+      "usdc": 79.426701,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 5.2,
+      "submitters": [
+        "0x2a59d1cc9ea16d460bf79d21455ab5ab77ed8645"
+      ]
+    },
+    {
+      "address": "0xf59a13ec52acf1134cb720ce503e5df23d72015b",
+      "usdc": 77.782602,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 10.5,
+      "submitters": [
+        "0x50470af2a6d967b439c527a45beb62eed6ede940"
+      ]
+    },
+    {
+      "address": "0x14ae239ea6da853fa987a67d61c85b56af41115f",
+      "usdc": 76.967323,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 316.17,
+      "submitters": [
+        "0xc99d6e641fe5fc285564943d1869f3c821eea8f4"
+      ]
+    },
+    {
+      "address": "0x6031551fc1fe26710fe4b20316d5dc91d9d6c2d1",
+      "usdc": 74.223939,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 73,
+      "median_payment": 0.008,
+      "submitters": [
+        "0x68a96f41ff1e9f2e7b591a931a4ad224e7c07863",
+        "0x8cda367232d78c067116e3260da881d2da8ffa39",
+        "0xb2bd29925cbbcea7628279c91945ca5b98bf371b"
+      ]
+    },
+    {
+      "address": "0x9e45c14632751ba0510f789b2eea3d6c3337d115",
+      "usdc": 72.6385,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 206,
+      "median_payment": 0.001,
+      "submitters": [
+        "0x6014a8a208dc53600af9dc8b0b49c4bfde399df6"
+      ]
+    },
+    {
+      "address": "0x38dea5c6d96e39058e604af99ab9d654ab92b054",
+      "usdc": 72.033584,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 100.0,
+      "submitters": [
+        "0x96dea7588a8c31908f1571a39cd1dfffd227249b"
+      ]
+    },
+    {
+      "address": "0x16dc6a8b299e46c205361f29bd61d99869c7b86a",
+      "usdc": 71.719549,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 25.0,
+      "submitters": [
+        "0xe4c8d5933e445e14b41585b8a57fbf3d569df887"
+      ]
+    },
+    {
+      "address": "0x6bbba640df1df8bf2e54f0e73948c7fa724df7e6",
+      "usdc": 70.351336,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 5.03,
+      "submitters": [
+        "0x07ae8551be970cb1cca11dd7a11f47ae82e70e67"
+      ]
+    },
+    {
+      "address": "0x00cf9902a0c936d5342ac076a57047a2aaefddef",
+      "usdc": 68.274631,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 5306,
+      "median_payment": 0.01,
+      "submitters": [
+        "0x64cc42b1ce598e3abcfbb64df4688521ddbf1f0a",
+        "0x772003a2e9c2ccc8af956870a37a66f64f8cec38",
+        "0xb87e1a2cc2b4643f2892768e80e41167f17c5860"
+      ]
+    },
+    {
+      "address": "0x0976809d235669f8a73dd22d6cd033680a882f96",
+      "usdc": 67.511324,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 10,
+      "median_payment": 0.1,
+      "submitters": [
+        "0x625d8a65134079f8faaac39a7947c73d93c6ac39",
+        "0x64cc42b1ce598e3abcfbb64df4688521ddbf1f0a",
+        "0xca5e87f82b3fa093800e6ad67d621a427d79c70d"
+      ]
+    },
+    {
+      "address": "0x2a3770e744aaf78fe499399e0c082fe25480b949",
+      "usdc": 67.472223,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 4,
+      "median_payment": 0.03,
+      "submitters": [
+        "0x402feee072d655b85e08f1751af9ddbcd249521f",
+        "0x4c934c63c786157fefd990945b25ea60a0fb0205",
+        "0x8cda367232d78c067116e3260da881d2da8ffa39"
+      ]
+    },
+    {
+      "address": "0x1f0567299eacca34987078275e08659be930155d",
+      "usdc": 66.533336,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 1,
+      "median_payment": 0.002,
+      "submitters": [
+        "0x8cda367232d78c067116e3260da881d2da8ffa39"
+      ]
+    },
+    {
+      "address": "0xe95b042ecb6fdb313ac80f99b3c09c545420e563",
+      "usdc": 65.932654,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 52.5,
+      "submitters": [
+        "0x9d6c4ef79c60313a3e9fa8b9cee6f7c39bceedd3"
+      ]
+    },
+    {
+      "address": "0x9b4aa64125f39cc98c76b9a3d749cf0e63f8e818",
+      "usdc": 65.488201,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 0.49,
+      "submitters": [
+        "0xf9766159ba41559b6c88acb2b55a58bfe7ea2e39"
+      ]
+    },
+    {
+      "address": "0x06eef33d2d9a23eeeda20f12b0c2bd0d554baace",
+      "usdc": 65.42,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 9,
+      "median_payment": 0.01,
+      "submitters": [
+        "0x14fda13953fc30428938e6bf950d036e77214e52",
+        "0x772003a2e9c2ccc8af956870a37a66f64f8cec38"
+      ]
+    },
+    {
+      "address": "0x384d2e761fcdd5031e5926b2e37d63d68e72451e",
+      "usdc": 63.701835,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 21.0,
+      "submitters": [
+        "0x752e611255e4f9c79467f84e4f55a02f1ff39933"
+      ]
+    },
+    {
+      "address": "0xbbcce60bfc2aa12b7661958b86bf47cef5145f5b",
+      "usdc": 63.604941,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 5000.0,
+      "submitters": [
+        "0x07ae8551be970cb1cca11dd7a11f47ae82e70e67"
+      ]
+    },
+    {
+      "address": "0xcc176a4add480e22873a4fcf8219990490f7e70a",
+      "usdc": 63.297573,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 420.0,
+      "submitters": [
+        "0xdcdaac077df909a7f9013289c2d43b1d2c44ec2f"
+      ]
+    },
+    {
+      "address": "0x83e02f8b09bfaa92f280038ea4f34f3e572bfabe",
+      "usdc": 63.000898,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 14.0,
+      "submitters": [
+        "0x46616a055e7e0e059307a313a9d345e050a493fd"
+      ]
+    },
+    {
+      "address": "0xb62173c3a953b9021bef51a18db8dc4296dbd6a5",
+      "usdc": 60.0,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 13,
+      "median_payment": 1.0,
+      "submitters": [
+        "0x42dd53906b49c202e8e934b059dc019e04634b00",
+        "0x67b9ce703d9ce658d7c4ac3c289cea112fe662af",
+        "0xa32ccda98ba7529705a059bd2d213da8de10d101"
+      ]
+    },
+    {
+      "address": "0x01dd817a7180580057f30f7375dd2486c21f6cf3",
+      "usdc": 59.844973,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 535,
+      "median_payment": 0.02,
+      "submitters": [
+        "0x68a96f41ff1e9f2e7b591a931a4ad224e7c07863",
+        "0x68efafe862d89ce66dd3d7b07d5a3747a0871164",
+        "0xb87e1a2cc2b4643f2892768e80e41167f17c5860"
+      ]
+    },
+    {
+      "address": "0xc1de81c38287c63a2a7972c439f6b1b74a54dd15",
+      "usdc": 59.188,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 6,
+      "median_payment": 0.005,
+      "submitters": [
+        "0x64cc42b1ce598e3abcfbb64df4688521ddbf1f0a",
+        "0x8cda367232d78c067116e3260da881d2da8ffa39",
+        "0xb87e1a2cc2b4643f2892768e80e41167f17c5860"
+      ]
+    },
+    {
+      "address": "0xde9e7acef4bd39e5252b584313e6ecb83225df67",
+      "usdc": 58.965157,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 9,
+      "median_payment": 0.002,
+      "submitters": [
+        "0x625d8a65134079f8faaac39a7947c73d93c6ac39",
+        "0x68efafe862d89ce66dd3d7b07d5a3747a0871164"
+      ]
+    },
+    {
+      "address": "0x133243d447026345c2b368d7ffe435dbe3c566eb",
+      "usdc": 57.78465,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 340,
+      "median_payment": 13.65,
+      "submitters": [
+        "0x69baa72b94aa4dc56947f2d1d9691892a736d2e2",
+        "0x89443fd083d38e4e9a3d331344af2702efa4ba2a",
+        "0xedfa6f280ca059111897da538bd59ad610781e12"
+      ]
+    },
+    {
+      "address": "0xf59503009be4d6b6ccb4febd0b7ca7fb6515356d",
+      "usdc": 57.5,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 6,
+      "median_payment": 2.5,
+      "submitters": [
+        "0x2a89407a98a0732b7fd578c4e156b7166540eb5a",
+        "0x68efafe862d89ce66dd3d7b07d5a3747a0871164",
+        "0xe74817f4cdc15844314812b2271276e64e890fae"
+      ]
+    },
+    {
+      "address": "0xda79a3f9c6858e4f4826008cfd71ea19bcd71415",
+      "usdc": 55.0,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 2,
+      "median_payment": 50.0,
+      "submitters": [
+        "0x1ef58790d3d1cbdecbb05b885eafa6b4f881d9e8",
+        "0x44bca59e010d52b186351cb5636cfa3105eccd6a"
+      ]
+    },
+    {
+      "address": "0x404018c829a4e5ac5f703d1eb0b942ae7852017f",
+      "usdc": 54.875,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 0.1,
+      "submitters": [
+        "0x2e8dfc2a77adcdd865a46293844c250462a1c32d"
+      ]
+    },
+    {
+      "address": "0xd02de6bdfff9c641db44fab675b69db6045668a0",
+      "usdc": 51.689448,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 2.0,
+      "submitters": [
+        "0x3c0820e2dabd5feae1fd03b78079dee15c7f83d8"
+      ]
+    },
+    {
+      "address": "0xde95feb6ae7644e627602e243e5950cf7992ff8e",
+      "usdc": 50.860003,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 7,
+      "median_payment": 0.01,
+      "submitters": [
+        "0x59b7ebc67a3d627fabaf06768c818638452ae704",
+        "0x97acce27d5069544480bde0f04d9f47d7422a016",
+        "0xca5e87f82b3fa093800e6ad67d621a427d79c70d"
+      ]
+    },
+    {
+      "address": "0x2c071b6bce8120b5d704029a9d3bcaeb48f00623",
+      "usdc": 50.0,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 55.0,
+      "submitters": [
+        "0x51f6851620688b62a01c1e648871a215ebd07a49"
+      ]
+    },
+    {
+      "address": "0x4c29ec4f680ca88d0019edbfe3a8ff5c80499494",
+      "usdc": 49.6873,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 30,
+      "median_payment": 0.005,
+      "submitters": [
+        "0x625d8a65134079f8faaac39a7947c73d93c6ac39",
+        "0x772003a2e9c2ccc8af956870a37a66f64f8cec38",
+        "0xa32ccda98ba7529705a059bd2d213da8de10d101"
+      ]
+    },
+    {
+      "address": "0xeee04234a564beae6044f6fd3408f5addcca5186",
+      "usdc": 49.2839,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 6,
+      "median_payment": 0.0001,
+      "submitters": [
+        "0x03ea198037d2415010acd560f0fb5b703b90c2d4"
+      ]
+    },
+    {
+      "address": "0x5fa3c7c02213c3ee962de14b112022a643c6afbd",
+      "usdc": 48.046164,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 8,
+      "median_payment": 2.0,
+      "submitters": [
+        "0x14fda13953fc30428938e6bf950d036e77214e52",
+        "0x42dd53906b49c202e8e934b059dc019e04634b00",
+        "0x93f6601151ccb08f333ab4b1cccfb1e188c0be44"
+      ]
+    },
+    {
+      "address": "0xfc12e2a2e1a8373015e70301b31a52247037407c",
+      "usdc": 47.854609,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 2,
+      "median_payment": 0.995,
+      "submitters": [
+        "0xf9ade35f4889c31436a44121175cde8a00e33a87"
+      ]
+    },
+    {
+      "address": "0x1bb8d159635be4277f042994ac720881df0414cd",
+      "usdc": 47.15712,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 14.7,
+      "submitters": [
+        "0x055816724907ad29e84bedc903955446077449bd"
+      ]
+    },
+    {
+      "address": "0x50933c5727b587e68a11e8c8b9504650485b5d78",
+      "usdc": 46.22925,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 6,
+      "median_payment": 0.01,
+      "submitters": [
+        "0x772003a2e9c2ccc8af956870a37a66f64f8cec38",
+        "0x8cda367232d78c067116e3260da881d2da8ffa39",
+        "0xa32ccda98ba7529705a059bd2d213da8de10d101"
+      ]
+    },
+    {
+      "address": "0x2483b0036c1cc00fa11bc837cbef846869025c04",
+      "usdc": 46.0,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 3,
+      "median_payment": 7.0,
+      "submitters": [
+        "0x2a89407a98a0732b7fd578c4e156b7166540eb5a",
+        "0x68efafe862d89ce66dd3d7b07d5a3747a0871164",
+        "0xb87e1a2cc2b4643f2892768e80e41167f17c5860"
+      ]
+    },
+    {
+      "address": "0x9c41ad54af3263ee73d58a616c5c2ee057a3e45c",
+      "usdc": 45.320602,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 8,
+      "median_payment": 0.05,
+      "submitters": [
+        "0x625d8a65134079f8faaac39a7947c73d93c6ac39",
+        "0x93f6601151ccb08f333ab4b1cccfb1e188c0be44",
+        "0xe72f0af4cf41356d433723547f1412ca27fbb1b8"
+      ]
+    },
+    {
+      "address": "0xd01f3f1e123335928aa99389edb3b9b03c748946",
+      "usdc": 45.191514,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 10.5,
+      "submitters": [
+        "0x73f4970ac84bf00633756723859efc99aa4d8367"
+      ]
+    },
+    {
+      "address": "0xd3e8a1a98c54bda5b95b06fbd83ecd71a24df29f",
+      "usdc": 44.29098,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 2,
+      "median_payment": 0.05,
+      "submitters": [
+        "0x4c934c63c786157fefd990945b25ea60a0fb0205",
+        "0xb87e1a2cc2b4643f2892768e80e41167f17c5860"
+      ]
+    },
+    {
+      "address": "0x13dd1c2f83bcd8b8bd3089c998c9d3c1557b749f",
+      "usdc": 43.800186,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 70,
+      "median_payment": 0.02,
+      "submitters": [
+        "0x64cc42b1ce598e3abcfbb64df4688521ddbf1f0a",
+        "0x67b9ce703d9ce658d7c4ac3c289cea112fe662af"
+      ]
+    },
+    {
+      "address": "0xcbb53f9998b9e1dee12662f79b769ad3e1edc5c8",
+      "usdc": 42.449246,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 9,
+      "median_payment": 0.01,
+      "submitters": [
+        "0xb2bd29925cbbcea7628279c91945ca5b98bf371b",
+        "0xc6699d2aada6c36dfea5c248dd70f9cb0235cb63"
+      ]
+    },
+    {
+      "address": "0x0c073e8266a02d734274fc51b3952c6ed63eb964",
+      "usdc": 41.130085,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 883,
+      "median_payment": 0.02,
+      "submitters": [
+        "0x4c934c63c786157fefd990945b25ea60a0fb0205",
+        "0x93f6601151ccb08f333ab4b1cccfb1e188c0be44",
+        "0xe74817f4cdc15844314812b2271276e64e890fae"
+      ]
+    },
+    {
+      "address": "0xe862ef8c60e925653cc8a2e82eebd92fc456eda4",
+      "usdc": 38.500003,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 15,
+      "median_payment": 0.5,
+      "submitters": [
+        "0x93f6601151ccb08f333ab4b1cccfb1e188c0be44",
+        "0x97acce27d5069544480bde0f04d9f47d7422a016",
+        "0xe72f0af4cf41356d433723547f1412ca27fbb1b8"
+      ]
+    },
+    {
+      "address": "0x1ec34cbcd685587f8015dcbf6c1b8665cc93d567",
+      "usdc": 38.416602,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 20,
+      "median_payment": 0.01,
+      "submitters": [
+        "0x64cc42b1ce598e3abcfbb64df4688521ddbf1f0a",
+        "0x8f5cb67b49555e614892b7233cfddebfb746e531",
+        "0xca5e87f82b3fa093800e6ad67d621a427d79c70d"
+      ]
+    },
+    {
+      "address": "0x4dee92338abfd37c402157ee4f058e3cf8d3d176",
+      "usdc": 37.320366,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 28,
+      "median_payment": 0.006,
+      "submitters": [
+        "0x625d8a65134079f8faaac39a7947c73d93c6ac39",
+        "0x67b9ce703d9ce658d7c4ac3c289cea112fe662af",
+        "0xe72f0af4cf41356d433723547f1412ca27fbb1b8"
+      ]
+    },
+    {
+      "address": "0x9f538c47a9a960c58fd9286412260b3bb1182865",
+      "usdc": 37.246,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 5,
+      "median_payment": 0.005,
+      "submitters": [
+        "0x68efafe862d89ce66dd3d7b07d5a3747a0871164",
+        "0x772003a2e9c2ccc8af956870a37a66f64f8cec38",
+        "0x93f6601151ccb08f333ab4b1cccfb1e188c0be44"
+      ]
+    },
+    {
+      "address": "0x0adb5f9299344bf4e1862713cabace0258e32673",
+      "usdc": 36.807559,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 28,
+      "median_payment": 0.1,
+      "submitters": [
+        "0x14fda13953fc30428938e6bf950d036e77214e52",
+        "0x67b9ce703d9ce658d7c4ac3c289cea112fe662af",
+        "0x8cda367232d78c067116e3260da881d2da8ffa39"
+      ]
+    },
+    {
+      "address": "0x4c63f1214c5f68a632bf01c6e70f744706e0ac33",
+      "usdc": 36.528927,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 105.0,
+      "submitters": [
+        "0xf2000f06bd30e7315da7be53615014fcd954d9a0"
+      ]
+    },
+    {
+      "address": "0xc70f423b8f9b5d70d859eea73c101bc3b86cd036",
+      "usdc": 35.620159,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 1,
+      "median_payment": 0.001,
+      "submitters": [
+        "0x59b7ebc67a3d627fabaf06768c818638452ae704"
+      ]
+    },
+    {
+      "address": "0x260bc78bc8d110e104acf0e7e003f770c48cf108",
+      "usdc": 35.166307,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 2,
+      "median_payment": 0.5,
+      "submitters": [
+        "0xb8bfa0325ebc85db502fb3c8d807cff227441365"
+      ]
+    },
+    {
+      "address": "0xc5f7ed3338ad2fde2efb594c152d2ac0004a4739",
+      "usdc": 34.93,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 44,
+      "median_payment": 0.02,
+      "submitters": [
+        "0x772003a2e9c2ccc8af956870a37a66f64f8cec38",
+        "0x8cda367232d78c067116e3260da881d2da8ffa39",
+        "0xe72f0af4cf41356d433723547f1412ca27fbb1b8"
+      ]
+    },
+    {
+      "address": "0x897c9f27fcda24a715688b036adbc77a389db463",
+      "usdc": 34.209384,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 315.0,
+      "submitters": [
+        "0x133d3eee7e9306b1de398e1a3dac4729afc0a476"
+      ]
+    },
+    {
+      "address": "0x01c956c98b8e2938573affbf5897a6120d202816",
+      "usdc": 33.485027,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 5,
+      "median_payment": 0.03,
+      "submitters": [
+        "0x14fda13953fc30428938e6bf950d036e77214e52",
+        "0x97acce27d5069544480bde0f04d9f47d7422a016"
+      ]
+    },
+    {
+      "address": "0xe6ba18a053b0f403a10f1ebe7218a87d6031dbd9",
+      "usdc": 33.285,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 64,
+      "median_payment": 0.005,
+      "submitters": [
+        "0x4c934c63c786157fefd990945b25ea60a0fb0205",
+        "0x67b9ce703d9ce658d7c4ac3c289cea112fe662af"
+      ]
+    },
+    {
+      "address": "0xea574a8d3e6513f09acacdcaf843a0538892c02b",
+      "usdc": 33.000052,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 8,
+      "median_payment": 0.5,
+      "submitters": [
+        "0x42dd53906b49c202e8e934b059dc019e04634b00",
+        "0x68efafe862d89ce66dd3d7b07d5a3747a0871164",
+        "0xb87e1a2cc2b4643f2892768e80e41167f17c5860"
+      ]
+    },
+    {
+      "address": "0x7255acb4974685e292e721cccbe9d09a0b7e8fca",
+      "usdc": 32.979164,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 32,
+      "median_payment": 0.0001,
+      "submitters": [
+        "0x03ea198037d2415010acd560f0fb5b703b90c2d4"
+      ]
+    },
+    {
+      "address": "0x728846ea7d379b71b6f5de579614e6320dd17f8b",
+      "usdc": 30.477683,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 10.0,
+      "submitters": [
+        "0xa9236f4950001355455a5b016a25fa27b947c9ac"
+      ]
+    },
+    {
+      "address": "0x3ed93a7b87832f04a91137cacb273d39295e430e",
+      "usdc": 30.424716,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 2,
+      "median_payment": 0.006,
+      "submitters": [
+        "0x2a89407a98a0732b7fd578c4e156b7166540eb5a",
+        "0xe72f0af4cf41356d433723547f1412ca27fbb1b8"
+      ]
+    },
+    {
+      "address": "0x4a837db44b6e06eed220af54baa786fbd4a0c295",
+      "usdc": 30.127624,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 7.0,
+      "submitters": [
+        "0x6351c235e6f7e08f80974009d01829e5a8250d62"
+      ]
+    },
+    {
+      "address": "0xcc8c44ad3dc2a58d841c3eb26131e49b22665ef8",
+      "usdc": 29.864226,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 9,
+      "median_payment": 0.002,
+      "submitters": [
+        "0x14fda13953fc30428938e6bf950d036e77214e52",
+        "0x625d8a65134079f8faaac39a7947c73d93c6ac39",
+        "0xe72f0af4cf41356d433723547f1412ca27fbb1b8"
+      ]
+    },
+    {
+      "address": "0x171d8021b98c53dcbb3c9c30cbbbeb1b01850fca",
+      "usdc": 29.585901,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 1,
+      "median_payment": 0.05,
+      "submitters": [
+        "0xb2bd29925cbbcea7628279c91945ca5b98bf371b"
+      ]
+    },
+    {
+      "address": "0xe62923133a417cee4241677865ed5a63f44f4b54",
+      "usdc": 29.439036,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 273,
+      "median_payment": 0.001,
+      "submitters": [
+        "0x67b9ce703d9ce658d7c4ac3c289cea112fe662af",
+        "0x8f5cb67b49555e614892b7233cfddebfb746e531",
+        "0xb87e1a2cc2b4643f2892768e80e41167f17c5860"
+      ]
+    },
+    {
+      "address": "0x5d781e0d228d6b52738160cb39cf53dbb72e6246",
+      "usdc": 29.344,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 59.962228,
+      "submitters": [
+        "0x51f6851620688b62a01c1e648871a215ebd07a49"
+      ]
+    },
+    {
+      "address": "0xf61fc7f32b0a2fa224244ea94ac5b58325712b23",
+      "usdc": 28.832152,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 2,
+      "median_payment": 0.001,
+      "submitters": [
+        "0x8cda367232d78c067116e3260da881d2da8ffa39",
+        "0xb87e1a2cc2b4643f2892768e80e41167f17c5860"
+      ]
+    },
+    {
+      "address": "0xa19f621581dbc851a21d6179868111709a52accc",
+      "usdc": 28.22059,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 55,
+      "median_payment": 0.01,
+      "submitters": [
+        "0x42dd53906b49c202e8e934b059dc019e04634b00",
+        "0x68efafe862d89ce66dd3d7b07d5a3747a0871164",
+        "0x97acce27d5069544480bde0f04d9f47d7422a016"
+      ]
+    },
+    {
+      "address": "0x5853ae286cda5e6289695d01d6a4c65745601e6d",
+      "usdc": 27.118842,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 1,
+      "median_payment": 0.02,
+      "submitters": [
+        "0x68a96f41ff1e9f2e7b591a931a4ad224e7c07863"
+      ]
+    },
+    {
+      "address": "0x28275fa8fe39996501e160104a23e1af5e005f58",
+      "usdc": 27.095,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 173,
+      "median_payment": 0.015,
+      "submitters": [
+        "0xb2bd29925cbbcea7628279c91945ca5b98bf371b",
+        "0xc6699d2aada6c36dfea5c248dd70f9cb0235cb63"
+      ]
+    },
+    {
+      "address": "0x82207aac77316911396d0c965dc05d105979c686",
+      "usdc": 26.064217,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 580,
+      "median_payment": 0.02,
+      "submitters": [
+        "0x2a89407a98a0732b7fd578c4e156b7166540eb5a",
+        "0x68efafe862d89ce66dd3d7b07d5a3747a0871164",
+        "0xe74817f4cdc15844314812b2271276e64e890fae"
+      ]
+    },
+    {
+      "address": "0xa6a418f878d315856221a35babb1718b6c856d45",
+      "usdc": 25.932131,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 10.5,
+      "submitters": [
+        "0xa438650a5e1ff479cac5eb16433dcd8124b78fb8"
+      ]
+    },
+    {
+      "address": "0xced2e9a91488c65c7b3879978cdd0622c5f22ec3",
+      "usdc": 25.693056,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 2,
+      "median_payment": 5.2231505,
+      "submitters": [
+        "0x2a89407a98a0732b7fd578c4e156b7166540eb5a",
+        "0x42dd53906b49c202e8e934b059dc019e04634b00"
+      ]
+    },
+    {
+      "address": "0x20a15f256f7537da4f707a196f6ddc3e2e8be9da",
+      "usdc": 25.370135,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 3.80518,
+      "submitters": [
+        "0xc99d6e641fe5fc285564943d1869f3c821eea8f4"
+      ]
+    },
+    {
+      "address": "0x7c3e8329ed742d62d155dde8bf43c4fdb1dd5e33",
+      "usdc": 25.155,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 13,
+      "median_payment": 0.005,
+      "submitters": [
+        "0x42dd53906b49c202e8e934b059dc019e04634b00",
+        "0x8cda367232d78c067116e3260da881d2da8ffa39"
+      ]
+    },
+    {
+      "address": "0xab9f87d1fac370efdcb50ffb5d45fec0c4bdc2bf",
+      "usdc": 25.067132,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 1,
+      "median_payment": 0.003,
+      "submitters": [
+        "0x68a96f41ff1e9f2e7b591a931a4ad224e7c07863"
+      ]
+    },
+    {
+      "address": "0x9b2b810b9da5ae8a4c92b1ad11ab018df4b8a049",
+      "usdc": 24.65,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 2.0,
+      "submitters": [
+        "0x3e32f4746f22499ae938fa956b6fc259dc0b3ce7"
+      ]
+    },
+    {
+      "address": "0x8aefdaac140807d95425599b41fa1ea7853bbae4",
+      "usdc": 24.54,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 1,
+      "median_payment": 0.02,
+      "submitters": [
+        "0xe74817f4cdc15844314812b2271276e64e890fae"
+      ]
+    },
+    {
+      "address": "0x75be541a162cec4dc981a73402a7e82264fce994",
+      "usdc": 23.49,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 6,
+      "median_payment": 0.05,
+      "submitters": [
+        "0x68a96f41ff1e9f2e7b591a931a4ad224e7c07863",
+        "0x8f5cb67b49555e614892b7233cfddebfb746e531",
+        "0x93f6601151ccb08f333ab4b1cccfb1e188c0be44"
+      ]
+    },
+    {
+      "address": "0xefdde1af6b67060d5f5643a8bf6f023594476cee",
+      "usdc": 23.48477,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 2,
+      "median_payment": 0.01,
+      "submitters": [
+        "0x97acce27d5069544480bde0f04d9f47d7422a016",
+        "0xe72f0af4cf41356d433723547f1412ca27fbb1b8"
+      ]
+    },
+    {
+      "address": "0xeba60ecab972316bb28463bb7b11bec580c53c85",
+      "usdc": 23.156435,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 2,
+      "median_payment": 21.0,
+      "submitters": [
+        "0x13c699cd54e939c9d7438e8b1583fc552090f0ed",
+        "0xe5a6b7bc8263705dde05ecc8f8a1912ed8b25fc5"
+      ]
+    },
+    {
+      "address": "0xc1ba4c640e6f0ef4d8c8640c790597c6e0a12af8",
+      "usdc": 23.103461,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 8,
+      "median_payment": 0.01,
+      "submitters": [
+        "0x64cc42b1ce598e3abcfbb64df4688521ddbf1f0a",
+        "0x772003a2e9c2ccc8af956870a37a66f64f8cec38",
+        "0xe72f0af4cf41356d433723547f1412ca27fbb1b8"
+      ]
+    },
+    {
+      "address": "0xb954ae582177fd1b18593372ee4154ba1de0a6d5",
+      "usdc": 23.049214,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 4,
+      "median_payment": 0.15,
+      "submitters": [
+        "0x3290b4e4f86eeb9090ad618e847d80fb56d560df"
+      ]
+    },
+    {
+      "address": "0x64e8ffb436a236da487d1c20ff2548a70cf82c13",
+      "usdc": 22.348836,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 5694,
+      "median_payment": 0.6100000000000001,
+      "submitters": [
+        "0xc8d6bac2ff7182d22c4f316bfff9f713261a6cec"
+      ]
+    },
+    {
+      "address": "0xfa9cd93b7c5f59a99e07994a81758c7437427650",
+      "usdc": 22.041431,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 262.5,
+      "submitters": [
+        "0x52ba6bf36a0bbc9f284fdc2e77561bf8d9db5177"
+      ]
+    },
+    {
+      "address": "0x25f0e2a862cc70d5b4475aa613e8f6c21612484e",
+      "usdc": 21.171596,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 21,
+      "median_payment": 0.02,
+      "submitters": [
+        "0x14fda13953fc30428938e6bf950d036e77214e52",
+        "0x68efafe862d89ce66dd3d7b07d5a3747a0871164",
+        "0x93f6601151ccb08f333ab4b1cccfb1e188c0be44"
+      ]
+    },
+    {
+      "address": "0x804939a4f255447a3f891010d66d98565fbe0d84",
+      "usdc": 21.0,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 1,
+      "median_payment": 0.02,
+      "submitters": [
+        "0x97acce27d5069544480bde0f04d9f47d7422a016"
+      ]
+    },
+    {
+      "address": "0xf50c2763d909416a72545d392b993786d229b034",
+      "usdc": 20.753577,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 126,
+      "median_payment": 0.002,
+      "submitters": [
+        "0x68a96f41ff1e9f2e7b591a931a4ad224e7c07863",
+        "0x8f5cb67b49555e614892b7233cfddebfb746e531",
+        "0x97acce27d5069544480bde0f04d9f47d7422a016"
+      ]
+    },
+    {
+      "address": "0x3897f20c4de1557ba965d7404a0a36739992178b",
+      "usdc": 20.718011,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 58,
+      "median_payment": 0.05,
+      "submitters": [
+        "0x2a89407a98a0732b7fd578c4e156b7166540eb5a",
+        "0x625d8a65134079f8faaac39a7947c73d93c6ac39",
+        "0xe74817f4cdc15844314812b2271276e64e890fae"
+      ]
+    },
+    {
+      "address": "0x30c7b3ccc6c6b8f09e417c8769efab8c008f2d7e",
+      "usdc": 20.482883,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 7,
+      "median_payment": 0.05,
+      "submitters": [
+        "0x59b7ebc67a3d627fabaf06768c818638452ae704",
+        "0x67b9ce703d9ce658d7c4ac3c289cea112fe662af",
+        "0x8cda367232d78c067116e3260da881d2da8ffa39"
+      ]
+    },
+    {
+      "address": "0x8ca837b7b8c246cf0de992b0f535263e6a1addc3",
+      "usdc": 20.38,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 215,
+      "median_payment": 0.02,
+      "submitters": [
+        "0x4c934c63c786157fefd990945b25ea60a0fb0205",
+        "0x68efafe862d89ce66dd3d7b07d5a3747a0871164",
+        "0x8f5cb67b49555e614892b7233cfddebfb746e531"
+      ]
+    },
+    {
+      "address": "0x22732c901c0c46128b418ae30b7b53fb95d18b38",
+      "usdc": 20.366821,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 106.754196,
+      "submitters": [
+        "0xa9236f4950001355455a5b016a25fa27b947c9ac"
+      ]
+    },
+    {
+      "address": "0xfaf265ef530387862c612539d43704ce3e965c5f",
+      "usdc": 20.242132,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 30,
+      "median_payment": 0.005,
+      "submitters": [
+        "0x2a89407a98a0732b7fd578c4e156b7166540eb5a",
+        "0x59b7ebc67a3d627fabaf06768c818638452ae704",
+        "0xb87e1a2cc2b4643f2892768e80e41167f17c5860"
+      ]
+    },
+    {
+      "address": "0xf565a4e66fc9d76d4ab42ef447b3176d1fd1488b",
+      "usdc": 19.628414,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 2,
+      "median_payment": 0.02,
+      "submitters": [
+        "0x8cda367232d78c067116e3260da881d2da8ffa39",
+        "0xe74817f4cdc15844314812b2271276e64e890fae"
+      ]
+    },
+    {
+      "address": "0xe747dbecc8aeae0fdff31f34fbd8c451e36f677a",
+      "usdc": 19.370763,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 43,
+      "median_payment": 0.02,
+      "submitters": [
+        "0x14fda13953fc30428938e6bf950d036e77214e52",
+        "0x2a89407a98a0732b7fd578c4e156b7166540eb5a",
+        "0xe72f0af4cf41356d433723547f1412ca27fbb1b8"
+      ]
+    },
+    {
+      "address": "0xa5374d9d694420abe7e6705a04d958bd5c820fab",
+      "usdc": 19.37,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 2,
+      "median_payment": 0.0075,
+      "submitters": [
+        "0x14fda13953fc30428938e6bf950d036e77214e52",
+        "0x59b7ebc67a3d627fabaf06768c818638452ae704"
+      ]
+    },
+    {
+      "address": "0x144c078ec5043992891f3089ef7276b8cd22cfc7",
+      "usdc": 18.71,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 4,
+      "median_payment": 0.005,
+      "submitters": [
+        "0x42dd53906b49c202e8e934b059dc019e04634b00",
+        "0x68a96f41ff1e9f2e7b591a931a4ad224e7c07863",
+        "0x97acce27d5069544480bde0f04d9f47d7422a016"
+      ]
+    },
+    {
+      "address": "0x21d5964a3af46531659f0ce7061f1cbe4548df13",
+      "usdc": 18.636264,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 3,
+      "median_payment": 0.002,
+      "submitters": [
+        "0x772003a2e9c2ccc8af956870a37a66f64f8cec38",
+        "0xa32ccda98ba7529705a059bd2d213da8de10d101",
+        "0xca5e87f82b3fa093800e6ad67d621a427d79c70d"
+      ]
+    },
+    {
+      "address": "0x9aebd2c87cb1c924fb0d99a17bdc6c8411c25bee",
+      "usdc": 18.4324,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 1,
+      "median_payment": 0.06,
+      "submitters": [
+        "0x68efafe862d89ce66dd3d7b07d5a3747a0871164"
+      ]
+    },
+    {
+      "address": "0xdccb3b5c3aa5820277bdceb5bba490ca006daf30",
+      "usdc": 18.244054,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 2,
+      "median_payment": 15.225,
+      "submitters": [
+        "0x096a31a834652c9cf4d6216b018fe5a728b15c7b",
+        "0x6fec2c4aaef574f78d32fc4a09ebe055143eaf40"
+      ]
+    },
+    {
+      "address": "0xe964946f07f12dcfa445418462d1f553a89fdcea",
+      "usdc": 18.08,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 48,
+      "median_payment": 0.02,
+      "submitters": [
+        "0x4c934c63c786157fefd990945b25ea60a0fb0205",
+        "0x93f6601151ccb08f333ab4b1cccfb1e188c0be44",
+        "0xe74817f4cdc15844314812b2271276e64e890fae"
+      ]
+    },
+    {
+      "address": "0xe98fe39356ef1d089ca3a54d341fa94f6e5df577",
+      "usdc": 17.333871,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 12,
+      "median_payment": 0.002,
+      "submitters": [
+        "0x772003a2e9c2ccc8af956870a37a66f64f8cec38",
+        "0x8f5cb67b49555e614892b7233cfddebfb746e531",
+        "0xa32ccda98ba7529705a059bd2d213da8de10d101"
+      ]
+    },
+    {
+      "address": "0x6b67578fe2f41538e557587ae4a18b56cacdc46e",
+      "usdc": 17.13,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 1,
+      "median_payment": 0.35,
+      "submitters": [
+        "0x8cda367232d78c067116e3260da881d2da8ffa39"
+      ]
+    },
+    {
+      "address": "0xb10954bbb1ac9d8b258ca90173bfc217d1b3fba8",
+      "usdc": 16.9,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 2,
+      "median_payment": 1.5,
+      "submitters": [
+        "0x3e32f4746f22499ae938fa956b6fc259dc0b3ce7"
+      ]
+    },
+    {
+      "address": "0x0853f63e5a276cd512cc99a0e1c2cc041b1850e5",
+      "usdc": 16.568751,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 1,
+      "median_payment": 0.05,
+      "submitters": [
+        "0x59b7ebc67a3d627fabaf06768c818638452ae704"
+      ]
+    },
+    {
+      "address": "0x1fadd278a61b33f54da0729210e1b496608e410c",
+      "usdc": 16.424,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 2,
+      "median_payment": 0.001,
+      "submitters": [
+        "0x8f5cb67b49555e614892b7233cfddebfb746e531",
+        "0xa32ccda98ba7529705a059bd2d213da8de10d101"
+      ]
+    },
+    {
+      "address": "0x3aca505ff4217715e66aa074450814963a746331",
+      "usdc": 16.166462,
+      "in_aave": 0.0,
+      "x402": false,
+      "authorizations_in_sample": 1,
+      "median_payment": 14.56,
+      "submitters": [
+        "0x8ea50cd0655a0503c0b2b56ad822c24c6a77b7fc"
+      ]
+    },
+    {
+      "address": "0xd9db1f3f2ecbdbf0484cf68b098cfc901991fdf0",
+      "usdc": 15.901124,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 337,
+      "median_payment": 0.02,
+      "submitters": [
+        "0x14fda13953fc30428938e6bf950d036e77214e52",
+        "0x68efafe862d89ce66dd3d7b07d5a3747a0871164"
+      ]
+    },
+    {
+      "address": "0x751a2728bf348832688e75428efaf97963b1bc1e",
+      "usdc": 15.5,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 1,
+      "median_payment": 0.5,
+      "submitters": [
+        "0x59b7ebc67a3d627fabaf06768c818638452ae704"
+      ]
+    },
+    {
+      "address": "0x394165502af6d318ed9c8a3188ad1f25c489a3e7",
+      "usdc": 15.44,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 7,
+      "median_payment": 0.005,
+      "submitters": [
+        "0x68efafe862d89ce66dd3d7b07d5a3747a0871164",
+        "0xca5e87f82b3fa093800e6ad67d621a427d79c70d",
+        "0xe74817f4cdc15844314812b2271276e64e890fae"
+      ]
+    },
+    {
+      "address": "0xe1a9393c25a12ff49bef936462d6437f1bc46dbf",
+      "usdc": 15.3,
+      "in_aave": 0.0,
+      "x402": true,
+      "authorizations_in_sample": 48,
+      "median_payment": 0.02,
+      "submitters": [
+        "0x14fda13953fc30428938e6bf950d036e77214e52",
+        "0x2a89407a98a0732b7fd578c4e156b7166540eb5a",
+        "0xe74817f4cdc15844314812b2271276e64e890fae"
+      ]
+    }
+  ],
+  "big_payers_summary": {
+    "x402_count": 99,
+    "x402_usdc": 2172761.613659,
+    "other_count": 101,
+    "other_usdc": 135789.021361
+  },
+  "settlement_cost": {
+    "eth_usd": 2302.16664376,
+    "payments_priced": 2188,
+    "payments_per_tx": {
+      "n": 2188,
+      "sum": 5216,
+      "mean": 2.3839122486288846,
+      "median": 2.0,
+      "p75": 2,
+      "p90": 2,
+      "p99": 18,
+      "max": 20,
+      "zero_share": 0.0,
+      "share_held_by_top_1pct": 0.08013803680981595,
+      "share_held_by_top_10pct": 0.424079754601227
+    },
+    "cost_usd_per_payment": {
+      "n": 2188,
+      "sum": 3.285734009416497,
+      "mean": 0.0015017065856565343,
+      "median": 0.0012878007874636264,
+      "p75": 0.001974813550007129,
+      "p90": 0.001992507765551357,
+      "p99": 0.0030764037260590732,
+      "max": 0.023079780021106385,
+      "zero_share": 0.0,
+      "share_held_by_top_1pct": 0.03859614165808353,
+      "share_held_by_top_10pct": 0.16181295427507442
+    },
+    "cost_as_share_of_payment": {
+      "n": 2188,
+      "sum": 541.516620104269,
+      "mean": 0.24749388487398036,
+      "median": 0.09979965324544599,
+      "p75": 0.19890753999989158,
+      "p90": 0.6824149345935918,
+      "p99": 1.9879431682747863,
+      "max": 11.86998089917544,
+      "zero_share": 0.0,
+      "share_held_by_top_1pct": 0.10017828794495306,
+      "share_held_by_top_10pct": 0.6066292323848312
+    },
+    "share_of_payments_where_gas_exceeds_10pct": 0.4954296160877514,
+    "gas_usd_per_day_est": 455.8325221299414,
+    "by_submitter": [
+      {
+        "address": "0xc8d6bac2ff7182d22c4f316bfff9f713261a6cec",
+        "share_of_payments": 0.5694698354661791,
+        "gas_usd_per_day_est": 215.72018931787815,
+        "gas_as_share_of_value": 0.0016798159454272034
+      },
+      {
+        "address": "0x7f72a02c682e908d46a5677fe937cdb612d94a3b",
+        "share_of_payments": 0.034277879341864714,
+        "gas_usd_per_day_est": 20.809976290207388,
+        "gas_as_share_of_value": 2.0000341795824093
+      },
+      {
+        "address": "0x950158b9be56b9893c77089e129b73ea62bbc677",
+        "share_of_payments": 0.025594149908592323,
+        "gas_usd_per_day_est": 9.344640256892102,
+        "gas_as_share_of_value": 0.12028228103525877
+      },
+      {
+        "address": "0x14fda13953fc30428938e6bf950d036e77214e52",
+        "share_of_payments": 0.021480804387568556,
+        "gas_usd_per_day_est": 11.795524717158782,
+        "gas_as_share_of_value": 0.12844325448514304
+      },
+      {
+        "address": "0xca5e87f82b3fa093800e6ad67d621a427d79c70d",
+        "share_of_payments": 0.019652650822669104,
+        "gas_usd_per_day_est": 10.854500966927146,
+        "gas_as_share_of_value": 0.12206899023802543
+      },
+      {
+        "address": "0x64cc42b1ce598e3abcfbb64df4688521ddbf1f0a",
+        "share_of_payments": 0.018738574040219377,
+        "gas_usd_per_day_est": 9.854187704519708,
+        "gas_as_share_of_value": 0.13306893438362466
+      },
+      {
+        "address": "0x68efafe862d89ce66dd3d7b07d5a3747a0871164",
+        "share_of_payments": 0.018281535648994516,
+        "gas_usd_per_day_est": 10.013392629343217,
+        "gas_as_share_of_value": 0.12317164027197698
+      },
+      {
+        "address": "0xe72f0af4cf41356d433723547f1412ca27fbb1b8",
+        "share_of_payments": 0.01736745886654479,
+        "gas_usd_per_day_est": 9.529605918966848,
+        "gas_as_share_of_value": 0.152073951534232
+      }
+    ]
+  },
+  "heavy_payer_funding": {
+    "payers_scanned": 20,
+    "per_payer": [
+      {
+        "address": "0x64e8ffb436a236da487d1c20ff2548a70cf82c13",
+        "payments_per_week_est": 119574.0,
+        "inflows_per_week_est": 126.0,
+        "usdc_in_per_week_est": 589953.0,
+        "distinct_funders": 2,
+        "usdc_held": 22.348836,
+        "pays": [
+          "0x524c827cd1d5691817706763fb67574d107578b1",
+          "0xaf36084a4dc0ce760a6dcfa46cf129e140c92aa9"
+        ]
+      },
+      {
+        "address": "0x00cf9902a0c936d5342ac076a57047a2aaefddef",
+        "payments_per_week_est": 111426.0,
+        "inflows_per_week_est": 1155.0,
+        "usdc_in_per_week_est": 823.1999999999999,
+        "distinct_funders": 1,
+        "usdc_held": 68.274631,
+        "pays": [
+          "0x8bc2aecdd86097f74a1a5fa17764108d9a683c8c"
+        ]
+      },
+      {
+        "address": "0xd97c63d0503b506b63cae11128cc09d7c1220093",
+        "payments_per_week_est": 24024.0,
+        "inflows_per_week_est": 0.0,
+        "usdc_in_per_week_est": 0.0,
+        "distinct_funders": 0,
+        "usdc_held": 114.504711,
+        "pays": [
+          "0x325bdf6f7efab24a2210c48c1b64cab2eae1d430"
+        ]
+      },
+      {
+        "address": "0x0c073e8266a02d734274fc51b3952c6ed63eb964",
+        "payments_per_week_est": 18543.0,
+        "inflows_per_week_est": 0.0,
+        "usdc_in_per_week_est": 0.0,
+        "distinct_funders": 0,
+        "usdc_held": 41.130085,
+        "pays": [
+          "0x7284d41b5b852f2bd4c99bdf95043d84452d299c"
+        ]
+      },
+      {
+        "address": "0xe6d81674b3aa4d335e346d0a285d3e2926ea9ebb",
+        "payments_per_week_est": 16359.0,
+        "inflows_per_week_est": 21.0,
+        "usdc_in_per_week_est": 63.0,
+        "distinct_funders": 1,
+        "usdc_held": 0.001075,
+        "pays": [
+          "0xa9dd7cc9cbf0e05551332209289f04be36bc2315"
+        ]
+      },
+      {
+        "address": "0x9d3d9410be95fa1d230734b961997427fc61d837",
+        "payments_per_week_est": 14238.0,
+        "inflows_per_week_est": 84.0,
+        "usdc_in_per_week_est": 97.87049999999998,
+        "distinct_funders": 1,
+        "usdc_held": 198.877491,
+        "pays": [
+          "0x4df66b6c140778fe0717880a7c6dde5ea53acdea"
+        ]
+      },
+      {
+        "address": "0xbfca25404c37757949c5dfeab9ee2b427bfd7b0b",
+        "payments_per_week_est": 13650.0,
+        "inflows_per_week_est": 0.0,
+        "usdc_in_per_week_est": 0.0,
+        "distinct_funders": 0,
+        "usdc_held": 3.757993,
+        "pays": [
+          "0xa9dd7cc9cbf0e05551332209289f04be36bc2315"
+        ]
+      },
+      {
+        "address": "0x000000000040f45bb6722481915df68fd8c4e5cb",
+        "payments_per_week_est": 13629.0,
+        "inflows_per_week_est": 0.0,
+        "usdc_in_per_week_est": 0.0,
+        "distinct_funders": 0,
+        "usdc_held": 99.418,
+        "pays": [
+          "0x6d6e695b09861467c7d462f5aaf31cf3540b9192"
+        ]
+      },
+      {
+        "address": "0x52ad2c4ed3a315a4ab6cc631cb5cf1a4428d1fee",
+        "payments_per_week_est": 12327.0,
+        "inflows_per_week_est": 0.0,
+        "usdc_in_per_week_est": 0.0,
+        "distinct_funders": 0,
+        "usdc_held": 0.0,
+        "pays": [
+          "0xa9dd7cc9cbf0e05551332209289f04be36bc2315"
+        ]
+      },
+      {
+        "address": "0x82207aac77316911396d0c965dc05d105979c686",
+        "payments_per_week_est": 12180.0,
+        "inflows_per_week_est": 21.0,
+        "usdc_in_per_week_est": 2452.357047,
+        "distinct_funders": 1,
+        "usdc_held": 26.064217,
+        "pays": [
+          "0x7284d41b5b852f2bd4c99bdf95043d84452d299c"
+        ]
+      },
+      {
+        "address": "0x52af3e6d13f7c13ec887a2e69058a1432aa5b768",
+        "payments_per_week_est": 11319.0,
+        "inflows_per_week_est": 21.0,
+        "usdc_in_per_week_est": 199.5,
+        "distinct_funders": 1,
+        "usdc_held": 10.040307,
+        "pays": [
+          "0x44adc7d3199486730d6346f2dc2424de97124700"
+        ]
+      },
+      {
+        "address": "0x01dd817a7180580057f30f7375dd2486c21f6cf3",
+        "payments_per_week_est": 11235.0,
+        "inflows_per_week_est": 0.0,
+        "usdc_in_per_week_est": 0.0,
+        "distinct_funders": 0,
+        "usdc_held": 59.844973,
+        "pays": [
+          "0x7284d41b5b852f2bd4c99bdf95043d84452d299c"
+        ]
+      },
+      {
+        "address": "0xd2acfe43ff8802237898e425416ecd7f7968bdcd",
+        "payments_per_week_est": 10227.0,
+        "inflows_per_week_est": 0.0,
+        "usdc_in_per_week_est": 0.0,
+        "distinct_funders": 0,
+        "usdc_held": 13.02,
+        "pays": [
+          "0x7284d41b5b852f2bd4c99bdf95043d84452d299c"
+        ]
+      },
+      {
+        "address": "0x7d1ad0dd0175a92eee23e893a1f3d4ba8f0228b6",
+        "payments_per_week_est": 9975.0,
+        "inflows_per_week_est": 0.0,
+        "usdc_in_per_week_est": 0.0,
+        "distinct_funders": 0,
+        "usdc_held": 4.71601,
+        "pays": [
+          "0xa9dd7cc9cbf0e05551332209289f04be36bc2315"
+        ]
+      },
+      {
+        "address": "0x5ba053f4a76aa7a59f64a4a0be960019383c9019",
+        "payments_per_week_est": 9681.0,
+        "inflows_per_week_est": 0.0,
+        "usdc_in_per_week_est": 0.0,
+        "distinct_funders": 0,
+        "usdc_held": 0.015384,
+        "pays": [
+          "0x7284d41b5b852f2bd4c99bdf95043d84452d299c"
+        ]
+      },
+      {
+        "address": "0x133243d447026345c2b368d7ffe435dbe3c566eb",
+        "payments_per_week_est": 7140.0,
+        "inflows_per_week_est": 7203.0,
+        "usdc_in_per_week_est": 1605310.56,
+        "distinct_funders": 4,
+        "usdc_held": 57.78465,
+        "pays": [
+          "0x0e3df9510de65469c4518d7843919c0b8c7a7757"
+        ]
+      },
+      {
+        "address": "0xd9db1f3f2ecbdbf0484cf68b098cfc901991fdf0",
+        "payments_per_week_est": 7077.0,
+        "inflows_per_week_est": 0.0,
+        "usdc_in_per_week_est": 0.0,
+        "distinct_funders": 0,
+        "usdc_held": 15.901124,
+        "pays": [
+          "0x7284d41b5b852f2bd4c99bdf95043d84452d299c"
+        ]
+      },
+      {
+        "address": "0x740ce3394a4b3ebc9d0aeb2ecfe3646378cacafa",
+        "payments_per_week_est": 6783.0,
+        "inflows_per_week_est": 0.0,
+        "usdc_in_per_week_est": 0.0,
+        "distinct_funders": 0,
+        "usdc_held": 0.0,
+        "pays": [
+          "0x7284d41b5b852f2bd4c99bdf95043d84452d299c"
+        ]
+      },
+      {
+        "address": "0x27abcddd44c4959ac729d080703e677f13a3248c",
+        "payments_per_week_est": 6552.0,
+        "inflows_per_week_est": 0.0,
+        "usdc_in_per_week_est": 0.0,
+        "distinct_funders": 0,
+        "usdc_held": 116.860602,
+        "pays": [
+          "0x6d6e695b09861467c7d462f5aaf31cf3540b9192"
+        ]
+      },
+      {
+        "address": "0x30a6cb9170bf5dbb9e92614b1bf26a33920a641e",
+        "payments_per_week_est": 6300.0,
+        "inflows_per_week_est": 0.0,
+        "usdc_in_per_week_est": 0.0,
+        "distinct_funders": 0,
+        "usdc_held": 19.091911,
+        "pays": [
+          "0xe9030014f5dae217d0a152f02a043567b16c1abf"
+        ]
+      }
+    ],
+    "funders_shared_by_several_payers": []
+  },
+  "heaviest_payers": [
+    {
+      "address": "0x64e8ffb436a236da487d1c20ff2548a70cf82c13",
+      "authorizations_in_sample": 5694,
+      "authorizations_per_week_est": 119574.0,
+      "usdc": 22.348836
+    },
+    {
+      "address": "0x00cf9902a0c936d5342ac076a57047a2aaefddef",
+      "authorizations_in_sample": 5306,
+      "authorizations_per_week_est": 111426.0,
+      "usdc": 68.274631
+    },
+    {
+      "address": "0xd97c63d0503b506b63cae11128cc09d7c1220093",
+      "authorizations_in_sample": 1144,
+      "authorizations_per_week_est": 24024.0,
+      "usdc": 114.504711
+    },
+    {
+      "address": "0x0c073e8266a02d734274fc51b3952c6ed63eb964",
+      "authorizations_in_sample": 883,
+      "authorizations_per_week_est": 18543.0,
+      "usdc": 41.130085
+    },
+    {
+      "address": "0xe6d81674b3aa4d335e346d0a285d3e2926ea9ebb",
+      "authorizations_in_sample": 779,
+      "authorizations_per_week_est": 16359.0,
+      "usdc": 0.001075
+    },
+    {
+      "address": "0x9d3d9410be95fa1d230734b961997427fc61d837",
+      "authorizations_in_sample": 678,
+      "authorizations_per_week_est": 14238.0,
+      "usdc": 198.877491
+    },
+    {
+      "address": "0xbfca25404c37757949c5dfeab9ee2b427bfd7b0b",
+      "authorizations_in_sample": 650,
+      "authorizations_per_week_est": 13650.0,
+      "usdc": 3.757993
+    },
+    {
+      "address": "0x000000000040f45bb6722481915df68fd8c4e5cb",
+      "authorizations_in_sample": 649,
+      "authorizations_per_week_est": 13629.0,
+      "usdc": 99.418
+    },
+    {
+      "address": "0x52ad2c4ed3a315a4ab6cc631cb5cf1a4428d1fee",
+      "authorizations_in_sample": 587,
+      "authorizations_per_week_est": 12327.0,
+      "usdc": 0.0
+    },
+    {
+      "address": "0x82207aac77316911396d0c965dc05d105979c686",
+      "authorizations_in_sample": 580,
+      "authorizations_per_week_est": 12180.0,
+      "usdc": 26.064217
+    },
+    {
+      "address": "0x52af3e6d13f7c13ec887a2e69058a1432aa5b768",
+      "authorizations_in_sample": 539,
+      "authorizations_per_week_est": 11319.0,
+      "usdc": 10.040307
+    },
+    {
+      "address": "0x01dd817a7180580057f30f7375dd2486c21f6cf3",
+      "authorizations_in_sample": 535,
+      "authorizations_per_week_est": 11235.0,
+      "usdc": 59.844973
+    },
+    {
+      "address": "0xd2acfe43ff8802237898e425416ecd7f7968bdcd",
+      "authorizations_in_sample": 487,
+      "authorizations_per_week_est": 10227.0,
+      "usdc": 13.02
+    },
+    {
+      "address": "0x7d1ad0dd0175a92eee23e893a1f3d4ba8f0228b6",
+      "authorizations_in_sample": 475,
+      "authorizations_per_week_est": 9975.0,
+      "usdc": 4.71601
+    },
+    {
+      "address": "0x5ba053f4a76aa7a59f64a4a0be960019383c9019",
+      "authorizations_in_sample": 461,
+      "authorizations_per_week_est": 9681.0,
+      "usdc": 0.015384
+    },
+    {
+      "address": "0x133243d447026345c2b368d7ffe435dbe3c566eb",
+      "authorizations_in_sample": 340,
+      "authorizations_per_week_est": 7140.0,
+      "usdc": 57.78465
+    },
+    {
+      "address": "0xd9db1f3f2ecbdbf0484cf68b098cfc901991fdf0",
+      "authorizations_in_sample": 337,
+      "authorizations_per_week_est": 7077.0,
+      "usdc": 15.901124
+    },
+    {
+      "address": "0x740ce3394a4b3ebc9d0aeb2ecfe3646378cacafa",
+      "authorizations_in_sample": 323,
+      "authorizations_per_week_est": 6783.0,
+      "usdc": 0.0
+    },
+    {
+      "address": "0x27abcddd44c4959ac729d080703e677f13a3248c",
+      "authorizations_in_sample": 312,
+      "authorizations_per_week_est": 6552.0,
+      "usdc": 116.860602
+    },
+    {
+      "address": "0x30a6cb9170bf5dbb9e92614b1bf26a33920a641e",
+      "authorizations_in_sample": 300,
+      "authorizations_per_week_est": 6300.0,
+      "usdc": 19.091911
+    },
+    {
+      "address": "0xec2abd3eda89bed90124736e317e847d5fb6d034",
+      "authorizations_in_sample": 290,
+      "authorizations_per_week_est": 6090.0,
+      "usdc": 1.72221
+    },
+    {
+      "address": "0xe62923133a417cee4241677865ed5a63f44f4b54",
+      "authorizations_in_sample": 273,
+      "authorizations_per_week_est": 5733.0,
+      "usdc": 29.439036
+    },
+    {
+      "address": "0xb83be19a6f16bb7643ecd015afbe14d8a35375cc",
+      "authorizations_in_sample": 254,
+      "authorizations_per_week_est": 5334.0,
+      "usdc": 0.000706
+    },
+    {
+      "address": "0xe8273a7aea1a99639801dbe8767429f0126150a0",
+      "authorizations_in_sample": 253,
+      "authorizations_per_week_est": 5313.0,
+      "usdc": 0.041429
+    },
+    {
+      "address": "0x2465a48f1e44ef60a986257e0b7c6f90e0a8a1b1",
+      "authorizations_in_sample": 252,
+      "authorizations_per_week_est": 5292.0,
+      "usdc": 0.000359
+    },
+    {
+      "address": "0x38b65a78040213f6aa0d09b740ef59a021648b9f",
+      "authorizations_in_sample": 249,
+      "authorizations_per_week_est": 5229.0,
+      "usdc": 0.009319
+    },
+    {
+      "address": "0x88e52329bce56bf378720fd9668e6d174491d84b",
+      "authorizations_in_sample": 221,
+      "authorizations_per_week_est": 4641.0,
+      "usdc": 373.581962
+    },
+    {
+      "address": "0x8ca837b7b8c246cf0de992b0f535263e6a1addc3",
+      "authorizations_in_sample": 215,
+      "authorizations_per_week_est": 4515.0,
+      "usdc": 20.38
+    },
+    {
+      "address": "0x9e45c14632751ba0510f789b2eea3d6c3337d115",
+      "authorizations_in_sample": 206,
+      "authorizations_per_week_est": 4326.0,
+      "usdc": 72.6385
+    },
+    {
+      "address": "0xf37e715b8f10503bf778cfbccb8433ae47096043",
+      "authorizations_in_sample": 206,
+      "authorizations_per_week_est": 4326.0,
+      "usdc": 0.001507
+    }
+  ],
+  "merchants": {
+    "unique_in_receipt_sample": 620,
+    "measured_wallets": 620,
+    "of": 620,
+    "usdc": {
+      "n": 620,
+      "sum": 109023.02006,
+      "mean": 175.84358074193548,
+      "median": 0.0,
+      "p75": 0.0,
+      "p90": 13.240314,
+      "p99": 4497.078,
+      "max": 24856.774537,
+      "zero_share": 0.7532258064516129,
+      "share_held_by_top_1pct": 0.7246842400212263,
+      "share_held_by_top_10pct": 0.9984818563372313
+    },
+    "holding_any_aave_usdc_share": 0.0032258064516129032,
+    "code_sample": {
+      "n": 400,
+      "eoa": 50,
+      "eip7702_delegated": 15,
+      "contract": 335
+    },
+    "top_by_usdc": [
+      [
+        "0xba2304d1f48ac01cf01427fc9d9ae3d21e71b536",
+        24856.774537,
+        0.015533
+      ],
+      [
+        "0x325bdf6f7efab24a2210c48c1b64cab2eae1d430",
+        13304.086758,
+        0.0
+      ],
+      [
+        "0x7284d41b5b852f2bd4c99bdf95043d84452d299c",
+        13265.92015,
+        0.0
+      ],
+      [
+        "0x0f99fc0cbd7a114b2da171fda5a0167858f7afc2",
+        12638.683885,
+        0.0
+      ],
+      [
+        "0xaf36084a4dc0ce760a6dcfa46cf129e140c92aa9",
+        8965.302107,
+        0.0
+      ],
+      [
+        "0x2670b922ef37c7df47158725c0cc407b5382293f",
+        5976.497,
+        0.0
+      ],
+      [
+        "0x5aae638ccd22a4117c0441331e8e86ca979d482e",
+        4497.078,
+        0.0
+      ],
+      [
+        "0x98886846918c7debe86e1d74e249dcdd64a9d367",
+        3455.480966,
+        0.0
+      ],
+      [
+        "0x480cd46e6fade651a0437deadda53d5c8e7d846a",
+        3000.0,
+        0.0
+      ],
+      [
+        "0x86b1b1be6caa9c46583ae5e414f4b348efa92f66",
+        2621.225178,
+        0.0
+      ],
+      [
+        "0xa9dd7cc9cbf0e05551332209289f04be36bc2315",
+        2105.997204,
+        0.0
+      ],
+      [
+        "0xb648eb7904e6204a8e6f46643f3e384206719494",
+        1552.850237,
+        0.0
+      ],
+      [
+        "0xa8b2c2594ec5774479749d26105c9fb6cdca1d68",
+        1362.42,
+        0.0
+      ],
+      [
+        "0xe9030014f5dae217d0a152f02a043567b16c1abf",
+        1054.871868,
+        0.0
+      ],
+      [
+        "0xa58851b98a53a5559a340ddbfc597ec109b6014c",
+        1052.290218,
+        0.0
+      ],
+      [
+        "0xdc59fa7b64988b846e76ec9849bb68f889071506",
+        1029.515464,
+        0.0
+      ],
+      [
+        "0x66d7c2f952362bfb24fd7f02a9bec9c754ea83bc",
+        993.919817,
+        0.0
+      ],
+      [
+        "0x47d3394c7234714e4b9e9b74827c12be847f9dda",
+        914.1,
+        0.0
+      ],
+      [
+        "0x3e0a7c9a79f0646fc4e72d52b5ee8877f5aa78e7",
+        600.400574,
+        0.0
+      ],
+      [
+        "0xe813d34c0525e0fbb1e6478b86d40b83603c2008",
+        537.139209,
+        0.0
+      ],
+      [
+        "0x6c0752c09e7f6fa6526fcdf40e456a159ebb5621",
+        465.304045,
+        0.0
+      ],
+      [
+        "0xf000ab8b02aa5c52b62bdb10bf63312317e994fc",
+        458.514441,
+        0.0
+      ],
+      [
+        "0x0e3df9510de65469c4518d7843919c0b8c7a7757",
+        456.835271,
+        0.0
+      ],
+      [
+        "0xf732ea490c5766071785a2310523f7fa2cebb829",
+        405.58,
+        0.0
+      ],
+      [
+        "0x8e7769d440b3460b92159dd9c6d17302b036e2d6",
+        399.371276,
+        0.0
+      ]
+    ]
+  },
+  "aave_usdc_supply": {
+    "pool": "0xa238dd80c259a72e81d7e4664a9801593f98d1c5",
+    "aToken": "0x4e65fe4dba92790696d040ac24aa414708f5c0ab",
+    "apr": 0.043725420179479876,
+    "apy": 0.044695464114935524
+  },
+  "rpc_calls": 286,
+  "idle_yield_per_year_usd": {
+    "payers_measured": 103360.98379228883,
+    "merchants_measured": 4872.8344807936255
+  },
+  "merchants_by_sampled_x402_revenue": [
+    {
+      "address": "0x524c827cd1d5691817706763fb67574d107578b1",
+      "usdc_received_in_sample": 750.5010000000001,
+      "payments_in_sample": 75
+    },
+    {
+      "address": "0x0e3df9510de65469c4518d7843919c0b8c7a7757",
+      "usdc_received_in_sample": 284.05,
+      "payments_in_sample": 12
+    },
+    {
+      "address": "0xce57a6d697cac85397035bbd13540c751a915328",
+      "usdc_received_in_sample": 150.0,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0xccc88a9d1b4ed6b0eaba998850414b24f1c315be",
+      "usdc_received_in_sample": 96.624848,
+      "payments_in_sample": 2
+    },
+    {
+      "address": "0x4e5707d86a523e44db21d18312fb7eb1ad17cbec",
+      "usdc_received_in_sample": 96.41,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0xaf36084a4dc0ce760a6dcfa46cf129e140c92aa9",
+      "usdc_received_in_sample": 92.56700000000032,
+      "payments_in_sample": 623
+    },
+    {
+      "address": "0x63d20790087845ffa370a1df10e2ca832f93059c",
+      "usdc_received_in_sample": 50.0,
+      "payments_in_sample": 2
+    },
+    {
+      "address": "0x8e7769d440b3460b92159dd9c6d17302b036e2d6",
+      "usdc_received_in_sample": 27.067208,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x6351c235e6f7e08f80974009d01829e5a8250d62",
+      "usdc_received_in_sample": 26.96087,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x47d3394c7234714e4b9e9b74827c12be847f9dda",
+      "usdc_received_in_sample": 22.0,
+      "payments_in_sample": 4
+    },
+    {
+      "address": "0xd2e4e3eda25d663b32e321a833d775eaf0b0efe1",
+      "usdc_received_in_sample": 20.1,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0xfd93da7788d4eba95b8498eb249fc8756acd82bd",
+      "usdc_received_in_sample": 16.359135,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0xdc14d41bfcd386e035bd1ba3072d2f8c5e21eb9a",
+      "usdc_received_in_sample": 14.0,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0xe742f9df04a61ac0a6aea0b87d3c3b96ac6eea88",
+      "usdc_received_in_sample": 12.553904,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0xa107a13a704eac788b79a8eec8c78a9b28fe9f29",
+      "usdc_received_in_sample": 12.0,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0xbf8636d1fd5f136e04bf0ed796e8bdaf27321574",
+      "usdc_received_in_sample": 8.0,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0xc09311bb1f67f4aeadb4898fd211c0218252d6ea",
+      "usdc_received_in_sample": 8.0,
+      "payments_in_sample": 2
+    },
+    {
+      "address": "0xb648eb7904e6204a8e6f46643f3e384206719494",
+      "usdc_received_in_sample": 8.0,
+      "payments_in_sample": 2
+    },
+    {
+      "address": "0x060d78cd62ed704d8d5314d99d5d5563cbb206d4",
+      "usdc_received_in_sample": 5.04,
+      "payments_in_sample": 5
+    },
+    {
+      "address": "0x068f4dbaddd550664ad3c02896daf3c96324da3b",
+      "usdc_received_in_sample": 5.0,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x7284d41b5b852f2bd4c99bdf95043d84452d299c",
+      "usdc_received_in_sample": 4.979999999999982,
+      "payments_in_sample": 249
+    },
+    {
+      "address": "0x511a13dd727289a06891a0c3266e69e011148ebb",
+      "usdc_received_in_sample": 4.464,
+      "payments_in_sample": 4
+    },
+    {
+      "address": "0x2d3b3f3510dac7ca19a9c9fd203167b081f61c56",
+      "usdc_received_in_sample": 4.0,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x7e2b4fb247a134f45c1adf0d9ef31b93faf788e7",
+      "usdc_received_in_sample": 3.1049999999999995,
+      "payments_in_sample": 3
+    },
+    {
+      "address": "0x2b46b7892db8980db11a30eff563f5e385fef0d5",
+      "usdc_received_in_sample": 3.0,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x61d3baa41a6e87c78402d49e3a3bfecb6a75b932",
+      "usdc_received_in_sample": 2.835,
+      "payments_in_sample": 3
+    },
+    {
+      "address": "0x6272e3ba16f50f18c0d31075036d043ffc5aeb40",
+      "usdc_received_in_sample": 2.5,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x86b1b1be6caa9c46583ae5e414f4b348efa92f66",
+      "usdc_received_in_sample": 2.5,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x89e1d8e61ab89e8e673f5c1e968ab7852e98a357",
+      "usdc_received_in_sample": 2.43,
+      "payments_in_sample": 2
+    },
+    {
+      "address": "0xdb6250bde5aebf52f8a597be2843d77de31dc326",
+      "usdc_received_in_sample": 2.322,
+      "payments_in_sample": 2
+    },
+    {
+      "address": "0x57ea506806fcda5eb91ed558723340ce1acbf064",
+      "usdc_received_in_sample": 2.0,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x29bf60964643394842def6a9a72b678a084a3837",
+      "usdc_received_in_sample": 2.0,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0xc4f72254acf4bcf007e686656a7baeba1e9ac425",
+      "usdc_received_in_sample": 1.935,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0xa3176f25119b7c6881240d98be2d94f20ed361bb",
+      "usdc_received_in_sample": 1.575,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0xd69e25095fc5c6708a0972a8754d0d98b0a5a891",
+      "usdc_received_in_sample": 1.557,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x875c693bb283b024fd0fd31518eb76e8068d34c9",
+      "usdc_received_in_sample": 1.557,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0xdd9b58a99dc451e2a2cba272207bb29410d36c10",
+      "usdc_received_in_sample": 1.53,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0xa8cb0d5d7e2774ba14a64ee2b9998d6f1c93932d",
+      "usdc_received_in_sample": 1.332,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x5e6831af85dc38340fd9a48694c481256d188989",
+      "usdc_received_in_sample": 1.296,
+      "payments_in_sample": 1
+    },
+    {
+      "address": "0x74b397f06c25637933bf1df0a4a4b8ba84733c60",
+      "usdc_received_in_sample": 1.296,
+      "payments_in_sample": 1
+    }
+  ]
+}
