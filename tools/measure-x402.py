@@ -34,6 +34,9 @@ SEGMENT_BLOCKS = int(os.environ.get("SEGMENT_BLOCKS", "300"))
 RECEIPTS = int(os.environ.get("RECEIPTS", "1500"))
 MAX_WALLETS = int(os.environ.get("MAX_WALLETS", "8000"))
 MULTICALL3 = "0xca11bde05977b3631167028862be2a173976ca11"
+# ETH/USD, to price settlement gas: Chainlink's Base feed, else the WETH/USDC 0.05% Uniswap v3 pool.
+CHAINLINK_ETH_USD = "0x71041dddad3595f9ced3dccfbe3d1f4b0a16bb70"
+UNI_WETH_USDC = "0xd0b53d9277642d899df5c87a3966a349a798f224"
 BLOCKS_PER_DAY = 43_200  # Base: 2-second blocks
 random.seed(int(os.environ.get("SEED", "8453")))
 
@@ -271,6 +274,51 @@ def main():
             "_rows": rows,
         }
 
+    # ---- what settling one payment costs, against what the payment is worth
+    eth_usd = None
+    try:
+        rd = call(CHAINLINK_ETH_USD, sh("sig", "latestRoundData()"))
+        eth_usd = h2i(word(rd, 1)) / 1e8
+    except Exception:  # noqa: BLE001
+        try:
+            sp = h2i(word(call(UNI_WETH_USDC, sh("sig", "slot0()")), 0))
+            eth_usd = (sp / 2 ** 96) ** 2 * 1e12  # token0 WETH (18 dp), token1 USDC (6 dp)
+        except Exception as e:  # noqa: BLE001
+            print(f"eth price lookup failed: {e}", file=sys.stderr)
+    per_tx = {}
+    for r in receipts:
+        rows = payments_in([r])
+        if not rows:
+            continue
+        cost_wei = h2i(r.get("gasUsed")) * h2i(r.get("effectiveGasPrice")) + h2i(r.get("l1Fee"))
+        per_tx[r["transactionHash"]] = (r["from"].lower(), cost_wei, rows)
+    cost_rows = []  # (submitter, cost_usd per payment, amount, payments in that tx)
+    for sub, cost_wei, rows in per_tx.values():
+        for _, _, _, amt in rows:
+            cost_rows.append((sub, cost_wei / len(rows) / 1e18 * (eth_usd or 0), amt, len(rows)))
+    costs = [c for _, c, _, _ in cost_rows]
+    ratios = [c / a for _, c, a, _ in cost_rows if a > 0]
+    by_sub = {}
+    for sub, c, a, n in cost_rows:
+        x = by_sub.setdefault(sub, {"payments": 0, "cost": 0.0, "value": 0.0})
+        x["payments"] += 1
+        x["cost"] += c
+        x["value"] += a
+    share = lambda sub: by_sub[sub]["payments"] / len(cost_rows)
+    settlement = {
+        "eth_usd": eth_usd,
+        "payments_priced": len(cost_rows),
+        "payments_per_tx": dist([n for _, _, _, n in cost_rows]),
+        "cost_usd_per_payment": dist(costs),
+        "cost_as_share_of_payment": dist(ratios),
+        "share_of_payments_where_gas_exceeds_10pct": sum(1 for x in ratios if x > 0.10) / len(ratios) if ratios else None,
+        "gas_usd_per_day_est": (statistics.mean(costs) if costs else 0) * per_day,
+        "by_submitter": sorted([{"address": sub, "share_of_payments": share(sub),
+                                 "gas_usd_per_day_est": x["cost"] / x["payments"] * share(sub) * per_day,
+                                 "gas_as_share_of_value": x["cost"] / x["value"] if x["value"] else None}
+                                for sub, x in by_sub.items()], key=lambda y: -y["share_of_payments"])[:8],
+    }
+
     payer_h = holdings(payers)
     merchant_h = holdings(merchants)
 
@@ -298,6 +346,50 @@ def main():
     # Heavy users: wallets paying most often, whatever they hold. Who an x402 product is for.
     heavy = sorted(payers.items(), key=lambda x: -x[1])[:30]
     heavy_bal = dict(zip([w for w, _ in heavy], multicall_balances([(USDC, w) for w, _ in heavy])))
+
+    # ---- how the heaviest payers stay funded: USDC flowing in, from whom, how often
+    top_heavy = [w for w, _ in heavy[:20]]
+    inflows = []
+    for s_ in starts:
+        lo, hi = s_, s_ + SEGMENT_BLOCKS - 1
+        try:
+            inflows += rpc("eth_getLogs", [{"address": USDC, "fromBlock": hex(lo), "toBlock": hex(hi),
+                                            "topics": [TOPIC_TRANSFER, None, ["0x" + pad(w) for w in top_heavy]]}])
+        except Exception as e:  # noqa: BLE001
+            print(f"inflow scan {lo}: {e}", file=sys.stderr)
+    scale_week = WINDOW_DAYS * BLOCKS_PER_DAY / sampled_blocks
+    refills = {}
+    for lg in inflows:
+        to, frm = addr_topic(lg["topics"][2]), addr_topic(lg["topics"][1])
+        x = refills.setdefault(to, {"count": 0, "usdc": 0.0, "from": {}})
+        x["count"] += 1
+        x["usdc"] += h2i(lg["data"]) / 1e6
+        x["from"][frm] = x["from"].get(frm, 0) + 1
+    funders = {}
+    for w, x in refills.items():
+        for f_ in x["from"]:
+            funders.setdefault(f_, set()).add(w)
+    funding = {
+        "payers_scanned": len(top_heavy),
+        "per_payer": [{"address": w, "payments_per_week_est": n * scale_week,
+                       "inflows_per_week_est": refills.get(w, {}).get("count", 0) * scale_week,
+                       "usdc_in_per_week_est": refills.get(w, {}).get("usdc", 0) * scale_week,
+                       "distinct_funders": len(refills.get(w, {}).get("from", {})),
+                       "usdc_held": heavy_bal[w] / 1e6} for w, n in heavy[:20]],
+        "funders_shared_by_several_payers": sorted(
+            [{"funder": f_, "payers_funded": len(ws)} for f_, ws in funders.items() if len(ws) > 1],
+            key=lambda y: -y["payers_funded"])[:10],
+    }
+
+    # ---- what the heaviest payers buy
+    heavy_receipts = [r for r in batch([("eth_getTransactionReceipt", [t]) for w in top_heavy
+                                        for t in payer_txs.get(w, [])], size=25) if r]
+    bought = {}
+    for sub, frm, to, amt in payments_in(heavy_receipts):
+        x = bought.setdefault(frm, {})
+        x[to] = x.get(to, 0) + 1
+    for row in funding["per_payer"]:
+        row["pays"] = sorted(bought.get(row["address"], {}), key=lambda m: -bought[row["address"]][m])[:3]
     top_sub = sorted(submitters.items(), key=lambda x: -x[1])[:10]
     result = {
         "chain": "base-mainnet", "latest_block": latest, "window_days": WINDOW_DAYS,
@@ -314,6 +406,8 @@ def main():
             "x402_count": len(x402_big), "x402_usdc": sum(c["usdc"] for c in x402_big),
             "other_count": len(other_big), "other_usdc": sum(c["usdc"] for c in other_big),
         },
+        "settlement_cost": settlement,
+        "heavy_payer_funding": funding,
         "heaviest_payers": [{"address": w, "authorizations_in_sample": n,
                              "authorizations_per_week_est": n / (sampled_blocks / (WINDOW_DAYS * BLOCKS_PER_DAY)),
                              "usdc": heavy_bal[w] / 1e6} for w, n in heavy],
@@ -374,6 +468,30 @@ def main():
     ]
     for c in sorted(x402_big, key=lambda y: -y["usdc"])[:20]:
         lines.append(f"  {c['address']}  {c['usdc']:>14,.2f}  {c['authorizations_in_sample']:>5}  {c['median_payment']}")
+    sc = result["settlement_cost"]
+    cr = sc["cost_as_share_of_payment"]
+    cu = sc["cost_usd_per_payment"]
+    lines += [
+        "",
+        f"What settling one payment costs (ETH at ${sc['eth_usd']:,.2f}, {sc['payments_priced']:,} payments priced)" if sc["eth_usd"] else "ETH price unavailable",
+        f"  gas per payment, USD           median {cu.get('median', 0):.5f}   p90 {cu.get('p90', 0):.5f}",
+        f"  gas as share of the payment    median {cr.get('median', 0):.1%}   p90 {cr.get('p90', 0):.1%}",
+        f"  payments where gas > 10%       {sc['share_of_payments_where_gas_exceeds_10pct'] or 0:.0%}",
+        f"  payments per settlement tx     median {sc['payments_per_tx'].get('median', 0)}   max {sc['payments_per_tx'].get('max', 0)}",
+        f"  gas spent settling, all x402   ~${sc['gas_usd_per_day_est']:,.0f} per day",
+        "  by submitter (share of payments, gas USD/day, gas as share of value):",
+    ]
+    for x in sc["by_submitter"][:6]:
+        g = x["gas_as_share_of_value"]
+        lines.append(f"    {x['address']}  {x['share_of_payments']:>5.0%}  {x['gas_usd_per_day_est']:>9,.0f}  {(g or 0):>6.1%}")
+    lines += ["", "How the heaviest payers stay funded (payments/wk, refills/wk, USDC in/wk, funders, held, top payTo):"]
+    for x in result["heavy_payer_funding"]["per_payer"][:12]:
+        lines.append(f"  {x['address'][:12]}..  {x['payments_per_week_est']:>9,.0f}  {x['inflows_per_week_est']:>7,.0f}  "
+                     f"{x['usdc_in_per_week_est']:>11,.2f}  {x['distinct_funders']:>3}  {x['usdc_held']:>9,.2f}  "
+                     f"{','.join(m[:10] for m in x.get('pays', []))}")
+    shared = result["heavy_payer_funding"]["funders_shared_by_several_payers"]
+    lines.append(f"  funders shared by several heavy payers: {len(shared)}" +
+                 (f" (largest funds {shared[0]['payers_funded']})" if shared else ""))
     lines += ["", "Heaviest payers by frequency (address, authorizations/week est, USDC held):"]
     for x in result["heaviest_payers"][:20]:
         lines.append(f"  {x['address']}  {x['authorizations_per_week_est']:>10,.0f}  {x['usdc']:>14,.2f}")
