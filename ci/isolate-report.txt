@@ -1,0 +1,17 @@
+exit 1
+== failing tests
+[FAIL: nearly the whole gas limit is gone: 4958 <= 270000] test_aWalletKeyedOnBlockParityBurnsTheGasLimit() (gas: 856994)
+[FAIL: nearly the whole gas limit is gone: 4958 <= 270000] test_aWalletKeyedOnBlockParityBurnsTheGasLimit() (gas: 856994)
+== summary
+Suite result: FAILED. 0 passed; 1 failed; 0 skipped; finished in 3.41ms (2.05ms CPU time)
+Ran 44 test suites in 462.03s (1268.15s CPU time): 317 tests passed, 1 failed, 3 skipped (321 total tests)
+Encountered 1 failing test in test/vault/review/FacilitatorGrief.t.sol:VaultPayRouterReview_FacilitatorGriefTest
+Encountered a total of 1 failing tests, 317 tests succeeded
+== failure detail
+Failing tests:
+Encountered 1 failing test in test/vault/review/FacilitatorGrief.t.sol:VaultPayRouterReview_FacilitatorGriefTest
+[FAIL: nearly the whole gas limit is gone: 4958 <= 270000] test_aWalletKeyedOnBlockParityBurnsTheGasLimit() (gas: 856994)
+
+Encountered a total of 1 failing tests, 317 tests succeeded
+
+Tip: Run `forge test --rerun` to retry only the 1 failed test
