@@ -1,0 +1,62 @@
+exit session-local 0, session-fork 0
+== local anvil, FiatToken v2.2
+local chain 31337, FiatToken v2.2 USDC at 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
+{
+  "chainId": 31337,
+  "codehash": "0xcdcdaf8b8ebaad66a160f8e777265c028957e1b7502d224860799cd052141665",
+  "escrow": "0x175925a679f389D905686D7E484b030Ccd7992CB",
+  "salt": "0x9383312313a340cbd3216a09ac566520fbf38296d2c0ae74b6c3244fb9c96664"
+}
+{
+  "chainId": 31337,
+  "escrow": "0x175925a679f389D905686D7E484b030Ccd7992CB",
+  "paths": "0xa9BF003a805ef14161aab2482eFd2a9C64e5f3fF",
+  "salt": "0x520ea49f4dede02d560eefd319b1807313bd4d8744a6a527a125d68fce492c1e"
+}
+✔ the facilitator offers sessions on its own escrow (1340.040812ms)
+✔ 1000 paid calls cost one open and one redemption, and the agent never holds ETH (70723.339429ms)
+ℹ 1000 calls in 68.0 s (68.0 ms a call)
+✔ an old voucher is refused, and so is one above the deposit or signed by another key (272.399933ms)
+✔ the payee closes the session: its last calls are paid and the rest of the deposit goes home (1727.478501ms)
+✔ after the close, the agent retires the session and pays from a new one (1897.95681ms)
+✔ the owner takes the agent's free USDC home, gaslessly (2009.351092ms)
+✔ a path: the agent holds nothing, and its key can only walk the owner's path (13869.954215ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 91936.569072
+
+== Base mainnet fork, live USDC
+fork of Base mainnet at block 53293902
+{
+  "chainId": 8453,
+  "codehash": "0x741ca71d36e07b267780364a14228aca567969ffcd2780cac5d2a805f188d9c9",
+  "escrow": "0x175925a679f389D905686D7E484b030Ccd7992CB",
+  "salt": "0x9383312313a340cbd3216a09ac566520fbf38296d2c0ae74b6c3244fb9c96664"
+}
+{
+  "chainId": 8453,
+  "escrow": "0x175925a679f389D905686D7E484b030Ccd7992CB",
+  "paths": "0xa9BF003a805ef14161aab2482eFd2a9C64e5f3fF",
+  "salt": "0x520ea49f4dede02d560eefd319b1807313bd4d8744a6a527a125d68fce492c1e"
+}
+✔ the facilitator offers sessions on its own escrow (1476.115128ms)
+✔ 1000 paid calls cost one open and one redemption, and the agent never holds ETH (72384.62088ms)
+ℹ 1000 calls in 71.3 s (71.3 ms a call)
+✔ an old voucher is refused, and so is one above the deposit or signed by another key (262.623466ms)
+✔ the payee closes the session: its last calls are paid and the rest of the deposit goes home (1821.144607ms)
+✔ after the close, the agent retires the session and pays from a new one (1983.071234ms)
+✔ the owner takes the agent's free USDC home, gaslessly (1922.814473ms)
+✔ a path: the agent holds nothing, and its key can only walk the owner's path (14026.556919ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 93971.844365
