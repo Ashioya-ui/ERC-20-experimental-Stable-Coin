@@ -1,0 +1,8 @@
+Base mainnet funding check, run 41088374845
+account 1  0x9CD82de3A24bc33D45897f72da5966D8920fAB48
+ETH  have 0 wei, need 200000000000000
+USDC have 0, need 200000
+funded false
+
+--- sourcify
+not run
