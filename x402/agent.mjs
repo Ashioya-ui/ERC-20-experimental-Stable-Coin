@@ -686,16 +686,30 @@ async function main(argv) {
     const before = await bal();
     const started = Date.now();
     let paid = 0;
+    let retries = 0;
     let last;
     const modes = {};
     for (let i = 0; i < n; i++) {
-      last = await agent.pay(url, { prefer: flag('prefer') });
+      // A public RPC drops requests now and then. A call that was not paid is tried again after a
+      // pause: the next voucher covers it (a voucher is cumulative), so a retry can overpay by one
+      // call's price at most, and never pays twice for one call.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          last = await agent.pay(url, { prefer: flag('prefer') });
+        } catch (e) {
+          if (e instanceof PolicyError || attempt >= 4) throw e;
+          last = { paid: false, error: e.message };
+        }
+        if (last.paid || attempt >= 4) break;
+        retries += 1;
+        await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
+      }
       if (!last.paid) break;
       paid += 1;
       modes[last.mode] = (modes[last.mode] || 0) + 1;
     }
     show({
-      url, calls: n, paid, modes, seconds: (Date.now() - started) / 1000, lastStatus: last?.status, error: last?.error,
+      url, calls: n, paid, retries, modes, seconds: (Date.now() - started) / 1000, lastStatus: last?.status, error: last?.error,
       session: last?.session, spentUSD: formatUnits(agent.spent, 6), before, after: await bal(),
     });
     if (paid !== n) process.exitCode = 2;
