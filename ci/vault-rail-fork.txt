@@ -1,0 +1,82 @@
+exit unit 0, fork 0
+✔ headers are base64 JSON both ways (1.111944ms)
+✔ sameRequirement compares what is paid, to whom, on which chain (0.216462ms)
+✔ EIP-3009 typed data has the six fields in order and the right domain (0.132837ms)
+✔ validators (0.2556ms)
+✔ cast output: JSON is found even with stray log lines around it (seen on a busy anvil) (0.384802ms)
+✔ signer specs (0.147599ms)
+✔ dollar amounts (0.241399ms)
+✔ PayIntent fields reproduce the Solidity typehash string exactly (0.217093ms)
+✔ vault intent typed data (0.318254ms)
+✔ permit typed data (0.297382ms)
+✔ splitting a signature for a permit (0.256972ms)
+✔ cast tuples for the router call (0.098887ms)
+✔ the session voucher reproduces the escrow's Solidity typehash string and domain (0.236653ms)
+✔ a session payload is checked for shape before anything else (0.247559ms)
+✔ a path step reproduces X402SessionPaths' Solidity typehash string and domain (0.265505ms)
+✔ a session is opened one way, never two (0.111155ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 56.46017
+
+fork of Base mainnet at block 53293237
+Compiling 45 files with Solc 0.8.26
+Solc 0.8.26 finished in 3.24s
+Compiler run successful!
+Script ran successfully.
+
+== Return ==
+router: contract VaultPayRouter 0x2e665A5E6C636fA00DBf1C0A845eB07929D51d6f
+
+== Logs ==
+  VaultPayRouter 0x2e665A5E6C636fA00DBf1C0A845eB07929D51d6f
+  chain id       8453
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 8453
+
+Estimated gas price: 0.010768354 gwei
+
+Estimated total gas used for script: 2525201
+
+Estimated amount required: 0.000027192258289154 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/broadcast/DeployVaultPayRouter.s.sol/8453/run-latest.json
+
+Sensitive values saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/cache/DeployVaultPayRouter.s.sol/8453/run-latest.json
+
+{
+  "chainId": 8453,
+  "codehash": "0x6a473fb25f6eb97936905b2c1edd90cd5e8950de6bb26683846f1479adbd9c92",
+  "router": "0x2e665A5E6C636fA00DBf1C0A845eB07929D51d6f",
+  "salt": "0x6bc16b64077405698ba09013c414c21390b38a75e36ef6837507d84382f096a4"
+}
+✔ the facilitator offers the vault router, and only for the vault it trusts (6136.385064ms)
+✔ an agent with no ETH pays an x402 invoice from its Aave position (1424.342248ms)
+✔ a second payment works too, signing a fresh permit at the next nonce (423.546608ms)
+✔ a replayed payment is refused before it reaches the chain (447.542454ms)
+✔ a tampered intent is refused: checked fields locally, signed fields by simulation (250.972912ms)
+✔ an owner sweeps the agent's whole position home, through the facilitator's checks (391.201043ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9142.909069
