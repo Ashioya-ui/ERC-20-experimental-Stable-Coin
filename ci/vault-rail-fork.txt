@@ -1,0 +1,82 @@
+exit unit 0, fork 0
+✔ headers are base64 JSON both ways (2.41ms)
+✔ sameRequirement compares what is paid, to whom, on which chain (0.328122ms)
+✔ EIP-3009 typed data has the six fields in order and the right domain (0.283087ms)
+✔ validators (0.370811ms)
+✔ cast output: JSON is found even with stray log lines around it (seen on a busy anvil) (0.648729ms)
+✔ signer specs (0.279441ms)
+✔ dollar amounts (0.447764ms)
+✔ PayIntent fields reproduce the Solidity typehash string exactly (0.305218ms)
+✔ vault intent typed data (0.547119ms)
+✔ permit typed data (0.502125ms)
+✔ splitting a signature for a permit (0.41332ms)
+✔ cast tuples for the router call (0.189934ms)
+✔ the session voucher reproduces the escrow's Solidity typehash string and domain (0.388814ms)
+✔ a session payload is checked for shape before anything else (0.432837ms)
+✔ a path step reproduces X402SessionPaths' Solidity typehash string and domain (0.376912ms)
+✔ a session is opened one way, never two (0.226352ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 87.791364
+
+fork of Base mainnet at block 53293082
+Compiling 45 files with Solc 0.8.26
+Solc 0.8.26 finished in 4.53s
+Compiler run successful!
+Script ran successfully.
+
+== Return ==
+router: contract VaultPayRouter 0x2e665A5E6C636fA00DBf1C0A845eB07929D51d6f
+
+== Logs ==
+  VaultPayRouter 0x2e665A5E6C636fA00DBf1C0A845eB07929D51d6f
+  chain id       8453
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 8453
+
+Estimated gas price: 0.011 gwei
+
+Estimated total gas used for script: 2525201
+
+Estimated amount required: 0.000027777211 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/broadcast/DeployVaultPayRouter.s.sol/8453/run-latest.json
+
+Sensitive values saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/cache/DeployVaultPayRouter.s.sol/8453/run-latest.json
+
+{
+  "chainId": 8453,
+  "codehash": "0x6a473fb25f6eb97936905b2c1edd90cd5e8950de6bb26683846f1479adbd9c92",
+  "router": "0x2e665A5E6C636fA00DBf1C0A845eB07929D51d6f",
+  "salt": "0x6bc16b64077405698ba09013c414c21390b38a75e36ef6837507d84382f096a4"
+}
+✔ the facilitator offers the vault router, and only for the vault it trusts (5512.62778ms)
+✔ an agent with no ETH pays an x402 invoice from its Aave position (2004.602885ms)
+✔ a second payment works too, signing a fresh permit at the next nonce (508.079498ms)
+✔ a replayed payment is refused before it reaches the chain (531.201136ms)
+✔ a tampered intent is refused: checked fields locally, signed fields by simulation (298.888055ms)
+✔ an owner sweeps the agent's whole position home, through the facilitator's checks (514.357325ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9468.050848
