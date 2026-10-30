@@ -132,6 +132,30 @@ export function voucherTypedData({ chainId, escrow, sessionId, cumulative }) {
   };
 }
 
+/** Field order of X402SessionPaths' PathStep; it must match STEP_TYPEHASH exactly. */
+export const PATH_STEP_FIELDS = [
+  { name: 'pathId', type: 'bytes32' },
+  { name: 'payee', type: 'address' },
+  { name: 'signer', type: 'address' },
+  { name: 'expiry', type: 'uint64' },
+  { name: 'salt', type: 'bytes32' },
+  { name: 'amount', type: 'uint256' },
+  { name: 'committed', type: 'uint256' },
+  { name: 'deadline', type: 'uint256' },
+];
+
+/** A step an agent signs to open a session from its path: valid at the state `committed` only. */
+export function pathStepTypedData({ chainId, paths, step }) {
+  const message = {};
+  for (const { name } of PATH_STEP_FIELDS) message[name] = String(step[name]);
+  return {
+    types: { EIP712Domain: DOMAIN_FIELDS, PathStep: PATH_STEP_FIELDS },
+    primaryType: 'PathStep',
+    domain: { name: 'X402SessionPaths', version: '1', chainId: Number(chainId), verifyingContract: paths },
+    message,
+  };
+}
+
 /** Same requirement (the fields that decide what is paid, to whom, on which chain). */
 export function sameRequirement(a, b) {
   return (

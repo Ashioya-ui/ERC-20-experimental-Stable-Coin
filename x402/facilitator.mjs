@@ -38,7 +38,7 @@ import {
   X402_VERSION, lc, isAddress, isBytes32, isHex, isUint, readJson, sendJson, closeAfter, PAY_INTENT_FIELDS, intentTuple,
   permitTuple,
 } from './lib/protocol.mjs';
-import { MAX_DURATION, MIN_DURATION, UINT128_MAX, list, readSession, sessionIdOf, wellFormed } from './lib/session.mjs';
+import { MAX_DURATION, MIN_DURATION, UINT128_MAX, list, readPath, readSession, sessionIdOf, wellFormed } from './lib/session.mjs';
 
 const SKEW = 6n; // seconds of clock slack allowed beyond maxTimeoutSeconds
 // A requirement comes from the resource server, which is not trusted: its maxTimeoutSeconds is
@@ -105,6 +105,18 @@ export async function createFacilitator({
     'AmountOverflow()': 'invalid_payload',
     'ZeroAddress()': 'invalid_payload',
     'EscrowAsPayee()': 'invalid_pay_to',
+    // X402SessionPaths: the self-approaching condition, refusing a step that does not approach the end
+    'NotOnPath(address)': 'path_payee_not_on_path',
+    'BeyondEnd(address,uint256,uint256)': 'path_beyond_end',
+    'StaleStep(uint256,uint256)': 'path_step_stale',
+    'ShortOfFunds(uint256,uint256)': 'insufficient_funds',
+    'SessionOutlivesPath(uint64,uint64)': 'invalid_session_expiry',
+    'PathEnded(bytes32)': 'path_ended',
+    'PathExpired(bytes32)': 'path_ended',
+    'UnknownPath(bytes32)': 'unknown_path',
+    'SignatureExpired(uint256)': 'invalid_exact_evm_payload_authorization_valid_before',
+    'SessionMismatch(bytes32,bytes32)': 'invalid_session_id',
+    'NotAgent(address)': 'invalid_payload',
     'LengthMismatch()': 'invalid_payload',
   };
   for (const [sig, reason] of Object.entries(map)) errors[(await cast(['sig', sig])).toLowerCase()] = reason;
@@ -125,7 +137,7 @@ export async function createFacilitator({
   };
 
   const forbiddenPayTo = new Set(
-    [A.sUSD, A.stabilizer, A.treasury, A.router, A.usdc, A.vaultRouter, A.sessionEscrow, ...A.vaults, '0x' + '0'.repeat(40)]
+    [A.sUSD, A.stabilizer, A.treasury, A.router, A.usdc, A.vaultRouter, A.sessionEscrow, A.sessionPaths, ...A.vaults, '0x' + '0'.repeat(40)]
       .filter(Boolean),
   );
   // Sessions. `sessions` holds every session this facilitator has accepted a voucher on (so each
@@ -408,6 +420,7 @@ export async function createFacilitator({
       return { isValid: true, payer, mode: 'session', id, cumulative, voucher, snapshot: s };
     }
 
+    if (sp.pathStep !== undefined) return checkPathStep(sp, r, { id, payTo, price, cumulative, minRemaining, voucher, hint });
     const o = sp.open;
     if (!o) return bad('unknown_session', hint);
     const payer = lc(o.funder);
@@ -450,6 +463,61 @@ export async function createFacilitator({
       isValid: true, payer, mode: 'session', id, cumulative, voucher, tx, validBefore: BigInt(o.validBefore),
       opening: {
         funder: payer, payee: payTo, token: A.usdc, signer: signerAddress, deposited: deposit, claimed: 0n, expiry, closed: false,
+      },
+    };
+  }
+
+  /**
+   * A session opened from the agent's X402SessionPaths path: a step the agent signed, bound to the
+   * path's state for this payee. The path refuses any step that does not approach the end its owner
+   * declared, and that is simulated here exactly as /settle will send it.
+   */
+  async function checkPathStep(sp, r, c) {
+    const ps = sp.pathStep;
+    if (!A.sessionPaths) return bad('unsupported_session_paths', c.hint);
+    const path = await readPath(chain, A.sessionPaths, lc(ps.pathId));
+    if (!path) return bad('unknown_path', c.hint);
+    const payer = path.agent;
+    if (path.token !== A.usdc) return bad('invalid_session_asset', payer);
+    const signerAddress = lc(ps.signer);
+    const expiry = BigInt(ps.expiry);
+    const deposit = BigInt(ps.amount);
+    if (deposit === 0n || deposit > UINT128_MAX || expiry >= 1n << 64n) return bad('invalid_payload', payer);
+    const expected = await sessionIdOf({
+      funder: A.sessionPaths, payee: c.payTo, token: A.usdc, signer: signerAddress, expiry, salt: lc(ps.salt),
+    });
+    if (expected !== c.id) return bad('invalid_session_id', payer);
+    if (c.cumulative < c.price) return bad('session_voucher_stale', payer);
+    if (c.cumulative > deposit) return bad('session_above_deposit', payer);
+    const now = await chain.timestamp();
+    const late = await windowError('0', ps.deadline, r, payer, now);
+    if (late) return late;
+    if (expiry < now + c.minRemaining || expiry < BigInt(ps.deadline) + MIN_DURATION || expiry > path.expiry) {
+      return bad('invalid_session_expiry', payer);
+    }
+    const signed = await chain.bool(A.sessionEscrow, 'isVoucherSignedBy(address,bytes32,uint256,bytes)(bool)', [
+      signerAddress, c.id, String(c.cumulative), c.voucher,
+    ]);
+    if (!signed) return bad('invalid_session_voucher', payer);
+    const tx = {
+      to: A.sessionPaths,
+      sig: 'stepWithSig(bytes32,address,address,uint64,bytes32,uint256,uint256,uint256,bytes)',
+      args: [
+        lc(ps.pathId), c.payTo, signerAddress, String(expiry), lc(ps.salt), String(deposit), String(ps.committed),
+        String(ps.deadline), ps.signature,
+      ],
+    };
+    try {
+      await chain.call(tx.to, tx.sig, tx.args, { from }); // exactly what /settle sends
+    } catch (e) {
+      return bad(reasonOf(e) || 'unexpected_verify_error', payer);
+    }
+    return {
+      isValid: true, payer, mode: 'session', id: c.id, cumulative: c.cumulative, voucher: c.voucher, tx,
+      validBefore: BigInt(ps.deadline),
+      opening: {
+        funder: A.sessionPaths, payee: c.payTo, token: A.usdc, signer: signerAddress, deposited: deposit, claimed: 0n,
+        expiry, closed: false,
       },
     };
   }
@@ -872,7 +940,10 @@ export async function createFacilitator({
     if (A.sessionEscrow) {
       kinds.push({
         x402Version: X402_VERSION, scheme: 'session', network: dep.network,
-        extra: { asset: A.usdc, escrow: A.sessionEscrow, ...dep.domains.usdc, minRemainingSeconds: String(SESSION_MARGIN) },
+        extra: {
+          asset: A.usdc, escrow: A.sessionEscrow, ...dep.domains.usdc, minRemainingSeconds: String(SESSION_MARGIN),
+          ...(A.sessionPaths ? { paths: A.sessionPaths } : {}),
+        },
       });
     }
     const extensions = [

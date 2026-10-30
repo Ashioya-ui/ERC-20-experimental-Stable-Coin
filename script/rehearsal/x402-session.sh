@@ -45,5 +45,8 @@ fi
 FOUNDRY_PROFILE=vault forge script script/vault/DeployX402SessionEscrow.s.sol \
   --rpc-url "$RPC" --broadcast --unlocked --sender "$DEPLOYER" >"$TMP/escrow.log" 2>&1 || { tail -30 "$TMP/escrow.log"; exit 1; }
 cat "deployments/$CHAIN-session-escrow.json"; echo
+FOUNDRY_PROFILE=vault forge script script/vault/DeployX402SessionPaths.s.sol \
+  --rpc-url "$RPC" --broadcast --unlocked --sender "$DEPLOYER" >"$TMP/paths.log" 2>&1 || { tail -30 "$TMP/paths.log"; exit 1; }
+cat "deployments/$CHAIN-session-paths.json"; echo
 
 (cd x402 && RPC_URL=$RPC SESSION_E2E=1 node --test --test-concurrency=1 --test-reporter=spec test/session.e2e.mjs)

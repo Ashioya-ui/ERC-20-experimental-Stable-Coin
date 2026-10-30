@@ -32,7 +32,8 @@
 //          the key controls), FACILITATOR_URL, AGENT_MAX_PER_REQUEST and AGENT_BUDGET (USD),
 //          AGENT_ALLOWED_PAYTO (comma-separated), AGENT_LEDGER (a JSON file that keeps the
 //          amount spent and the open sessions across runs), AGENT_SESSION_DEPOSIT and
-//          AGENT_MAX_SESSION_DEPOSIT (USD), AGENT_SESSION_SECONDS.
+//          AGENT_MAX_SESSION_DEPOSIT (USD), AGENT_SESSION_SECONDS, AGENT_PATH (an X402SessionPaths path
+//          id: the agent then holds no money, and opens every session as a step on its owner's path).
 
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -42,9 +43,9 @@ import { cast, first, makeChain, signTypedData, signerAddress } from './lib/cast
 import { loadDeployment } from './lib/config.mjs';
 import {
   X402_VERSION, HEADER, encode, decode, lc, isAddress, isUint, authorizationTypedData, vaultIntentTypedData,
-  permitTypedData, splitSignature, voucherTypedData,
+  permitTypedData, splitSignature, voucherTypedData, pathStepTypedData, isBytes32,
 } from './lib/protocol.mjs';
-import { MAX_DURATION, MIN_DURATION, openNonce, readSession, sessionIdOf } from './lib/session.mjs';
+import { MAX_DURATION, MIN_DURATION, openNonce, readPath, readSession, sessionIdOf } from './lib/session.mjs';
 
 export class PolicyError extends Error {
   constructor(message) {
@@ -81,7 +82,7 @@ export function formatUnits(x, decimals) {
 
 const rand32 = () => '0x' + randomBytes(32).toString('hex');
 
-export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, policy = {}, ledgerFile, tmpDir }) {
+export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, policy = {}, ledgerFile, tmpDir, path }) {
   const chain = makeChain(rpcUrl);
   const dep = await loadDeployment(chain);
   const A = dep.addresses;
@@ -89,6 +90,10 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
   const from = lc(payer || owner);
   if (!isAddress(from)) throw new Error(`bad payer address ${payer}`);
   const work = tmpDir || mkdtempSync(join(tmpdir(), 'x402-agent-'));
+  // The agent's X402SessionPaths path, if its owner keeps its money in one: then this key holds
+  // nothing, and every session it opens is a step toward the end the owner declared.
+  if (path !== undefined && path !== null && !isBytes32(path)) throw new Error(`bad path id ${path}`);
+  const pathId = path ? lc(path) : null;
 
   const limits = {
     maxPerRequest: policy.maxPerRequest ?? null, // bigint, USD with 6 decimals
@@ -182,6 +187,7 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
   // expiry, unknown on-chain, or spent.
   const DEAD_SESSION = new Set([
     'session_closed', 'session_expiring', 'unknown_session', 'session_above_deposit', 'invalid_session_payee', 'invalid_session_asset',
+    'path_step_stale',
   ]);
 
   // Chain time, read at most every 15 s and carried forward by the local clock in between, so a
@@ -214,18 +220,67 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
     const now = await chainNow();
     if (BigInt(s.deposit) - BigInt(s.cumulative) < BigInt(r.amount)) return null;
     if (BigInt(s.expiry) < now + minRemainingOf(r)) return null;
-    if (s.open && BigInt(s.open.validBefore) <= now + 15n) {
-      // The open's authorization is about to lapse. If the facilitator did open the session, carry
-      // on with it; if not, it never can now, and a new session is needed.
+    const pending = s.open ?? s.pathStep ?? null;
+    if (pending && BigInt(s.open ? s.open.validBefore : s.pathStep.deadline) <= now + 15n) {
+      // The open is about to lapse. If the facilitator did open the session, carry on with it; if
+      // not, it never can now, and a new session is needed.
       if (!(await readSession(chain, s.escrow, s.sessionId))) return null;
       s.open = null;
+      s.pathStep = null;
       saveLedger();
     }
     return s;
   }
 
+  /** A new session opened from the agent's path: a step toward the owner's end, signed by this key. */
+  async function newPathSession(r) {
+    const price = BigInt(r.amount);
+    const payee = lc(r.payTo);
+    if (!A.sessionPaths) throw new Error('this chain has no X402SessionPaths deployment');
+    const p = await readPath(chain, A.sessionPaths, pathId);
+    if (!p || p.ended) throw new PolicyError("this agent's path is not open");
+    if (p.agent !== owner) throw new Error(`the path's agent is ${p.agent}, not this key`);
+    if (p.token !== A.usdc) throw new Error('the path holds another token');
+    const cap = await chain.uint(A.sessionPaths, 'capOf(bytes32,address)(uint256)', [pathId, payee]);
+    if (cap === 0n) throw new PolicyError(`${payee} is not on this agent's path`);
+    const committed = await chain.uint(A.sessionPaths, 'committedTo(bytes32,address)(uint256)', [pathId, payee]);
+    let deposit = limits.sessionDeposit ?? (isUint(r.extra?.suggestedDeposit) ? BigInt(r.extra.suggestedDeposit) : price * 1000n);
+    if (limits.maxSessionDeposit != null && deposit > limits.maxSessionDeposit) deposit = limits.maxSessionDeposit;
+    if (deposit > cap - committed) deposit = cap - committed;
+    if (deposit > p.free) deposit = p.free;
+    if (limits.budget != null && deposit > limits.budget - spent) deposit = limits.budget - spent;
+    if (deposit < price) throw new PolicyError(`the path has no room left for ${payee}`);
+    const w = await timeWindow(r.maxTimeoutSeconds);
+    const now = BigInt(w.validBefore) - BigInt(Math.max(10, Math.min(Number(r.maxTimeoutSeconds ?? 60), 600)));
+    let expiry = now + limits.sessionSeconds;
+    const floor = BigInt(w.validBefore) + MIN_DURATION + 300n;
+    if (expiry < floor) expiry = floor;
+    if (expiry < now + minRemainingOf(r) + 600n) expiry = now + minRemainingOf(r) + 600n;
+    if (expiry > p.expiry) expiry = p.expiry;
+    if (expiry < floor || expiry < now + minRemainingOf(r)) throw new PolicyError('the path ends too soon for a new session');
+    const salt = rand32();
+    const sessionId = await sessionIdOf({ funder: A.sessionPaths, payee, token: A.usdc, signer: owner, expiry, salt });
+    const step = {
+      pathId, payee, signer: owner, expiry: String(expiry), salt, amount: String(deposit), committed: String(committed),
+      deadline: w.validBefore,
+    };
+    const signature = await signTypedData(pathStepTypedData({ chainId: dep.chainId, paths: A.sessionPaths, step }), signer, work);
+    const s = {
+      sessionId, escrow: A.sessionEscrow, payee, token: A.usdc, funder: A.sessionPaths, signer: owner, salt, path: pathId,
+      expiry: String(expiry), deposit: String(deposit), cumulative: '0', calls: 0, served: 0, openedAt: new Date().toISOString(),
+      pathStep: { ...step, signature },
+    };
+    delete s.pathStep.payee; // the payee is the requirement's payTo
+    const key = sessionKey(r);
+    if (ledger.sessions[key]) ledger.retired.push(ledger.sessions[key]);
+    ledger.sessions[key] = s;
+    saveLedger();
+    return s;
+  }
+
   /** Sign the open of a new session with the merchant of `r`: a deposit, an expiry, this agent's key. */
   async function newSession(r) {
+    if (pathId) return newPathSession(r);
     const price = BigInt(r.amount);
     const payee = lc(r.payTo);
     let deposit = limits.sessionDeposit ?? (isUint(r.extra?.suggestedDeposit) ? BigInt(r.extra.suggestedDeposit) : price * 1000n);
@@ -284,6 +339,7 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
     return {
       session: {
         escrow: s.escrow, sessionId: s.sessionId, cumulative: String(cumulative), voucher, ...(s.open ? { open: s.open } : {}),
+        ...(s.pathStep ? { pathStep: s.pathStep } : {}),
       },
     };
   }
@@ -440,6 +496,7 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
     const error = !paid && res.status === 402 ? await errorOf(res, body) : undefined;
     if (paid) {
       s.open = null; // the facilitator accepts a voucher only once the session is open on-chain
+      s.pathStep = null;
       s.served += 1;
       saveLedger();
     } else if (!retried && DEAD_SESSION.has(error)) {
@@ -574,6 +631,7 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
   return {
     address: from, owner, deployment: dep, balances, pay, convert, sweep, choose, authorize,
     sessions: () => ledger.sessions,
+    path: pathId,
     get spent() { return spent; }, ledger: () => ledger,
   };
 }
@@ -595,6 +653,7 @@ async function main(argv) {
     payer: env.AGENT_PAYER,
     facilitatorUrl: env.FACILITATOR_URL,
     ledgerFile: env.AGENT_LEDGER,
+    path: env.AGENT_PATH || undefined,
     policy: {
       maxPerRequest: env.AGENT_MAX_PER_REQUEST ? parseUsd(env.AGENT_MAX_PER_REQUEST) : null,
       budget: env.AGENT_BUDGET ? parseUsd(env.AGENT_BUDGET) : null,

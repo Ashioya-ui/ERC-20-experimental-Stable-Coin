@@ -68,11 +68,14 @@ jobs:
             --sender 0x000000000000000000000000000000000000bEEF > /tmp/deploy.txt 2>&1; D=$?
           forge script script/vault/DeployX402SessionEscrow.s.sol --rpc-url "$BASE_RPC_URL" \
             --sender 0x000000000000000000000000000000000000bEEF > /tmp/deploy-escrow.txt 2>&1; E=$?
+          forge script script/vault/DeployX402SessionPaths.s.sol --rpc-url "$BASE_RPC_URL" \
+            --sender 0x000000000000000000000000000000000000bEEF > /tmp/deploy-paths.txt 2>&1; P=$?
           set -e
           {
-            echo "== exit codes: build $B, test $T, slither $S, deploy-simulation router $D, escrow $E"
+            echo "== exit codes: build $B, test $T, slither $S, deploy-simulation router $D, escrow $E, paths $P"
             echo; echo "== deployment simulations on Base mainnet (no broadcast)"; tail -25 /tmp/deploy.txt
             tail -25 /tmp/deploy-escrow.txt
+            tail -25 /tmp/deploy-paths.txt
             echo; echo "== slither"; tail -40 /tmp/slither.txt
             echo; echo "== sizes"; tail -12 /tmp/build.txt
             echo; echo "== tests"; cat /tmp/test.txt
@@ -80,7 +83,7 @@ jobs:
           # Summary first and the test log last: if anything is cut, it is the passing middle.
           { echo "report<<VPR_REPORT_EOF"; head -c 20000 /tmp/report.txt; echo; echo "...";
             tail -c 40000 /tmp/report.txt; echo "VPR_REPORT_EOF"; } >> "$GITHUB_OUTPUT"
-          if [ $B -eq 0 ] && [ $T -eq 0 ] && [ $S -eq 0 ] && [ $D -eq 0 ] && [ $E -eq 0 ]; then OK=true; else OK=false; fi
+          if [ $B -eq 0 ] && [ $T -eq 0 ] && [ $S -eq 0 ] && [ $D -eq 0 ] && [ $E -eq 0 ] && [ $P -eq 0 ]; then OK=true; else OK=false; fi
           echo "ok=$OK" >> "$GITHUB_OUTPUT"
           head -c 6000 /tmp/report.txt
           [ "$OK" = true ]

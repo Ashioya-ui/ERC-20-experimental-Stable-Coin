@@ -15,8 +15,8 @@ import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { cast, first, makeChain, newKeystore, signTypedData } from '../lib/cast.mjs';
 import { loadDeployment } from '../lib/config.mjs';
-import { HEADER, encode, decode, voucherTypedData } from '../lib/protocol.mjs';
-import { readSession } from '../lib/session.mjs';
+import { HEADER, encode, decode, voucherTypedData, pathStepTypedData, lc } from '../lib/protocol.mjs';
+import { readPath, readSession } from '../lib/session.mjs';
 import { createFacilitator } from '../facilitator.mjs';
 import { createMerchant } from '../merchant.mjs';
 import { createAgent } from '../agent.mjs';
@@ -249,4 +249,92 @@ test("the owner takes the agent's free USDC home, gaslessly", async (t) => {
   assert.equal(await bal(agent.address), 0n);
   assert.equal(await eth(agent.address), 0n, 'without the agent ever holding ETH');
   assert.deepEqual(await agent.sweep(home), [], 'nothing left');
+});
+
+// The self-approaching condition, end to end. The owner (home) declares a path for a fresh agent:
+// one named merchant, a cap of 0.05 USDC. The agent holds nothing and opens its session as a signed
+// step on the path. Then the agent's own key turns attacker, the way a compromised machine would:
+// a step off the path, a step past the end, and a replay of a step already taken. All three are
+// refused by the path itself, and the rest of the money goes home.
+test("a path: the agent holds nothing, and its key can only walk the owner's path", async (t) => {
+  if (skip) return t.skip(skip);
+  if (!A.sessionPaths) return t.skip('X402SessionPaths is not deployed on this chain');
+  const { dir, facilitator, facilitatorUrl, merchantUrl, merchantKey } = world;
+  const HOME = '0x70997970c51812dc3a010c7d01b50e0d17dc79c8'; // anvil's default account 1: unlocked on anvil only
+  const home = { kind: 'unlocked', address: HOME };
+  const merchant = merchantKey.address;
+  const agentKey = await newKeystore(dir, 'path-agent', join(dir, 'password'));
+  await dealUSDC(HOME, 1_000_000n);
+  const homeBefore = await bal(HOME);
+  const expiry = String((await chain.timestamp()) + 86_400n);
+  const salt = '0x' + randomBytes(32).toString('hex');
+  const payees = `[${merchant}]`;
+  const caps = '[50000]';
+  assert.ok((await chain.send(A.usdc, 'approve(address,uint256)', [A.sessionPaths, '50000'], home)).ok);
+  const declared = await chain.send(
+    A.sessionPaths, 'declare(address,address,uint64,bytes32,address[],uint256[],uint256)',
+    [agentKey.address, A.usdc, expiry, salt, payees, caps, '50000'], home,
+  );
+  assert.ok(declared.ok, 'declared');
+  const ends = first(await chain.call(A.sessionPaths, 'endsOf(address[],uint256[])(bytes32)', [payees, caps]));
+  const pathId = lc(first(await chain.call(
+    A.sessionPaths, 'pathIdOf(address,address,address,uint64,bytes32,bytes32)(bytes32)',
+    [HOME, agentKey.address, A.usdc, expiry, ends, salt],
+  )));
+  assert.equal((await readPath(chain, A.sessionPaths, pathId)).free, 50_000n);
+
+  const agent = await createAgent({
+    rpcUrl: RPC, signer: agentKey, facilitatorUrl, tmpDir: dir, ledgerFile: join(dir, 'path-ledger.json'), path: pathId,
+  });
+  let firstStep = null;
+  for (let i = 1; i <= 20; i++) {
+    const r = await agent.pay(`${merchantUrl}/api/v1/tick`);
+    assert.equal(r.paid, true, `call ${i}: ${r.error}`);
+    if (i === 1) {
+      firstStep = r.paymentPayload.payload.session.pathStep;
+      assert.ok(firstStep, 'the first call opens the session as a step on the path');
+      assert.match(r.settlement.transaction, /^0x[0-9a-f]{64}$/);
+    }
+  }
+  assert.equal(await bal(agentKey.address), 0n, 'the agent never holds the money');
+  assert.equal(await eth(agentKey.address), 0n, 'nor any ETH');
+  const sessionId = Object.values(agent.sessions())[0].sessionId;
+  const opened = await readSession(chain, A.sessionEscrow, sessionId);
+  assert.equal(opened.funder, A.sessionPaths, 'the path funded the session');
+  assert.equal(opened.deposited, 50_000n, 'the whole cap: everything the owner allowed this merchant');
+
+  // The agent's key turns attacker. Each step is simulated exactly as a facilitator would submit it.
+  const STEP = 'stepWithSig(bytes32,address,address,uint64,bytes32,uint256,uint256,uint256,bytes)';
+  const now = await chain.timestamp();
+  const sign = (step) => signTypedData(pathStepTypedData({ chainId: agent.deployment.chainId, paths: A.sessionPaths, step }), agentKey, dir);
+  const refusedWith = async (step, signature, error) => {
+    const sel = lc(await cast(['sig', error]));
+    const args = [pathId, step.payee, step.signer, step.expiry, step.salt, step.amount, step.committed, step.deadline, signature];
+    await assert.rejects(
+      chain.call(A.sessionPaths, STEP, args, { from: FACILITATOR }),
+      (e) => `${e.message}\n${e.stderr}`.toLowerCase().includes(sel.slice(2)),
+      `expected ${error}`,
+    );
+  };
+  const base = {
+    pathId, signer: agentKey.address, expiry: String(now + 7_200n), amount: '1', deadline: String(now + 60n),
+  };
+  const off = { ...base, payee: '0x' + randomBytes(20).toString('hex'), committed: '0', salt: '0x' + randomBytes(32).toString('hex') };
+  await refusedWith(off, await sign(off), 'NotOnPath(address)');
+  const past = { ...base, payee: merchant, committed: '50000', salt: '0x' + randomBytes(32).toString('hex') };
+  await refusedWith(past, await sign(past), 'BeyondEnd(address,uint256,uint256)');
+  const replay = { ...firstStep, payee: merchant };
+  await refusedWith(replay, firstStep.signature, 'StaleStep(uint256,uint256)');
+
+  // Settle: one redemption pays the twenty calls; the payee closes; the refund returns to the path,
+  // and from the path only home can take it.
+  await facilitator.redeemDue({ force: true });
+  assert.equal((await readSession(chain, A.sessionEscrow, sessionId)).claimed, 20n * PRICE);
+  assert.ok((await chain.send(A.sessionEscrow, 'closeByPayee(bytes32,uint256,bytes)', [sessionId, '0', '0x'], merchantKey)).ok);
+  assert.ok((await chain.send(A.sessionPaths, 'collect(bytes32)', [sessionId], home)).ok);
+  assert.ok((await chain.send(A.sessionPaths, 'goHome(bytes32)', [pathId], home)).ok);
+  assert.equal(await bal(HOME), homeBefore - 20n * PRICE, 'home got back everything the merchant did not earn');
+  assert.equal((await readPath(chain, A.sessionPaths, pathId)).free, 0n);
+  assert.ok((await readPath(chain, A.sessionPaths, pathId)).ended);
+  assert.equal(await bal(agentKey.address), 0n);
 });

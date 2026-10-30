@@ -67,15 +67,49 @@ export async function readSession(chain, escrow, sessionId) {
   };
 }
 
-/** Shape check of payload.session; true when every field present has the right form. */
+/**
+ * Shape check of payload.session; true when every field present has the right form. A session is
+ * opened one way or the other, never both: `open` (an EIP-3009 deposit from the funder) or
+ * `pathStep` (a step the agent signed on its X402SessionPaths path).
+ */
 export function wellFormed(sp) {
   if (!sp || !isAddress(sp.escrow) || !isBytes32(sp.sessionId) || !isUint(sp.cumulative) || !isHex(sp.voucher)) return false;
-  if (sp.open === undefined) return true;
-  const o = sp.open;
-  return (
-    !!o && isAddress(o.funder) && isAddress(o.signer) && isUint(o.expiry) && isBytes32(o.salt) && isUint(o.amount) &&
-    isUint(o.validAfter) && isUint(o.validBefore) && isHex(o.authorization)
-  );
+  if (sp.open !== undefined && sp.pathStep !== undefined) return false;
+  if (sp.open !== undefined) {
+    const o = sp.open;
+    return (
+      !!o && isAddress(o.funder) && isAddress(o.signer) && isUint(o.expiry) && isBytes32(o.salt) && isUint(o.amount) &&
+      isUint(o.validAfter) && isUint(o.validBefore) && isHex(o.authorization)
+    );
+  }
+  if (sp.pathStep !== undefined) {
+    const s = sp.pathStep;
+    return (
+      !!s && isBytes32(s.pathId) && isAddress(s.signer) && isUint(s.expiry) && isBytes32(s.salt) && isUint(s.amount) &&
+      isUint(s.committed) && isUint(s.deadline) && isHex(s.signature)
+    );
+  }
+  return true;
+}
+
+/** A path's on-chain state in X402SessionPaths, or null if it does not exist. */
+export async function readPath(chain, paths, pathId) {
+  const out = (await chain.call(paths, 'path(bytes32)(address,address,address,uint64,bool,uint128,uint128,uint128)', [pathId]))
+    .split('\n')
+    .map((l) => first(l.trim()));
+  if (out.length < 8) throw new Error(`unexpected path() output for ${pathId}`);
+  const home = lc(out[0]);
+  if (/^0x0{40}$/.test(home)) return null;
+  return {
+    home,
+    agent: lc(out[1]),
+    token: lc(out[2]),
+    expiry: BigInt(out[3]),
+    ended: out[4] === 'true',
+    free: BigInt(out[5]),
+    committed: BigInt(out[6]),
+    bound: BigInt(out[7]),
+  };
 }
 
 /** The cast argument for a list, e.g. ["0xa", "0xb"] -> "[0xa,0xb]". */

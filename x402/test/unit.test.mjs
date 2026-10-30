@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   encode, decode, sameRequirement, authorizationTypedData, isAddress, isBytes32, isHex, isUint, PAY_INTENT_FIELDS,
-  vaultIntentTypedData, permitTypedData, splitSignature, intentTuple, permitTuple, voucherTypedData,
+  vaultIntentTypedData, permitTypedData, splitSignature, intentTuple, permitTuple, voucherTypedData, PATH_STEP_FIELDS,
+  pathStepTypedData,
 } from '../lib/protocol.mjs';
 import { wellFormed, list } from '../lib/session.mjs';
 import { parseJsonOutput, parseSigner, first } from '../lib/cast.mjs';
@@ -160,4 +161,37 @@ test('a session payload is checked for shape before anything else', () => {
   assert.ok(!wellFormed({ ...v, open: null }));
   assert.ok(!wellFormed(undefined));
   assert.equal(list(['0xa', 1n, 2]), '[0xa,1,2]');
+});
+
+test('a path step reproduces X402SessionPaths\' Solidity typehash string and domain', () => {
+  const sol = readFileSync(new URL('../../src/vault/X402SessionPaths.sol', import.meta.url), 'utf8');
+  const m = /STEP_TYPEHASH = keccak256\(\s*"([^"]+)"\s*\)/.exec(sol);
+  assert.ok(m, 'STEP_TYPEHASH string not found in X402SessionPaths.sol');
+  assert.equal(`PathStep(${PATH_STEP_FIELDS.map((f) => `${f.type} ${f.name}`).join(',')})`, m[1]);
+  assert.match(sol, /EIP712\("X402SessionPaths", "1"\)/);
+  const step = {
+    pathId: '0x' + 'a'.repeat(64), payee: '0x' + '1'.repeat(40), signer: '0x' + '2'.repeat(40), expiry: 9n,
+    salt: '0x' + 'b'.repeat(64), amount: 5n, committed: 0n, deadline: 7n, extra: 'ignored',
+  };
+  const td = pathStepTypedData({ chainId: 8453, paths: '0x' + '3'.repeat(40), step });
+  assert.deepEqual(Object.keys(td.message), PATH_STEP_FIELDS.map((f) => f.name), 'only the signed fields, in order');
+  assert.equal(td.message.committed, '0');
+  assert.deepEqual(td.domain, { name: 'X402SessionPaths', version: '1', chainId: 8453, verifyingContract: '0x' + '3'.repeat(40) });
+});
+
+test('a session is opened one way, never two', () => {
+  const v = {
+    escrow: '0x' + '1'.repeat(40), sessionId: '0x' + 'a'.repeat(64), cumulative: '100', voucher: '0x' + 'ab'.repeat(65),
+  };
+  const pathStep = {
+    pathId: '0x' + 'c'.repeat(64), signer: '0x' + '3'.repeat(40), expiry: '1900000000', salt: '0x' + 'b'.repeat(64),
+    amount: '200000', committed: '0', deadline: '1800000060', signature: '0x' + 'cd'.repeat(65),
+  };
+  const open = {
+    funder: '0x' + '2'.repeat(40), signer: '0x' + '3'.repeat(40), expiry: '1900000000', salt: '0x' + 'b'.repeat(64),
+    amount: '200000', validAfter: '0', validBefore: '1900000000', authorization: '0x' + 'cd'.repeat(65),
+  };
+  assert.ok(wellFormed({ ...v, pathStep }));
+  assert.ok(!wellFormed({ ...v, pathStep, open }), 'both is neither');
+  for (const k of Object.keys(pathStep)) assert.ok(!wellFormed({ ...v, pathStep: { ...pathStep, [k]: '-1' } }), `pathStep.${k}`);
 });
