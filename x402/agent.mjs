@@ -351,7 +351,8 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
     for (const r of Array.isArray(accepts) ? accepts : []) {
       if (sessionRequirement(r)) {
         const live = !!(await usableSession(r));
-        out.push({ mode: 'session', r, cost: BigInt(r.amount), live, have: live || bal.usdc >= BigInt(r.amount) });
+        // A path agent holds nothing itself: its path funds the session, and refuses what it cannot.
+        out.push({ mode: 'session', r, cost: BigInt(r.amount), live, have: live || !!pathId || bal.usdc >= BigInt(r.amount) });
         continue;
       }
       if (r?.scheme !== 'exact' || r.network !== dep.network || !isAddress(r.payTo) || !isUint(r.amount)) continue;

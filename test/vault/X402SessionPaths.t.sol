@@ -412,8 +412,9 @@ contract X402SessionPathsTest is PathFixture {
         bytes32 sessionId = _submit(s, sig8);
 
         // A thousand calls' worth is redeemed, then the merchant closes and releases the rest.
+        bytes memory last = _voucher(sessionId, 1e5);
         vm.prank(merchant);
-        escrow.closeByPayee(sessionId, 1e5, _voucher(sessionId, 1e5));
+        escrow.closeByPayee(sessionId, 1e5, last);
         assertEq(usdc.balanceOf(merchant), 1e5);
         assertEq(usdc.balanceOf(address(paths)), 5e5 + 4e5, "the refund is back in the paths contract");
 
