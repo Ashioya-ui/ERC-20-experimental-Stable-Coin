@@ -1,0 +1,299 @@
+exit unit 0, rail 0, fork 0
+✔ headers are base64 JSON both ways (2.24748ms)
+✔ sameRequirement compares what is paid, to whom, on which chain (0.311455ms)
+✔ EIP-3009 typed data has the six fields in order and the right domain (0.255369ms)
+✔ validators (0.377098ms)
+✔ cast output: JSON is found even with stray log lines around it (seen on a busy anvil) (0.610256ms)
+✔ signer specs (0.315652ms)
+✔ dollar amounts (0.406754ms)
+✔ PayIntent fields reproduce the Solidity typehash string exactly (0.353113ms)
+✔ vault intent typed data (0.524054ms)
+✔ permit typed data (0.512653ms)
+✔ splitting a signature for a permit (0.422674ms)
+✔ cast tuples for the router call (0.186229ms)
+✔ the session voucher reproduces the escrow's Solidity typehash string and domain (0.387728ms)
+✔ a session payload is checked for shape before anything else (0.357392ms)
+✔ a path step reproduces X402SessionPaths' Solidity typehash string and domain (0.405391ms)
+✔ a session is opened one way, never two (0.202069ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 83.472751
+
+^^^^^^^
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#asm-keccak256
+
+note[asm-keccak256]: use of inefficient hashing mechanism; consider using inline assembly
+   --> src/vault/X402SessionEscrow.sol:295:16
+    |
+295 |         return keccak256(abi.encode(TOP_UP_TYPEHASH, sessionId, salt));
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#asm-keccak256
+
+warning[unsafe-typecast]: typecasts that can truncate values should be checked
+   --> src/vault/X402SessionEscrow.sol:346:23
+    |
+346 |         s.deposited = uint128(total);
+    |                       ^^^^^^^^^^^^^^
+    |
+    = note: consider disabling this lint if you're certain the cast is safe
+            
+            // casting to 'uint128' is safe because [explain why]
+            // forge-lint: disable-next-line(unsafe-typecast)
+            
+            
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unsafe-typecast
+
+warning[unsafe-typecast]: typecasts that can truncate values should be checked
+   --> src/vault/X402SessionEscrow.sol:357:21
+    |
+357 |         s.claimed = uint128(cumulative); // cumulative <= deposited <= type(uint128).max
+    |                     ^^^^^^^^^^^^^^^^^^^
+    |
+    = note: consider disabling this lint if you're certain the cast is safe
+            
+            // casting to 'uint128' is safe because [explain why]
+            // forge-lint: disable-next-line(unsafe-typecast)
+            
+            
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unsafe-typecast
+
+warning[unsafe-typecast]: typecasts that can truncate values should be checked
+   --> src/vault/X402SessionEscrow.sol:371:21
+    |
+371 |         s.claimed = uint128(cumulative); // cumulative <= deposited <= type(uint128).max
+    |                     ^^^^^^^^^^^^^^^^^^^
+    |
+    = note: consider disabling this lint if you're certain the cast is safe
+            
+            // casting to 'uint128' is safe because [explain why]
+            // forge-lint: disable-next-line(unsafe-typecast)
+            
+            
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unsafe-typecast
+
+warning[unsafe-typecast]: typecasts that can truncate values should be checked
+   --> src/vault/X402SessionEscrow.sol:373:25
+    |
+373 |             s.claimed = uint128(claimed);
+    |                         ^^^^^^^^^^^^^^^^
+    |
+    = note: consider disabling this lint if you're certain the cast is safe
+            
+            // casting to 'uint128' is safe because [explain why]
+            // forge-lint: disable-next-line(unsafe-typecast)
+            
+            
+    = help: https://book.getfoundry.sh/reference/forge/forge-lint#unsafe-typecast
+
+
+==== 0. anvil: chain 31337, a block every 2 seconds, transactions mined on arrival ====
+
+==== 1-3. USDC (FiatToken v2.2), v4 PoolManager, Spectrum (mainnet script), oracle live ====
+sUSD 0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE   stabilizer 0x3Aa5ebB10DC797CAC828524e59A333d0A371443c   USDC 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
+oracle filled: 8
+
+==== 4. SpectrumPayRouter ====
+router 0x36C02dA8a0983159322a80FFE9F24b1acfF8B570
+sUSD to pay 0.05 USDC: 50016208226224708 [5.001e16]
+
+==== 5. Agent wallets: encrypted keystores, test money ====
+client   0x5d5d390D39CE4805E10d95d0804107F6DB7F24eC   sUSD 599581504838546818800 [5.995e20]
+redteam  0x55017e2D81C9744103Ff823F4ffB1f0ba4320B95   sUSD 24982562701606117450 [2.498e19]
+reviewer 0x874C2b7c24574BD0a433498785358A534aeB2f9c   merchant 0x7729eB9826553b5c38cBcdD89D3E32C7ac8ED83B
+
+==== 6. Facilitator (:4020) and merchant (:4021) ====
+facilitator on http://127.0.0.1:4020 (eip155:31337), gas paid by 0x15d34aaf54267db7d7c367839aaf71a00a2c6a65
+merchant on http://127.0.0.1:4021 (eip155:31337)
+  kind: {'asset': '0x9a9f2ccfde556a7e9ff0848998aa4a0cfd8863ae', 'name': 'Spectrum Agentic USD', 'version': '1'}
+  kind: {'asset': '0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0', 'name': 'USD Coin', 'version': '2'}
+  kind: {'asset': '0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0', 'spectrumRouter': '0x36c02da8a0983159322a80ffe9f24b1acff8b570', 'payWith': '0x9a9f2ccfde556a7e9ff0848998aa4a0cfd8863ae'}
+  extensions: ['spectrum-router', 'spectrum-convert']
+
+==== 7. Demo: one sUSD balance pays every kind of x402 bill, and earns while idle ====
+client agent 0x5d5d390d39ce4805e10d95d0804107f6db7f24ec
+  holds 599.581504 sUSD and 0.000000 USDC; no ETH, no vault position, no USDC float
+
+/api/v1/compute (priced in sUSD)
+  paid by: sUSD   settlement tx 0xa24e0c4f5f...
+  merchant received: 0.005000 sUSD
+  agent spent: 0.005000 sUSD
+
+/api/v1/premium (priced in USDC, router offered)
+  paid by: router   settlement tx 0xbb3c3e0912...
+  merchant received: 0.050000 USDC
+  agent spent: 0.050016 sUSD
+
+/api/v1/usdc-only (priced in plain USDC only)
+  paid by: convert (conversion tx 0xa909cbb1b1...)   settlement tx 0x756d4711e3...
+  merchant received: 0.020000 USDC
+  agent spent: 0.020006 sUSD
+
+a keeper first pays out the 2.537355 sUSD of fees already waiting (10 hourly rebases),
+so the day below measures interest alone
+idle for 1 day: the lending vault holds 4124.200000 of the 4876.930000 USDC reserve and earns 5% APY,
+  credited hourly (0.564984 USDC); a keeper rebased 24 of 24 hours; index 1000700077337087120 -> 1000855960834092615
+  client sUSD 599.926183 -> 600.019636  (+0.093453: 5.69% a year at this rate)
+  the same balance keeps paying bills: no claim, no unstake, no top-up
+
+after idling, /api/v1/premium again: paid by router
+
+==== 8. Node end-to-end tests ====
+▶ x402 rail
+  ✔ a protected route answers 402 with a decodable PAYMENT-REQUIRED (26.289514ms)
+  ✔ /supported lists sUSD, USDC and the router kind (4.743806ms)
+  ✔ a garbage PAYMENT-SIGNATURE gets a 402, not a crash (2.933259ms)
+  ✔ sUSD direct: exact amount to the merchant, gasless for the agent (570.31996ms)
+  ✔ router: an agent holding only sUSD pays a USDC price; the merchant gets exact USDC (695.693806ms)
+  ✔ USDC: standard x402 USDC passes through unchanged (456.635076ms)
+  ✔ convert: a USDC-only merchant is paid from sUSD by converting just enough first (756.337971ms)
+  ✔ /convert alone: sUSD to exact USDC for the agent itself (444.943661ms)
+  ✔ marketplace micro-payment: $0.001 through the router redeems the 0.01 sUSD minimum and refunds the rest in USDC (618.262505ms)
+  ✔ a smart account (ERC-1271) pays in sUSD and through the router (876.437781ms)
+  ✔ replay: a settled payment cannot be used again (518.259168ms)
+  ✔ tampering: lower amount, other recipient, lower advertised price, broken signature (558.842864ms)
+  ✔ time window: a stale authorization and a not-yet-valid one are refused (394.81513ms)
+  ✔ a signed payment from an empty account is refused before anything is sent (240.914456ms)
+  ✔ router intent: the authorization cannot be redirected to another payee, amount or salt (535.485983ms)
+  ✔ payTo guard: the facilitator never pays protocol contracts (392.21328ms)
+  ✔ version and network must match (289.526237ms)
+  ✔ a hostile maxTimeoutSeconds is rejected cleanly, never a 500, and cannot stretch the window (A-02) (604.950959ms)
+  ✔ idle USDC is spent before redeeming more sUSD, so micropayment change does not strand (A-04) (1102.0274ms)
+  ✔ a merchant-supplied router address is ignored by the agent (528.58313ms)
+  ✔ settlement failure: work done, payment failed, nothing delivered (402) (492.86846ms)
+  ✔ spend policy: per-request limit, budget and allow list stop the agent before it signs (1013.672948ms)
+  ✔ a rebase between signing and settlement does not break either payment kind (948.976369ms)
+  ✔ settle is idempotent per request, and a cached success is never reused for other requirements (433.827176ms)
+  ✔ a lost receipt is reported as unconfirmed with its hash; a retry confirms it, and it was paid once (2094.27989ms)
+✔ x402 rail (15110.776228ms)
+▶ evm.mjs against published vectors
+  ✔ Keccak-256 (5.782951ms)
+  ✔ addresses of keys (6.770808ms)
+  ✔ EIP-712: the specification's Mail example, digest and signature (26.851489ms)
+  ✔ signatures recover to their signer and always carry a low s (410.051845ms)
+✔ evm.mjs against published vectors (450.864912ms)
+▶ evm.mjs against cast
+  ✔ the signatures this client makes are byte for byte the ones cast makes (78.910082ms)
+  ✔ keccak and abi-encode agree with cast (33.172253ms)
+✔ evm.mjs against cast (112.427846ms)
+▶ a key-file agent on the rail, with no cast in its path
+  ✔ JSON-RPC reads print exactly as cast prints them (94.465721ms)
+  ✔ pays a USDC price end to end (325.851041ms)
+✔ a key-file agent on the rail, with no cast in its path (938.178354ms)
+▶ MCP server
+  ✔ initializes and lists its two tools (68.182451ms)
+  ✔ answers unknown methods and bad input as errors, never by exiting (2.96042ms)
+  ✔ makes its wallet key on first use, readable by its owner only (39.601888ms)
+✔ MCP server (115.927079ms)
+▶ MCP server on the rail
+  ✔ a wallet the server made, once funded, pays a merchant through x402_fetch (429.265804ms)
+  ✔ the owner limits hold: a call over the per-call limit is refused before anything is signed (6.297185ms)
+✔ MCP server on the rail (1013.642184ms)
+▶ facilitator state across requests
+  ✔ a chain read that throws leaves nothing behind, and answers in the protocol, not a 500 (338.924662ms)
+  ✔ the HTTP surface answers 200 with an x402 body when a chain read throws (381.003765ms)
+  ✔ a request joining one in flight never inherits a rejection (354.208922ms)
+  ✔ settle never rejects, whatever the chain does (341.900354ms)
+  ✔ `unconfirmed` is bounded: many lost receipts cannot grow it for ever (436.598464ms)
+  ✔ one stuck send does not park every later settlement for ever (618.659623ms)
+  ✔ an unreadable receipt never drops the record that a transaction was broadcast (330.262177ms)
+  ✔ a receipt that really says reverted does release the key (329.779844ms)
+  ✔ success is only published once the send has committed (332.619962ms)
+  ✔ awkward requests do not take the process down (no handler to hide them) (862.407224ms)
+  ✔ the server keeps serving after an awkward request (844.143004ms)
+  ✔ an oversized body gets a 413, not a reset connection (352.192059ms)
+  ✔ a broadcast whose hash we never learned is never reported as unsent, and never retried (340.727709ms)
+✔ facilitator state across requests (5866.629219ms)
+▶ makeChain.send decides sent-or-not from the nonce, not the error
+  ✔ send fails but the nonce advanced: the node took it, so UnconfirmedError (16.547657ms)
+  ✔ send fails and the nonce did not move: nothing went out, so a plain failure (12.000544ms)
+✔ makeChain.send decides sent-or-not from the nonce, not the error (28.730404ms)
+✔ headers are base64 JSON both ways (1.739463ms)
+✔ sameRequirement compares what is paid, to whom, on which chain (0.315764ms)
+✔ EIP-3009 typed data has the six fields in order and the right domain (0.261903ms)
+✔ validators (0.383191ms)
+✔ cast output: JSON is found even with stray log lines around it (seen on a busy anvil) (0.642358ms)
+✔ signer specs (0.295576ms)
+✔ dollar amounts (0.40954ms)
+✔ PayIntent fields reproduce the Solidity typehash string exactly (0.353545ms)
+✔ vault intent typed data (0.524266ms)
+✔ permit typed data (0.523264ms)
+✔ splitting a signature for a permit (0.429047ms)
+✔ cast tuples for the router call (0.211688ms)
+✔ the session voucher reproduces the escrow's Solidity typehash string and domain (0.391707ms)
+✔ a session payload is checked for shape before anything else (0.38272ms)
+✔ a path step reproduces X402SessionPaths' Solidity typehash string and domain (0.378792ms)
+✔ a session is opened one way, never two (0.205186ms)
+ℹ tests 69
+ℹ suites 8
+ℹ pass 69
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 27137.300888
+
+==== X402 REHEARSAL PASSED ====
+
+fork of Base mainnet at block 53365863
+Compiling 45 files with Solc 0.8.26
+Solc 0.8.26 finished in 4.39s
+Compiler run successful!
+Script ran successfully.
+
+== Return ==
+router: contract VaultPayRouter 0x2e665A5E6C636fA00DBf1C0A845eB07929D51d6f
+
+== Logs ==
+  VaultPayRouter 0x2e665A5E6C636fA00DBf1C0A845eB07929D51d6f
+  chain id       8453
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 8453
+
+Estimated gas price: 0.010384183 gwei
+
+Estimated total gas used for script: 2525201
+
+Estimated amount required: 0.000026222149295783 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/broadcast/DeployVaultPayRouter.s.sol/8453/run-latest.json
+
+Sensitive values saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/cache/DeployVaultPayRouter.s.sol/8453/run-latest.json
+
+{
+  "chainId": 8453,
+  "codehash": "0x6a473fb25f6eb97936905b2c1edd90cd5e8950de6bb26683846f1479adbd9c92",
+  "router": "0x2e665A5E6C636fA00DBf1C0A845eB07929D51d6f",
+  "salt": "0x6bc16b64077405698ba09013c414c21390b38a75e36ef6837507d84382f096a4"
+}
+✔ the facilitator offers the vault router, and only for the vault it trusts (6633.676108ms)
+✔ an agent with no ETH pays an x402 invoice from its Aave position (1906.506793ms)
+✔ a second payment works too, signing a fresh permit at the next nonce (490.924796ms)
+✔ a replayed payment is refused before it reaches the chain (493.533655ms)
+✔ a tampered intent is refused: checked fields locally, signed fields by simulation (284.009044ms)
+✔ an owner sweeps the agent's whole position home, through the facilitator's checks (475.303656ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10378.332274
