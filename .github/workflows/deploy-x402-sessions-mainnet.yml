@@ -298,6 +298,7 @@ jobs:
       - id: v
         env:
           FOUNDRY_PROFILE: vault
+          ETHERSCAN_API_KEY: unused # foundry.toml names it; Sourcify does not use it
           DEPLOYMENT: ${{ needs.mainnet.outputs.deployment }}
         run: |
           set +e

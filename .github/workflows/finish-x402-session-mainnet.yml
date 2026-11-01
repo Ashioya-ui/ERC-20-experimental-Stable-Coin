@@ -135,6 +135,7 @@ jobs:
       - id: v
         env:
           FOUNDRY_PROFILE: vault
+          ETHERSCAN_API_KEY: unused # foundry.toml names it; Sourcify does not use it
         run: |
           set +e
           forge verify-contract --verifier sourcify --chain 8453 --watch "$ESCROW" \
