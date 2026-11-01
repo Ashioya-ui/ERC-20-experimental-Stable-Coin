@@ -78,6 +78,8 @@ jobs:
           start = head - days * 43200          # Base makes a block every 2 s
           counts, daily = collections.Counter(), collections.defaultdict(collections.Counter)
           channels, receivers, payers, tokens, sums = set(), set(), set(), collections.Counter(), collections.Counter()
+          USDC = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+          chan_tok, by_tok, rcv_usdc, day_usdc = {}, collections.Counter(), collections.Counter(), collections.Counter()
           step, b, calls, t0, note = STEP, start, 0, time.time(), "complete"
           try:
               while b <= head:
@@ -101,13 +103,19 @@ jobs:
                       counts[name] += 1
                       daily[(int(l["blockNumber"], 16) - start) // 43200][name] += 1
                       amount = int(l["data"][2:66] or "0", 16)
-                      if name in ("Deposited", "Claimed", "Settled", "Refunded", "WithdrawFinalized"):
-                          sums[name] += amount
+                      d = (int(l["blockNumber"], 16) - start) // 43200
                       if name == "ChannelCreated":
+                          w = l["data"][2:]
                           channels.add(t[1])
-                          payers.add("0x" + l["data"][2:][24:64])     # config.payer is the first word
+                          payers.add("0x" + w[24:64])                  # config.payer, word 0
+                          chan_tok[t[1]] = "0x" + w[4 * 64 + 24:5 * 64]  # config.token, word 4
                       if name == "Settled":
-                          receivers.add(t[1]); tokens["0x" + t[2][-40:]] += 1
+                          tok = "0x" + t[2][-40:]
+                          receivers.add(t[1]); tokens[tok] += 1; by_tok[("Settled", tok)] += amount
+                          if tok == USDC:
+                              rcv_usdc["0x" + t[1][-40:]] += amount; day_usdc[d] += amount
+                      if name in ("Deposited", "Claimed", "Refunded", "WithdrawFinalized"):
+                          by_tok[(name, chan_tok.get(t[1], "channel opened before the window"))] += amount
                   b = e + 1
           except Exception as ex:
               note = f"stopped by an error at block {b:,}: {str(ex)[:160]}"
@@ -115,8 +123,14 @@ jobs:
           print("events:", dict(counts) or "none")
           print(f"channels created: {len(channels)}, distinct payers: {len(payers)}, distinct receivers settled to: {len(receivers)}")
           print("tokens settled:", dict(tokens) or "none")
-          for k in ("Deposited", "Claimed", "Settled", "Refunded", "WithdrawFinalized"):
-              print(f"{k:18s} total {sums[k] / 1e6:,.6f} (in 6-decimal token units)")
+          print("amounts by event and token (USDC in dollars, other tokens in raw units):")
+          for (k, tok), v in sorted(by_tok.items()):
+              print(f"  {k:18s} {tok}: " + (f"${v / 1e6:,.2f}" if tok == USDC else f"{v:,} raw"))
+          total = sum(rcv_usdc.values())
+          print(f"USDC settled to receivers: ${total / 1e6:,.2f} over {days} days; top receivers:")
+          for r, v in rcv_usdc.most_common(8):
+              print(f"  {r}: ${v / 1e6:,.2f} ({100 * v / max(total, 1):.1f}%)")
+          print("USDC settled per day: " + ", ".join(f"d{k}:${v / 1e6:,.0f}" for k, v in sorted(day_usdc.items())))
           print("per day (day 0 = oldest):")
           for d in sorted(daily):
               print(f"  day {d:2d}: " + ", ".join(f"{k} {v}" for k, v in sorted(daily[d].items())))
