@@ -54,7 +54,7 @@ on-chain, which the agent spends as it goes without ever holding the money.
 ## Install
 
 ```sh
-npm install -g x402-sessions                                # Node.js 22 or later, no dependencies
+npm install -g @pyzratio/x402-sessions                      # Node.js 22 or later, no dependencies
 curl -L https://foundry.paradigm.xyz | bash && foundryup    # Foundry's cast, which signs and sends
 export RPC_URL=https://mainnet.base.org
 ```
@@ -123,9 +123,9 @@ are the same three programs.
    Add `AGENT_PATH=<path id>` when an owner holds the money. `AGENT_BUDGET` and
    `AGENT_MAX_PER_REQUEST` are in dollars, and the client refuses anything above them.
 
-The client is also a library: `import { createAgent } from 'x402-sessions'`, then
+The client is also a library: `import { createAgent } from '@pyzratio/x402-sessions'`, then
 `createAgent({ rpcUrl, signer, policy, path })` ([`agent.mjs`](agent.mjs)). The facilitator and the
-merchant are `x402-sessions/facilitator` and `x402-sessions/merchant`.
+merchant are `@pyzratio/x402-sessions/facilitator` and `@pyzratio/x402-sessions/merchant`.
 
 ## Give an agent a budget (owners)
 

@@ -1,4 +1,4 @@
-# Publishes the x402 session client, facilitator and merchant to npm as x402-sessions, with
+# Publishes the x402 session client, facilitator and merchant to npm as @pyzratio/x402-sessions, with
 # provenance that ties the package to this repository and this workflow run. Needs the repository
 # secret NPM_TOKEN: an npm granular access token with read and write access. Runs when the branch
 # publish-x402-npm is pushed, or from the Actions tab.
@@ -17,9 +17,9 @@ permissions: {}
 
 jobs:
   publish:
-    name: Publish x402-sessions to npm
+    name: Publish @pyzratio/x402-sessions to npm
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       contents: read
       id-token: write # npm provenance
@@ -51,13 +51,17 @@ jobs:
           fi
           if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
             echo "::notice::$NAME@$VERSION is already on npm"
-          elif ! npm publish --provenance --access public; then
-            # npm also refuses a free name that is too close to an existing one.
-            [[ "$NAME" != @* ]] || exit 1
-            NAME="@$ME/$NAME"
-            npm pkg set "name=$NAME"
-            echo "::notice::npm refused the plain name, so this publishes $NAME"
-            npm publish --provenance --access public
+          elif ! npm publish --provenance --access public 2>&1 | tee publish.log; then
+            if grep -q "previously published" publish.log; then
+              echo "::notice::$NAME@$VERSION is already on npm (the registry is still making it visible)"
+            else
+              # npm also refuses a free name that is too close to an existing one.
+              [[ "$NAME" != @* ]] || exit 1
+              NAME="@$ME/$NAME"
+              npm pkg set "name=$NAME"
+              echo "::notice::npm refused the plain name, so this publishes $NAME"
+              npm publish --provenance --access public
+            fi
           fi
           { echo "name=$NAME"; echo "version=$VERSION"; } >> "$GITHUB_OUTPUT"
       - name: Install it from npm and run it
@@ -66,7 +70,8 @@ jobs:
           VERSION: ${{ steps.pub.outputs.version }}
         run: |
           set -euo pipefail
-          for i in $(seq 1 12); do npm view "$NAME@$VERSION" version >/dev/null 2>&1 && break; sleep 10; done
+          # A new package can take several minutes to become installable.
+          for i in $(seq 1 60); do npm view "$NAME@$VERSION" version >/dev/null 2>&1 && break; sleep 10; done
           cd "$(mktemp -d)"
           npm init -y >/dev/null
           npm install --no-audit --no-fund "$NAME@$VERSION"
