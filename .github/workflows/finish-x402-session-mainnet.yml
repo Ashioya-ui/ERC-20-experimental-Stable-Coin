@@ -1,0 +1,170 @@
+# Finishes the Base mainnet session of run 41267618304 without repeating anything: no tests, no new
+# calls. The contracts are deployed and the 1,000 calls were paid, redeemed and closed in that run;
+# this sends the unspent deposit home (collect, goHome), prices every receipt, and verifies both
+# contracts on Sourcify.
+name: finish-x402-session-mainnet
+
+on:
+  push:
+    branches: [finish-x402-sessions-mainnet]
+
+concurrency:
+  group: deploy-x402-sessions-mainnet
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  RPC: https://mainnet.base.org
+  USDC: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+  ETH_USD: "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70" # Chainlink ETH/USD on Base
+  ESCROW: "0x175925a679f389D905686D7E484b030Ccd7992CB"
+  PATHS: "0xa9BF003a805ef14161aab2482eFd2a9C64e5f3fF"
+  DEP: "0x9CD82de3A24bc33D45897f72da5966D8920fAB48"
+  AGENT: "0x04CaB0b4Ebb2628A168eb4913541Da54fA747C8d"
+  SID: "0xc9e90f8077918bb3219205778a478070c5b5a70aa3154ff8f475ad61da8b70c1"
+  PATH_ID: "0x66c547d373aacdc10e60bf2d8ce3d17f98d6e84fc2275664b82d104e3582f993"
+  DECLARE_TX: "0xfb42623cedad6aa418cded8ee6c7760826a44419873abc51e58c205fd44ea2e6"
+  OPEN_TX: "0x7886811ba9f729161dfb1edca54f92c23819fd34de844af53ed8e3ebbb204723"
+  REDEEM_TX: "0x787e024b53d5ac24ce6c1444b8a014c6249e201a3db9ffb45c91330b9974f60c"
+  CLOSE_TX: "0x7312f6be779549f4c6633e71bbee36e3a6f42c9a849f1dcf1879eb0a6eefd4fa"
+  CALLS: "1000"
+
+jobs:
+  finish:
+    name: Send the unspent deposit home and price the receipts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: base-sepolia # the environment that holds the deployer secret
+    permissions:
+      contents: read
+    outputs:
+      report: ${{ steps.f.outputs.report }}
+    steps:
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
+      - id: f
+        env:
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          KEY="$DEPLOYER_PRIVATE_KEY"; unset DEPLOYER_PRIVATE_KEY
+          [ "$(cast chain-id --rpc-url "$RPC")" = 8453 ] || { echo "::error::RPC is not Base mainnet"; exit 1; }
+          [ "$(cast wallet address --private-key "$KEY")" = "$DEP" ] || { echo "::error::key is not Account 1"; exit 1; }
+          LOG=finish.txt; : > "$LOG"; say() { printf '%s\n' "$*" | tee -a "$LOG"; }
+
+          # A state check before every attempt: the public RPC can reject a transaction it has in
+          # fact mined, so a retry first asks whether the step is already done.
+          field() { cast call "$1" "$2" "$3" --rpc-url "$RPC" | tr -d '()' | cut -d, -f"$4" | awk '{print $1}'; }
+          closed()    { [ "$(field "$ESCROW" 'session(bytes32)((address,address,address,address,uint128,uint128,uint64,bool))' "$SID" 8)" = true ]; }
+          collected() { [ "$(cast call "$PATHS" 'collected(bytes32)(bool)' "$SID" --rpc-url "$RPC")" = true ]; }
+          ended()     { [ "$(field "$PATHS" 'path(bytes32)((address,address,address,uint64,bool,uint128,uint128,uint128))' "$PATH_ID" 5)" = true ]; }
+          step() {  # step <name> <check> <cast send args...>; sets TXH
+            local name=$1 check=$2; shift 2; TXH=""
+            for i in 1 2 3 4 5; do
+              if $check; then [ -n "$TXH" ] || TXH="done earlier"; return 0; fi
+              if TXH=$(cast send "$@" --rpc-url "$RPC" --private-key "$KEY" --json 2>err.txt | jq -r .transactionHash) \
+                 && [ -n "$TXH" ] && [ "$TXH" != null ]; then sleep 6; return 0; fi
+              TXH=""; echo "$name attempt $i: $(tail -1 err.txt)"; sleep 12
+            done
+            return 1
+          }
+          usdc() { cast call "$USDC" 'balanceOf(address)(uint256)' "$1" --rpc-url "$RPC" | awk '{print $1}'; }
+
+          say "account 1 USDC before: $(usdc "$DEP")"
+          step close closed "$ESCROW" 'closeByPayee(bytes32,uint256,bytes)' "$SID" 0 0x
+          [ "$TXH" = "done earlier" ] || CLOSE_TX="$TXH"
+          step collect collected "$PATHS" 'collect(bytes32)' "$SID";  COLLECT_TX="$TXH"
+          step goHome ended "$PATHS" 'goHome(bytes32)' "$PATH_ID";    HOME_TX="$TXH"
+          say "collect  $COLLECT_TX"
+          say "goHome   $HOME_TX"
+          say "account 1 USDC after:  $(usdc "$DEP")   paths contract USDC: $(usdc "$PATHS")   escrow USDC: $(usdc "$ESCROW")"
+          say "agent ETH: $(cast balance "$AGENT" --rpc-url "$RPC") (never held any)   account 1 ETH: $(cast balance "$DEP" --rpc-url "$RPC")"
+
+          python3 - <<'PY' | tee -a "$LOG"
+          import json, os, subprocess
+          rpc = os.environ["RPC"]
+          def receipt(h):
+              return json.loads(subprocess.check_output(["cast", "receipt", "--json", h, "--rpc-url", rpc]))
+          n = lambda v: int(v, 16) if isinstance(v, str) and v.startswith("0x") else int(v or 0)
+          def fee(r):
+              return n(r["gasUsed"]), n(r["gasUsed"]) * n(r["effectiveGasPrice"]) + n(r.get("l1Fee", 0)), r["status"]
+          out = subprocess.check_output(["cast", "call", os.environ["ETH_USD"],
+              "latestRoundData()(uint80,int256,uint256,uint256,uint80)", "--rpc-url", rpc]).decode().splitlines()
+          usd = int(out[1].split()[0]) / 1e8
+          txs = [("declare path", "DECLARE_TX"), ("open (path step)", "OPEN_TX"), ("redemption", "REDEEM_TX"),
+                 ("close (payee)", "CLOSE_TX")]
+          rows = []
+          for name, var in txs:
+              h = os.environ[var]
+              gas, wei, status = fee(receipt(h))
+              rows.append((name, h, gas, wei))
+              print(f"{name:17s} {h}  status {status}  gas {gas:>7,}  {wei / 1e18:.10f} ETH  ${wei / 1e18 * usd:.6f}")
+          calls = int(os.environ["CALLS"])
+          settle = rows[1][3] + rows[2][3]
+          every = sum(r[3] for r in rows)
+          print(f"ETH/USD {usd:.2f} (Chainlink on Base)")
+          print(f"settlement of {calls} paid calls (open + one redemption): ${settle / 1e18 * usd:.6f}"
+                f"  = ${settle / 1e18 * usd / calls:.8f} per call")
+          print(f"whole lifecycle (declare, open, redeem, close): ${every / 1e18 * usd:.6f}"
+                f"  = ${every / 1e18 * usd / calls:.8f} per call")
+          print(f"against $0.00129 of gas per x402 payment settled one at a time on Base mainnet:"
+                f" {0.00129 / (settle / 1e18 * usd / calls):,.0f}x cheaper per call")
+          PY
+          if grep -qiF "${KEY#0x}" "$LOG"; then echo "::error::key material in the report"; exit 1; fi
+          unset KEY
+          { echo "report<<XS_EOF"; cat "$LOG"; echo "XS_EOF"; } >> "$GITHUB_OUTPUT"
+
+  verify:
+    name: Source verification on Sourcify (no secrets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ steps.v.outputs.result }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
+      - id: v
+        env:
+          FOUNDRY_PROFILE: vault
+        run: |
+          set +e
+          forge verify-contract --verifier sourcify --chain 8453 --watch "$ESCROW" \
+            src/vault/X402SessionEscrow.sol:X402SessionEscrow > v.txt 2>&1; R=$?
+          forge verify-contract --verifier sourcify --chain 8453 --watch "$PATHS" \
+            --constructor-args "$(cast abi-encode 'f(address)' "$ESCROW")" \
+            src/vault/X402SessionPaths.sol:X402SessionPaths >> v.txt 2>&1; P=$?
+          cat v.txt
+          { echo "result<<XS_EOF"; echo "exit escrow $R, paths $P"; tail -30 v.txt; echo "XS_EOF"; } >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Commit the report (no secrets)
+    needs: [finish, verify]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - env:
+          REPORT: ${{ needs.finish.outputs.report }}
+          VERIFY: ${{ needs.verify.outputs.result }}
+        run: |
+          set -euo pipefail
+          mkdir -p deployments
+          printf '%s\n' "Base mainnet x402 session, finished by run ${{ github.run_id }}" "$REPORT" "" "--- sourcify" "${VERIFY:-not run}" \
+            > deployments/8453-x402-sessions-finish.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f deployments/8453-x402-sessions-finish.txt
+          git commit -q -m "base mainnet: x402 session finished, run ${{ github.run_id }}-${{ github.run_attempt }}"
+          git push origin "HEAD:refs/heads/deployments/x402-sessions-finish-${{ github.run_id }}-${{ github.run_attempt }}"
