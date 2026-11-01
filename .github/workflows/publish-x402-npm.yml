@@ -51,7 +51,12 @@ jobs:
           fi
           if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
             echo "::notice::$NAME@$VERSION is already on npm"
-          else
+          elif ! npm publish --provenance --access public; then
+            # npm also refuses a free name that is too close to an existing one.
+            [[ "$NAME" != @* ]] || exit 1
+            NAME="@$ME/$NAME"
+            npm pkg set "name=$NAME"
+            echo "::notice::npm refused the plain name, so this publishes $NAME"
             npm publish --provenance --access public
           fi
           { echo "name=$NAME"; echo "version=$VERSION"; } >> "$GITHUB_OUTPUT"
