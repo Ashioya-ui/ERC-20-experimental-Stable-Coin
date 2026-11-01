@@ -1,5 +1,5 @@
-# Read-only: how much x402's own batch-settlement contracts are used on Base mainnet, beside our
-# session escrow. Blockscout's public API only; no secrets, no transactions.
+# Read-only: how much x402's own batch-settlement contract is used on Base mainnet. Reads logs
+# from the public Base RPC; no secrets, no transactions.
 name: measure-x402-batch-settlement
 
 on:
@@ -11,27 +11,92 @@ permissions: {}
 jobs:
   measure:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     permissions:
       contents: read
+    env:
+      RPC: https://mainnet.base.org
+      BS: "0x4020074e9dF2ce1deE5A9C1b5c3f541D02a10003" # x402BatchSettlement (canonical CREATE2 address)
+      DAYS: "30"
     steps:
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
       - run: |
-          set -uo pipefail
-          B=https://base.blockscout.com/api/v2
-          get() { curl -fsS --retry 3 --retry-delay 2 "$B/$1"; }
-          for a in \
-            0x4020074e9dF2ce1deE5A9C1b5c3f541D02a10003 \
-            0x4020806089470a89826cB9fB1f4059150b550004 \
-            0x4020425FAf3B746C082C2f942b4E5159887B0005 \
-            0x175925a679f389D905686D7E484b030Ccd7992CB; do
-            echo "=== $a"
-            get "addresses/$a/counters" | jq -c .
-            info=$(get "addresses/$a")
-            echo "$info" | jq -c '{name, is_verified, creation_transaction_hash, creator_address_hash}'
-            ct=$(echo "$info" | jq -r '.creation_transaction_hash // empty')
-            if [ -n "$ct" ]; then get "transactions/$ct" | jq -c '{created: .timestamp, block: .block_number}'; fi
-            echo "--- latest direct transactions (newest first)"
-            get "addresses/$a/transactions" | jq -r '.items[] | [.timestamp, (.method // "-"), .from.hash, (.status // "-")] | @tsv' | head -50
-            echo "--- latest token transfers (newest first)"
-            get "addresses/$a/token-transfers" | jq -r '.items[] | [.timestamp, .token.symbol, .total.value, .from.hash, .to.hash] | @tsv' | head -30
-          done
+          set -euo pipefail
+          [ "$(cast chain-id --rpc-url "$RPC")" = 8453 ]
+          ev() { printf '%s=%s\n' "$1" "$(cast keccak "$2")"; }
+          C='(address,address,address,address,address,uint40,bytes32)'
+          {
+            ev ChannelCreated "ChannelCreated(bytes32,$C)"
+            ev ChannelClosed "ChannelClosed(bytes32,$C)"
+            ev Deposited 'Deposited(bytes32,address,uint128,uint128)'
+            ev Claimed 'Claimed(bytes32,address,uint128,uint128)'
+            ev Settled 'Settled(address,address,address,uint128)'
+            ev Refunded 'Refunded(bytes32,address,uint128)'
+            ev WithdrawInitiated 'WithdrawInitiated(bytes32,uint128,uint40)'
+            ev WithdrawFinalized 'WithdrawFinalized(bytes32,address,uint128)'
+          } > topics.env
+          echo "x402BatchSettlement code size on Base: $(cast codesize "$BS" --rpc-url "$RPC") bytes"
+          python3 - <<'PY'
+          import collections, json, os, time, urllib.request
+          rpc_url, bs, days = os.environ["RPC"], os.environ["BS"].lower(), int(os.environ["DAYS"])
+          names = {}
+          for line in open("topics.env"):
+              k, v = line.strip().split("=")
+              names[v.lower()] = k
+          def rpc(method, params):
+              err = None
+              for attempt in range(6):
+                  try:
+                      req = urllib.request.Request(rpc_url, headers={"Content-Type": "application/json"},
+                          data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode())
+                      r = json.load(urllib.request.urlopen(req, timeout=30))
+                      if "error" in r:
+                          raise RuntimeError(r["error"])
+                      return r["result"]
+                  except Exception as e:
+                      err = e
+                      time.sleep(1 + attempt)
+              raise err
+          head = int(rpc("eth_blockNumber", []), 16)
+          start = head - days * 43200          # Base makes a block every 2 s
+          counts, daily = collections.Counter(), collections.defaultdict(collections.Counter)
+          channels, receivers, payers, tokens = set(), set(), set(), collections.Counter()
+          sums = collections.Counter()
+          step, b, calls = 10000, start, 0
+          while b <= head:
+              e = min(b + step - 1, head)
+              try:
+                  logs = rpc("eth_getLogs", [{"address": bs, "fromBlock": hex(b), "toBlock": hex(e)}])
+                  calls += 1
+              except Exception as ex:
+                  if step > 250:
+                      step //= 2
+                      continue
+                  raise
+              for l in logs:
+                  t = l["topics"]
+                  name = names.get(t[0].lower(), "other")
+                  counts[name] += 1
+                  daily[(int(l["blockNumber"], 16) - start) // 43200][name] += 1
+                  amount = int(l["data"][2:66] or "0", 16)
+                  if name in ("Deposited", "Claimed", "Settled", "Refunded", "WithdrawFinalized"):
+                      sums[name] += amount
+                  if name == "ChannelCreated":
+                      channels.add(t[1])
+                      cfg = l["data"][2:]
+                      payers.add("0x" + cfg[24:64])                  # config.payer is the first word
+                  if name == "Settled":
+                      receivers.add(t[1]); tokens["0x" + t[2][-40:]] += 1
+              b = e + 1
+          print(f"window: blocks {start:,}..{head:,} ({days} days), {calls} getLogs calls, final step {step}")
+          print("events:", dict(counts) or "none")
+          print(f"channels created: {len(channels)}, distinct payers: {len(payers)}, distinct receivers settled to: {len(receivers)}")
+          print("tokens settled:", dict(tokens) or "none")
+          for k in ("Deposited", "Claimed", "Settled", "Refunded", "WithdrawFinalized"):
+              print(f"{k:18s} total {sums[k] / 1e6:,.6f} (in 6-decimal token units)")
+          print("per day (day 0 = oldest):")
+          for d in sorted(daily):
+              print(f"  day {d:2d}: " + ", ".join(f"{k} {v}" for k, v in sorted(daily[d].items())))
+          PY
