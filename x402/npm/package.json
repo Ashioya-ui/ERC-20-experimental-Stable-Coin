@@ -1,6 +1,6 @@
 {
   "name": "@pyzratio/x402-sessions",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pay an x402 API a thousand times and settle on-chain once: escrow-backed session vouchers on Base, with owner-capped agent budgets. Agent client, facilitator and example merchant; no dependencies.",
   "type": "module",
   "license": "MIT",
