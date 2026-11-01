@@ -1,0 +1,78 @@
+{
+  "manifest_version": "0.3",
+  "name": "x402-sessions",
+  "display_name": "x402 payments",
+  "version": "0.0.0",
+  "description": "Lets your agent pay x402 APIs in USDC on Base, within a budget you set.",
+  "long_description": "Gives the agent a wallet on Base the first time it is used, and two tools: x402_fetch fetches a URL and pays when the server answers 402 Payment Required, and x402_wallet shows the address to fund, the balance and what has been spent. Every payment stays inside the total budget and the per-call limit set here. Where a server offers sessions, the agent deposits once and pays each call with a signed voucher, settled on-chain later in one transaction. The wallet needs USDC only, never ETH.",
+  "author": {
+    "name": "Ashioya-ui",
+    "url": "https://github.com/Ashioya-ui"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ashioya-ui/ERC-20-experimental-Stable-Coin"
+  },
+  "homepage": "https://github.com/Ashioya-ui/ERC-20-experimental-Stable-Coin/tree/main/x402",
+  "license": "MIT",
+  "keywords": ["x402", "payments", "usdc", "base", "agents"],
+  "server": {
+    "type": "node",
+    "entry_point": "server/x402/mcp.mjs",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/x402/mcp.mjs"],
+      "env": {
+        "AGENT_BUDGET": "${user_config.budget}",
+        "AGENT_MAX_PER_REQUEST": "${user_config.max_per_call}",
+        "AGENT_PATH": "${user_config.path_id}",
+        "RPC_URL": "${user_config.rpc_url}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "x402_fetch",
+      "description": "Fetch a URL, paying with x402 in USDC on Base when the server asks, within your limits."
+    },
+    {
+      "name": "x402_wallet",
+      "description": "Show the wallet address to fund, the USDC balance, the limits and what has been spent."
+    }
+  ],
+  "user_config": {
+    "budget": {
+      "type": "number",
+      "title": "Total budget (USD)",
+      "description": "The most the agent may spend in total.",
+      "default": 1,
+      "min": 0,
+      "required": false
+    },
+    "max_per_call": {
+      "type": "number",
+      "title": "Most per call (USD)",
+      "description": "The most one call may cost.",
+      "default": 0.1,
+      "min": 0,
+      "required": false
+    },
+    "rpc_url": {
+      "type": "string",
+      "title": "Base RPC endpoints",
+      "description": "JSON-RPC endpoints for Base, comma-separated.",
+      "default": "https://mainnet.base.org,https://base-rpc.publicnode.com",
+      "required": false
+    },
+    "path_id": {
+      "type": "string",
+      "title": "Owner path id (optional)",
+      "description": "An X402SessionPaths path id, when an owner holds the money instead of this wallet.",
+      "default": "",
+      "required": false
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"]
+  }
+}

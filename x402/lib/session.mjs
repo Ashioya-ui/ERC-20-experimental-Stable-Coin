@@ -17,7 +17,7 @@
 //
 // Hashes are computed locally by cast (no RPC).
 
-import { cast, first } from './cast.mjs';
+import { abiEncode, first, keccak } from './cast.mjs';
 import { lc, isAddress, isBytes32, isHex, isUint } from './protocol.mjs';
 
 export const MIN_DURATION = 3600n; // X402SessionEscrow.MIN_DURATION
@@ -32,19 +32,15 @@ let openTypehash = null;
  * the id commits to every term, the expiry included, so no session of other terms can take it.
  */
 export async function sessionIdOf({ funder, payee, token, signer, expiry, salt }) {
-  const enc = await cast([
-    'abi-encode', 'f(address,address,address,address,uint64,bytes32)', funder, payee, token, signer, String(expiry), salt,
-  ]);
-  return lc(await cast(['keccak', enc]));
+  const enc = abiEncode('f(address,address,address,address,uint64,bytes32)', [funder, payee, token, signer, String(expiry), salt]);
+  return lc(keccak(enc));
 }
 
 /** The EIP-3009 nonce that binds a gasless open to its terms, as X402SessionEscrow.openNonce. */
 export async function openNonce({ payee, token, signer, expiry, salt }) {
-  openTypehash ??= await cast(['keccak', OPEN_TYPE]);
-  const enc = await cast([
-    'abi-encode', 'f(bytes32,address,address,address,uint64,bytes32)', openTypehash, payee, token, signer, String(expiry), salt,
-  ]);
-  return lc(await cast(['keccak', enc]));
+  openTypehash ??= keccak(OPEN_TYPE);
+  const enc = abiEncode('f(bytes32,address,address,address,uint64,bytes32)', [openTypehash, payee, token, signer, String(expiry), salt]);
+  return lc(keccak(enc));
 }
 
 /** A session's on-chain state, or null if it does not exist. */

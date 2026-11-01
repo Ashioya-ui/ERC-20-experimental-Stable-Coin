@@ -6,8 +6,10 @@ on its own. Escrow `0x175925a679f389D905686D7E484b030Ccd7992CB`, paths
 `0xa9BF003a805ef14161aab2482eFd2a9C64e5f3fF`, both source verified on Sourcify. Beta: use small
 amounts.
 
-**Get started: [`x402/README.md`](x402/README.md)** — accept session payments, pay with sessions,
-or give an agent a budget it cannot overspend.
+**Give your agent x402 payments:** Claude Desktop, Claude Code, Cursor or any MCP client, with
+`npx -y @pyzratio/x402-sessions` or a one-click Claude Desktop extension. Fund its wallet with USDC
+on Base and it pays x402 APIs within your limits. **[Get started](x402/README.md)**: also how to
+accept session payments, and how to give an agent a budget it cannot overspend.
 
 ---
 

@@ -1,7 +1,8 @@
-# Publishes the x402 session client, facilitator and merchant to npm as @pyzratio/x402-sessions, with
-# provenance that ties the package to this repository and this workflow run. Needs the repository
-# secret NPM_TOKEN: an npm granular access token with read and write access. Runs when the branch
-# publish-x402-npm is pushed, or from the Actions tab.
+# Publishes @pyzratio/x402-sessions to npm with provenance (the MCP server any agent can add, and
+# the session client, facilitator and merchant), then packs the same code as a Claude Desktop
+# extension and attaches it to a GitHub release. Needs the repository secret NPM_TOKEN: an npm
+# granular access token with read and write access. Runs when the branch publish-x402-npm is
+# pushed, or from the Actions tab.
 name: publish-x402-npm
 
 on:
@@ -23,6 +24,9 @@ jobs:
     permissions:
       contents: read
       id-token: write # npm provenance
+    outputs:
+      name: ${{ steps.pub.outputs.name }}
+      version: ${{ steps.pub.outputs.version }}
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -82,9 +86,94 @@ jobs:
             const { createMerchant } = await import('$NAME/merchant');
             for (const f of [createAgent, createFacilitator, createMerchant]) if (typeof f !== 'function') throw new Error('missing export');
             console.log('library exports load');"
+          # The MCP server, started the way an agent starts it, reading Base mainnet for real.
+          printf '%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+            '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"x402_wallet","arguments":{}}}' \
+            | X402_HOME="$(mktemp -d)" timeout 120 npx -y "$NAME@$VERSION" > mcp.jsonl
+          cat mcp.jsonl
+          grep -q '"x402_fetch"' mcp.jsonl
+          grep -q 'Address: 0x[0-9a-f]\{40\} (Base)' mcp.jsonl
           {
             echo "### $NAME@$VERSION is on npm"
             echo
             echo "- https://www.npmjs.com/package/$NAME"
             echo "- install: \`npm install -g $NAME\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  bundle:
+    name: Claude Desktop extension (.mcpb)
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+      - name: Pack the bundle from the published code
+        env:
+          NAME: ${{ needs.publish.outputs.name }}
+          VERSION: ${{ needs.publish.outputs.version }}
+        run: |
+          set -euo pipefail
+          x402/npm/stage.sh npm-package
+          (cd npm-package && npm pkg set "name=$NAME")
+          rm -rf mcpb && mkdir -p mcpb/server
+          cp -R npm-package/x402 npm-package/deployments npm-package/config npm-package/package.json mcpb/server/
+          cp npm-package/README.md npm-package/LICENSE mcpb/
+          jq --arg v "$VERSION" '.version = $v' x402/npm/mcpb/manifest.json > mcpb/manifest.json
+          npx -y @anthropic-ai/mcpb validate mcpb/manifest.json
+          npx -y @anthropic-ai/mcpb pack mcpb x402-sessions.mcpb
+          unzip -l x402-sessions.mcpb | tail -1
+      - name: Start the bundled server as Claude Desktop does, with empty settings
+        env:
+          VERSION: ${{ needs.publish.outputs.version }}
+        run: |
+          set -euo pipefail
+          rm -rf check && mkdir check && cd check && unzip -q ../x402-sessions.mcpb
+          printf '%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+            '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"x402_wallet","arguments":{}}}' \
+            | X402_HOME="$(mktemp -d)" AGENT_BUDGET= AGENT_MAX_PER_REQUEST= AGENT_PATH= RPC_URL= timeout 120 node server/x402/mcp.mjs > mcp.jsonl
+          cat mcp.jsonl
+          grep -q "\"version\":\"$VERSION\"" mcp.jsonl
+          grep -q 'Address: 0x[0-9a-f]\{40\} (Base)' mcp.jsonl
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: x402-sessions-mcpb
+          path: x402-sessions.mcpb
+          if-no-files-found: error
+
+  release:
+    name: GitHub release with the extension
+    needs: [publish, bundle]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: x402-sessions-mcpb
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          NAME: ${{ needs.publish.outputs.name }}
+          VERSION: ${{ needs.publish.outputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="x402-sessions-v$VERSION"
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" x402-sessions.mcpb --clobber -R "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" x402-sessions.mcpb -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest \
+              --title "x402 payments for any agent, $VERSION" \
+              --notes "Claude Desktop: download x402-sessions.mcpb and open it. Any other MCP client: npx -y $NAME. npm: https://www.npmjs.com/package/$NAME"
+          fi
+          echo "### Release $TAG: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"
