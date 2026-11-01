@@ -39,7 +39,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { cast, first, makeChain, signTypedData, signerAddress } from './lib/cast.mjs';
+import { abiEncode, first, keccak, makeChain, signTypedData, signerAddress } from './lib/cast.mjs';
 import { isMain } from './lib/cli.mjs';
 import { loadDeployment } from './lib/config.mjs';
 import {
@@ -84,7 +84,8 @@ export function formatUnits(x, decimals) {
 const rand32 = () => '0x' + randomBytes(32).toString('hex');
 
 export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, policy = {}, ledgerFile, tmpDir, path }) {
-  const chain = makeChain(rpcUrl);
+  // A key-file signer needs no Foundry: it signs in JavaScript and reads over JSON-RPC.
+  const chain = makeChain(rpcUrl, { js: signer?.kind === 'key' ? true : undefined });
   const dep = await loadDeployment(chain);
   const A = dep.addresses;
   const owner = await signerAddress(signer);
@@ -142,12 +143,11 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
     if (lc(fields) !== '0x0f' || BigInt(chainId) !== BigInt(dep.chainId) || verifying !== vault) {
       throw new Error(`vault ${vault} uses an EIP-712 domain this agent does not sign for`);
     }
-    const typeHash = await cast(['keccak', 'EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)']);
-    const encoded = await cast([
-      'abi-encode', 'f(bytes32,bytes32,bytes32,uint256,address)', typeHash,
-      await cast(['keccak', name]), await cast(['keccak', version]), String(dep.chainId), vault,
+    const typeHash = keccak('EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)');
+    const encoded = abiEncode('f(bytes32,bytes32,bytes32,uint256,address)', [
+      typeHash, keccak(name), keccak(version), String(dep.chainId), vault,
     ]);
-    const rebuilt = lc(await cast(['keccak', encoded]));
+    const rebuilt = lc(keccak(encoded));
     if (rebuilt !== lc(first(await chain.call(vault, 'DOMAIN_SEPARATOR()(bytes32)')))) {
       throw new Error(`could not reproduce the EIP-712 domain of vault ${vault}`);
     }
@@ -486,16 +486,16 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
    * says the session can take no more calls, it is retired and the call is paid once more from a
    * new session.
    */
-  async function paySession(url, payUrl, required, o, method, headers, retried = false) {
+  async function paySession(url, payUrl, required, o, method, headers, body, retried = false) {
     const payload = await authorize(o);
     const s = ledger.sessions[sessionKey(o.r)];
     const paymentPayload = { x402Version: X402_VERSION, resource: required.resource, accepted: o.r, payload };
-    const res = await fetch(payUrl, { method, redirect: 'manual', headers: { ...headers, [HEADER.signature]: encode(paymentPayload) } });
-    const body = await res.text();
+    const res = await fetch(payUrl, { method, body, redirect: 'manual', headers: { ...headers, [HEADER.signature]: encode(paymentPayload) } });
+    const text = await res.text();
     const receipt = res.headers.get(HEADER.response);
     const settlement = receipt ? decode(receipt) : null;
     const paid = res.status === 200 && settlement?.success === true;
-    const error = !paid && res.status === 402 ? await errorOf(res, body) : undefined;
+    const error = !paid && res.status === 402 ? await errorOf(res, text) : undefined;
     if (paid) {
       s.open = null; // the facilitator accepts a voucher only once the session is open on-chain
       s.pathStep = null;
@@ -508,10 +508,10 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
         delete ledger.sessions[key];
         saveLedger();
       }
-      return paySession(url, payUrl, required, o, method, headers, true);
+      return paySession(url, payUrl, required, o, method, headers, body, true);
     }
     return {
-      status: res.status, paid, mode: 'session', requirement: o.r, settlement, body, error, paymentPayload,
+      status: res.status, paid, mode: 'session', requirement: o.r, settlement, body: text, error, paymentPayload,
       session: { id: s.sessionId, cumulative: s.cumulative, deposit: s.deposit },
     };
   }
@@ -579,11 +579,11 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
   }
 
   /**
-   * GET (or `method`) `url`, paying if the server answers 402.
+   * GET (or `method`, with `body`) `url`, paying if the server answers 402.
    * Resolves { status, paid, mode, requirement, settlement, body, error }.
    */
-  async function pay(url, { prefer, method = 'GET', headers = {} } = {}) {
-    const initial = await fetch(url, { method, headers });
+  async function pay(url, { prefer, method = 'GET', headers = {}, body } = {}) {
+    const initial = await fetch(url, { method, headers, body });
     const payUrl = initial.url || url; // after any redirects of the unpaid request
     if (initial.status !== 402) return { status: initial.status, paid: false, body: await initial.text() };
     const required = await requiredOf(initial);
@@ -591,7 +591,7 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
 
     const chosen = await choose(required.accepts, prefer);
     if (chosen.mode === 'session') {
-      return withLock(sessionKey(chosen.r), () => paySession(url, payUrl, required, chosen, method, headers));
+      return withLock(sessionKey(chosen.r), () => paySession(url, payUrl, required, chosen, method, headers, body));
     }
     let o = chosen;
     let conversion = null;
@@ -609,12 +609,12 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
       : await authorize(o);
     const paymentPayload = { x402Version: X402_VERSION, resource: required.resource, accepted: o.r, payload };
     // The signed payment goes to the URL that asked for it and nowhere else: no redirects.
-    const res = await fetch(payUrl, { method, redirect: 'manual', headers: { ...headers, [HEADER.signature]: encode(paymentPayload) } });
-    const body = await res.text();
+    const res = await fetch(payUrl, { method, body, redirect: 'manual', headers: { ...headers, [HEADER.signature]: encode(paymentPayload) } });
+    const text = await res.text();
     const receipt = res.headers.get(HEADER.response);
     const settlement = receipt ? decode(receipt) : null;
     const paid = res.status === 200 && settlement?.success === true;
-    const error = !paid && res.status === 402 ? await errorOf(res, body) : undefined;
+    const error = !paid && res.status === 402 ? await errorOf(res, text) : undefined;
     if (retryKey) {
       if (paid) unsettled.delete(retryKey);
       else unsettled.set(retryKey, payload);
@@ -627,7 +627,7 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
         transaction: settlement?.transaction || '', conversion: conversion?.transaction || undefined, delivered: paid,
       });
     }
-    return { status: res.status, paid, mode: chosen.mode, requirement: o.r, settlement, conversion, body, error, paymentPayload };
+    return { status: res.status, paid, mode: chosen.mode, requirement: o.r, settlement, conversion, body: text, error, paymentPayload };
   }
 
   return {

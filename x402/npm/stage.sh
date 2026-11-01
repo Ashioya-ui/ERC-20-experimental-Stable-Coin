@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Lays out the npm package in $1 (default: npm-package) from this repository:
 #   package.json            x402/npm/package.json, repository links pointed at $GITHUB_REPOSITORY
-#   x402/                   the agent, facilitator and merchant, and their lib/
+#   x402/                   the MCP server, agent, facilitator and merchant, and their lib/
 #   deployments/, config/   the Base mainnet session contracts and USDC, read by x402/lib/config.mjs
 #   README.md, LICENSE      the quick start, with its relative links made absolute
 # The layout mirrors the repository, so config.mjs finds deployments/ and config/ unchanged.
@@ -14,7 +14,7 @@ REF=${GITHUB_SHA:-$(git rev-parse HEAD)}
 rm -rf "$OUT"
 mkdir -p "$OUT/x402/lib" "$OUT/deployments" "$OUT/config"
 cp x402/npm/package.json "$OUT/"
-cp x402/agent.mjs x402/facilitator.mjs x402/merchant.mjs "$OUT/x402/"
+cp x402/agent.mjs x402/facilitator.mjs x402/merchant.mjs x402/mcp.mjs "$OUT/x402/"
 cp x402/lib/*.mjs "$OUT/x402/lib/"
 cp deployments/8453-session-escrow.json deployments/8453-session-paths.json "$OUT/deployments/"
 cp config/8453.json "$OUT/config/"

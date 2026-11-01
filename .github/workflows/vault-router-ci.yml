@@ -143,17 +143,21 @@ jobs:
         run: |
           set +e
           (cd x402 && node --test --test-reporter=spec test/unit.test.mjs) > /tmp/unit.txt 2>&1; U=$?
+          # The whole Node suite on the anvil rail, including the pure-JS signer against cast and
+          # the MCP server paying a merchant.
+          script/rehearsal/x402.sh > /tmp/rail.txt 2>&1; X=$?
           script/rehearsal/x402-vault-fork.sh > /tmp/fork.txt 2>&1; R=$?
           SESSION_CALLS=1000 script/rehearsal/x402-session.sh > /tmp/session-local.txt 2>&1; L=$?
           SESSION_CALLS=1000 script/rehearsal/x402-session.sh --fork > /tmp/session-fork.txt 2>&1; F=$?
           set -e
-          { echo "report<<VPR_FORK_EOF"; echo "exit unit $U, fork $R"; tail -c 4000 /tmp/unit.txt; echo;
+          { echo "report<<VPR_FORK_EOF"; echo "exit unit $U, rail $X, fork $R"; tail -c 4000 /tmp/unit.txt; echo;
+            tail -c 12000 /tmp/rail.txt; echo;
             tail -c 36000 /tmp/fork.txt; echo "VPR_FORK_EOF"; } >> "$GITHUB_OUTPUT"
           { echo "session<<VPR_SESSION_EOF"; echo "exit session-local $L, session-fork $F";
             echo "== local anvil, FiatToken v2.2"; tail -c 24000 /tmp/session-local.txt; echo;
             echo "== Base mainnet fork, live USDC"; tail -c 24000 /tmp/session-fork.txt; echo "VPR_SESSION_EOF"; } >> "$GITHUB_OUTPUT"
-          tail -80 /tmp/fork.txt; tail -60 /tmp/session-local.txt; tail -60 /tmp/session-fork.txt
-          [ $U -eq 0 ] && [ $R -eq 0 ] && [ $L -eq 0 ] && [ $F -eq 0 ]
+          tail -120 /tmp/rail.txt; tail -80 /tmp/fork.txt; tail -60 /tmp/session-local.txt; tail -60 /tmp/session-fork.txt
+          [ $U -eq 0 ] && [ $X -eq 0 ] && [ $R -eq 0 ] && [ $L -eq 0 ] && [ $F -eq 0 ]
 
   publish:
     name: Commit the reports

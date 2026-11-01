@@ -2,6 +2,34 @@
 
 Pay an x402 API a thousand times and settle on-chain once.
 
+## Give your agent x402 payments
+
+Any agent that speaks MCP (Claude Desktop, Claude Code, Cursor, Windsurf, VS Code, Codex CLI and
+others) can pay x402 APIs with this. It needs Node.js and nothing else.
+
+1. **Add it to your agent.**
+   - **Claude Desktop:** download
+     [`x402-sessions.mcpb`](https://github.com/Ashioya-ui/ERC-20-experimental-Stable-Coin/releases/latest/download/x402-sessions.mcpb)
+     and open it. Claude Desktop installs it and asks for your budget and your limit per call.
+   - **Claude Code:** `claude mcp add x402 -- npx -y @pyzratio/x402-sessions`
+   - **Any other MCP client:** add this server to its MCP settings.
+     ```json
+     { "mcpServers": { "x402": { "command": "npx", "args": ["-y", "@pyzratio/x402-sessions"],
+       "env": { "AGENT_BUDGET": "5", "AGENT_MAX_PER_REQUEST": "0.10" } } } }
+     ```
+2. **Ask your agent for its wallet:** "Show my x402 wallet." The first time, it makes a wallet on
+   Base and shows the address.
+3. **Fund it.** Send USDC on Base to that address from Coinbase, MetaMask or any wallet that holds
+   USDC on Base. A few dollars covers thousands of small calls. It needs no ETH.
+4. **Use paid APIs.** Ask your agent to fetch any x402 URL. It pays when the server asks, never more
+   than your limit per call, and stops at your budget.
+
+Without settings, the budget is $1 and the limit is $0.10 a call. The wallet key lives in
+`~/.x402-sessions/agent.key` on your computer, so keep only what the agent should spend in it.
+For money the agent should never hold at all, see [paths](#give-an-agent-a-budget-owners).
+
+## How sessions work
+
 An agent deposits USDC once into an ownerless escrow. Every call then carries a voucher: a
 signature over the total owed so far. The merchant's facilitator checks it with one simulated call
 and answers at once, so nothing touches the chain per call. Later, one transaction pays the merchant
@@ -51,7 +79,7 @@ batches. Its contracts have had professional audits and are deployed on Base. Wh
 adds is paths: one owner budget shared by several merchants, each with its own cap enforced
 on-chain, which the agent spends as it goes without ever holding the money.
 
-## Install
+## Install for developers
 
 ```sh
 npm install -g @pyzratio/x402-sessions                      # Node.js 22 or later, no dependencies

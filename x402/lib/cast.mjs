@@ -8,6 +8,11 @@
 // unlocked accounts (local chain only) or encrypted keystores with a password file.
 
 import { execFile } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { addressOfKey, makeJsChain, signTypedDataWithKey } from './evm.mjs';
+
+// Hashing and ABI encoding are pure functions; evm.mjs computes them without starting a process.
+export { abiEncode, keccak } from './evm.mjs';
 
 const CAST = process.env.CAST_BIN || 'cast';
 
@@ -106,15 +111,18 @@ export const first = (out) => String(out).trim().split(/\s+/)[0];
  * A signer description:
  *   { kind: 'unlocked', address }                    anvil's unlocked accounts (local chain only)
  *   { kind: 'keystore', path, passwordFile }         an encrypted JSON keystore
+ *   { kind: 'key', path }                            a file holding a 0x-hex private key, signed
+ *                                                    with in JavaScript (no cast needed)
  */
 export function signerArgs(signer) {
   if (!signer) throw new Error('no signer configured');
   if (signer.kind === 'unlocked') return ['--unlocked', '--from', signer.address];
   if (signer.kind === 'keystore') return ['--keystore', signer.path, '--password-file', signer.passwordFile];
+  if (signer.kind === 'key') throw new Error('a key-file signer signs in JavaScript; it cannot send through cast');
   throw new Error(`unknown signer kind ${signer.kind}`);
 }
 
-/** Parse "unlocked:0x..." or "keystore:<path>" (password file from a second argument). */
+/** Parse "unlocked:0x...", "keystore:<path>" (password file from a second argument) or "key:<path>". */
 export function parseSigner(spec, passwordFile) {
   if (!spec) return null;
   const [kind, value] = [spec.slice(0, spec.indexOf(':')), spec.slice(spec.indexOf(':') + 1)];
@@ -123,8 +131,11 @@ export function parseSigner(spec, passwordFile) {
     if (!passwordFile) throw new Error('a keystore signer needs a password file');
     return { kind, path: value, passwordFile };
   }
-  throw new Error(`signer must be unlocked:<address> or keystore:<path>, got ${spec}`);
+  if (kind === 'key') return { kind, path: value };
+  throw new Error(`signer must be unlocked:<address>, keystore:<path> or key:<path>, got ${spec}`);
 }
+
+const keyOf = (signer) => readFileSync(signer.path, 'utf8').trim();
 
 /**
  * Create the encrypted keystore `<dir>/<name>`, encrypted with the password in `passwordFile`.
@@ -143,6 +154,7 @@ export async function newKeystore(dir, name, passwordFile) {
 /** The address of a signer. */
 export async function signerAddress(signer) {
   if (signer.kind === 'unlocked') return signer.address.toLowerCase();
+  if (signer.kind === 'key') return addressOfKey(keyOf(signer));
   return (await cast(['wallet', 'address', ...signerArgs(signer)])).toLowerCase();
 }
 
@@ -160,8 +172,12 @@ export class UnconfirmedError extends Error {
   }
 }
 
-/** Chain access over one RPC endpoint. */
-export function makeChain(rpcUrl) {
+/**
+ * Chain access over one RPC endpoint, through cast; or, with `js` (or X402_EVM=js), through
+ * evm.mjs's JSON-RPC client, which reads and never sends.
+ */
+export function makeChain(rpcUrl, { js } = {}) {
+  if (js ?? process.env.X402_EVM === 'js') return makeJsChain(rpcUrl);
   const rpc = ['--rpc-url', rpcUrl];
   const READ = { retries: 3 };
   return {
@@ -256,6 +272,7 @@ export function makeChain(rpcUrl) {
 
 /** EIP-712 signature of `typedData` by `signer` (keystore only: an unlocked account cannot sign here). */
 export async function signTypedData(typedData, signer, tmpDir) {
+  if (signer.kind === 'key') return signTypedDataWithKey(typedData, keyOf(signer));
   const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
   const { join } = await import('node:path');
   const dir = await mkdtemp(join(tmpDir, 'sign-'));

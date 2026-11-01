@@ -66,7 +66,9 @@ test('signer specs', () => {
   assert.deepEqual(parseSigner('unlocked:0xabc'), { kind: 'unlocked', address: '0xabc' });
   assert.deepEqual(parseSigner('keystore:/k/agent', '/k/pw'), { kind: 'keystore', path: '/k/agent', passwordFile: '/k/pw' });
   assert.throws(() => parseSigner('keystore:/k/agent'), /password file/);
-  assert.throws(() => parseSigner('privatekey:0x01'), /unlocked:<address> or keystore:<path>/);
+  assert.deepEqual(parseSigner('key:/k/agent.key'), { kind: 'key', path: '/k/agent.key' });
+  // A key itself is never accepted in a spec: only a path to the file that holds it.
+  assert.throws(() => parseSigner('privatekey:0x01'), /unlocked:<address>, keystore:<path> or key:<path>/);
 });
 
 test('dollar amounts', () => {
