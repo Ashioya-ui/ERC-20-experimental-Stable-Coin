@@ -12,3 +12,12 @@ cache-halmos/
 # Application drafts: personal material, kept local until the author decides to
 # publish it deliberately rather than as a side effect of a tidy working tree.
 docs/speedrun-application.md
+
+# Auditor payment keystores and their password files. Encrypted keys and the
+# passwords that open them never enter version control.
+audit/wallets/
+
+# The white paper and the Speedrun application are distributed directly, not from the
+# repository: the application carries personal history, and both are living drafts whose
+# numbers are checked against the chain rather than against a commit.
+docs/WHITEPAPER.md

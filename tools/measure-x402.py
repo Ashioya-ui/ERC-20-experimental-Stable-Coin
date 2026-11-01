@@ -1,0 +1,511 @@
+#!/usr/bin/env python3
+"""Who holds the money in x402 on Base mainnet: the wallets that pay, or the wallets that get paid?
+
+Public chain data only. Nothing is signed and nothing is sent.
+
+Population. x402's "exact" scheme settles USDC with EIP-3009 transferWithAuthorization, which
+emits AuthorizationUsed(authorizer, nonce) on the USDC contract. Those events are sampled across
+the last WINDOW_DAYS days. A random sample of their receipts then shows who submitted each one
+(the facilitators) and who was paid (the merchants), so the population is checked against x402
+instead of assumed to be x402.
+
+Measured, for payers and merchants alike: USDC held now, plus any USDC already parked in Aave
+(aBasUSDC, waBasUSDC); distribution, concentration, the share that are contracts. And Aave's live
+USDC supply rate on Base, read from the pool, which prices the idle balance.
+
+Output: a JSON file and a plain-text report, both with every figure labelled measured or sampled.
+"""
+import json
+import os
+import random
+import statistics
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+
+RPCS = [u for u in os.environ.get("RPCS", "https://mainnet.base.org,https://base-rpc.publicnode.com").split(",") if u]
+USDC = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+WA_BAS_USDC = "0xc768c589647798a6ee01a91fde98ef2ed046dbd6"
+WINDOW_DAYS = int(os.environ.get("WINDOW_DAYS", "7"))
+SEGMENTS = int(os.environ.get("SEGMENTS", "48"))
+SEGMENT_BLOCKS = int(os.environ.get("SEGMENT_BLOCKS", "300"))
+RECEIPTS = int(os.environ.get("RECEIPTS", "1500"))
+MAX_WALLETS = int(os.environ.get("MAX_WALLETS", "8000"))
+MULTICALL3 = "0xca11bde05977b3631167028862be2a173976ca11"
+# ETH/USD, to price settlement gas: Chainlink's Base feed, else the WETH/USDC 0.05% Uniswap v3 pool.
+CHAINLINK_ETH_USD = "0x71041dddad3595f9ced3dccfbe3d1f4b0a16bb70"
+UNI_WETH_USDC = "0xd0b53d9277642d899df5c87a3966a349a798f224"
+BLOCKS_PER_DAY = 43_200  # Base: 2-second blocks
+random.seed(int(os.environ.get("SEED", "8453")))
+
+UA = {"content-type": "application/json", "accept": "application/json",
+      "user-agent": "Mozilla/5.0 (compatible; spectrum-x402-measure/1.0)"}
+
+
+def sh(*args):
+    return subprocess.run(["cast", *args], check=True, capture_output=True, text=True).stdout.strip()
+
+
+TOPIC_AUTH_USED = sh("keccak", "AuthorizationUsed(address,bytes32)")
+TOPIC_TRANSFER = sh("keccak", "Transfer(address,address,uint256)")
+SEL_BALANCE = sh("sig", "balanceOf(address)")
+SEL_ATOKEN = sh("sig", "aToken()")
+SEL_POOL = sh("sig", "POOL()")
+SEL_RESERVE = sh("sig", "getReserveData(address)")
+
+_n = 0
+
+
+def _post(url, payload):
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=UA)
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return json.loads(r.read())
+
+
+def rpc(method, params):
+    """One call, retried with backoff across endpoints: public endpoints rate-limit."""
+    global _n
+    last = None
+    for attempt in range(8):
+        url = RPCS[attempt % len(RPCS)]
+        _n += 1
+        try:
+            out = _post(url, {"jsonrpc": "2.0", "id": _n, "method": method, "params": params})
+            if "error" in out:
+                last = RuntimeError(f"{url}: {out['error']}")
+                if "limit" in str(out["error"]).lower() or "too many" in str(out["error"]).lower():
+                    time.sleep(0.5 * 2 ** attempt)
+                    continue
+                raise last
+            return out["result"]
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            last = e
+            time.sleep(0.5 * 2 ** attempt)
+    raise last
+
+
+def batch(calls, size=50):
+    """JSON-RPC batch, falling back to single calls if an endpoint refuses batches."""
+    out = [None] * len(calls)
+    for i in range(0, len(calls), size):
+        chunk = calls[i:i + size]
+        payload = [{"jsonrpc": "2.0", "id": i + j, "method": m, "params": p} for j, (m, p) in enumerate(chunk)]
+        done = False
+        for attempt in range(6):
+            try:
+                res = _post(RPCS[attempt % len(RPCS)], payload)
+                if isinstance(res, list) and all("result" in x for x in res):
+                    for x in res:
+                        out[x["id"]] = x["result"]
+                    done = True
+                    break
+            except (urllib.error.URLError, TimeoutError, ConnectionError, json.JSONDecodeError):
+                pass
+            time.sleep(0.5 * 2 ** attempt)
+        if not done:
+            for j, (m, p) in enumerate(chunk):
+                out[i + j] = rpc(m, p)
+    return out
+
+
+h2i = lambda h: int(h, 16) if h and h != "0x" else 0
+word = lambda data, k: data[2 + 64 * k: 2 + 64 * (k + 1)]
+addr_topic = lambda t: "0x" + t[-40:]
+pad = lambda a: a[2:].lower().rjust(64, "0")
+
+
+def call(to, data):
+    return rpc("eth_call", [{"to": to, "data": data}, "latest"])
+
+
+def logs_between(lo, hi):
+    """eth_getLogs for AuthorizationUsed on USDC, halving the range when a node caps results."""
+    try:
+        return rpc("eth_getLogs", [{"address": USDC, "topics": [TOPIC_AUTH_USED], "fromBlock": hex(lo), "toBlock": hex(hi)}])
+    except RuntimeError as e:
+        if hi > lo and any(k in str(e).lower() for k in ("more than", "too many", "range", "limit", "exceed")):
+            mid = (lo + hi) // 2
+            return logs_between(lo, mid) + logs_between(mid + 1, hi)
+        raise
+
+
+def multicall_balances(pairs, chunk=300):
+    """balanceOf for (token, wallet) pairs through Multicall3.aggregate3, allowFailure on each.
+    Hundreds of balances per eth_call keep a public endpoint's rate limit out of the way."""
+    out = []
+    for i in range(0, len(pairs), chunk):
+        part = pairs[i:i + chunk]
+        n = len(part)
+        heads, tails, offset = [], [], n * 32
+        for token, wallet in part:
+            cd = bytes.fromhex(SEL_BALANCE[2:] + pad(wallet))
+            padded = cd + b"\x00" * ((32 - len(cd) % 32) % 32)
+            el = (bytes.fromhex(token[2:].rjust(64, "0")) + (1).to_bytes(32, "big") + (0x60).to_bytes(32, "big")
+                  + len(cd).to_bytes(32, "big") + padded)
+            heads.append(offset.to_bytes(32, "big"))
+            tails.append(el)
+            offset += len(el)
+        body = (0x20).to_bytes(32, "big") + n.to_bytes(32, "big") + b"".join(heads) + b"".join(tails)
+        res = bytes.fromhex(call(MULTICALL3, "0x82ad56cb" + body.hex())[2:])
+        w = lambda o: int.from_bytes(res[o:o + 32], "big")
+        arr = w(0)
+        base = arr + 32
+        for k in range(w(arr)):
+            t = base + w(base + 32 * k)
+            ok = w(t) == 1
+            b0 = t + w(t + 32)
+            ln = w(b0)
+            out.append(int.from_bytes(res[b0 + 32:b0 + 64], "big") if ok and ln >= 32 else 0)
+    return out
+
+
+def dist(xs):
+    xs = sorted(xs)
+    n = len(xs)
+    if not n:
+        return {}
+    q = lambda p: xs[min(n - 1, int(p * n))]
+    total = sum(xs)
+    top = lambda f: sum(xs[n - max(1, int(n * f)):]) / total if total else 0
+    return {
+        "n": n, "sum": total, "mean": total / n, "median": statistics.median(xs), "p75": q(0.75),
+        "p90": q(0.90), "p99": q(0.99), "max": xs[-1], "zero_share": sum(1 for x in xs if x == 0) / n,
+        "share_held_by_top_1pct": top(0.01), "share_held_by_top_10pct": top(0.10),
+    }
+
+
+def main():
+    latest = h2i(rpc("eth_blockNumber", []))
+    start = latest - WINDOW_DAYS * BLOCKS_PER_DAY
+    starts = sorted(random.sample(range(start, latest - SEGMENT_BLOCKS), SEGMENTS))
+    logs = []
+    for s in starts:
+        logs += logs_between(s, s + SEGMENT_BLOCKS - 1)
+    sampled_blocks = SEGMENTS * SEGMENT_BLOCKS
+    per_day = len(logs) / sampled_blocks * BLOCKS_PER_DAY
+    payers, payer_txs = {}, {}
+    for lg in logs:
+        a = addr_topic(lg["topics"][1])
+        payers[a] = payers.get(a, 0) + 1
+        if len(payer_txs.setdefault(a, [])) < 3:
+            payer_txs[a].append(lg["transactionHash"])
+
+    # Receipts: who submitted, who was paid, how much.
+    txs = list({lg["transactionHash"] for lg in logs})
+    random.shuffle(txs)
+    def payments_in(receipts_):
+        """(submitter, payer, payTo, amount) for every EIP-3009 payment in these receipts."""
+        rows = []
+        for r in receipts_:
+            authorizers = {addr_topic(l["topics"][1]) for l in r["logs"]
+                           if l["address"].lower() == USDC and l["topics"][0] == TOPIC_AUTH_USED}
+            for l in r["logs"]:
+                if l["address"].lower() == USDC and l["topics"][0] == TOPIC_TRANSFER and len(l["topics"]) == 3:
+                    frm, to = addr_topic(l["topics"][1]), addr_topic(l["topics"][2])
+                    if frm in authorizers:
+                        rows.append((r["from"].lower(), frm, to, h2i(l["data"]) / 1e6))
+        return rows
+
+    receipts = [r for r in batch([("eth_getTransactionReceipt", [t]) for t in txs[:RECEIPTS]], size=25) if r]
+    submitters, merchants, amounts, revenue = {}, {}, [], {}
+    for r in receipts:
+        submitters[r["from"].lower()] = submitters.get(r["from"].lower(), 0) + 1
+    random_payments = payments_in(receipts)
+    for sub, frm, to, amt in random_payments:
+        merchants[to] = merchants.get(to, 0) + 1
+        amounts.append(amt)
+        revenue[to] = revenue.get(to, 0) + amt
+
+    # Which submitters behave like x402 facilitators: many settlements of micro-payments. Profiled
+    # on the random sample only, so the profile is not biased by the targeted lookups below.
+    prof = {}
+    for sub, frm, to, amt in random_payments:
+        x = prof.setdefault(sub, {"payments": 0, "amounts": [], "payTo": set()})
+        x["payments"] += 1
+        x["amounts"].append(amt)
+        x["payTo"].add(to)
+    facilitator_like = {sub for sub, x in prof.items()
+                        if x["payments"] >= 8 and statistics.median(x["amounts"]) <= 1.0}
+    submitter_profiles = sorted(
+        [{"address": sub, "payments_in_sample": x["payments"], "median_usdc": statistics.median(x["amounts"]),
+          "distinct_payTo": len(x["payTo"]), "x402_like": sub in facilitator_like} for sub, x in prof.items()],
+        key=lambda y: -y["payments_in_sample"])[:15]
+
+    # Aave: the tokens that mean "already earning", and the live supply rate. Guarded: a missing
+    # rate costs one line of the report, not the run.
+    a_token, pool, apr, apy = None, None, None, None
+    try:
+        a_token = "0x" + call(WA_BAS_USDC, SEL_ATOKEN)[-40:]
+        pool = "0x" + call(a_token, SEL_POOL)[-40:]
+        rd = call(pool, SEL_RESERVE + pad(USDC))
+        apr = h2i(word(rd, 2)) / 1e27  # currentLiquidityRate, in ray
+        secs = 365 * 24 * 3600
+        apy = (1 + apr / secs) ** secs - 1
+    except Exception as e:  # noqa: BLE001
+        print(f"aave lookup failed: {e}", file=sys.stderr)
+    tokens = [t for t in (USDC, a_token, WA_BAS_USDC) if t]
+
+    def holdings(wallets):
+        ws = list(wallets)
+        if len(ws) > MAX_WALLETS:
+            ws = random.sample(ws, MAX_WALLETS)
+        res = multicall_balances([(t, w) for w in ws for t in tokens])
+        k_ = len(tokens)
+        usdc, parked, rows = [], 0, []
+        for k, w in enumerate(ws):
+            vals = res[k_ * k: k_ * (k + 1)]
+            u, earning = vals[0], sum(vals[1:])
+            usdc.append(u / 1e6)
+            if earning:
+                parked += 1
+            rows.append((w, u / 1e6, earning / 1e6))
+        sample = random.sample(ws, min(400, len(ws)))
+        codes = batch([("eth_getCode", [w, "latest"]) for w in sample])
+        eoa = sum(1 for c in codes if c in (None, "0x"))
+        delegated = sum(1 for c in codes if c and c.startswith("0xef0100"))
+        return {
+            "measured_wallets": len(ws), "of": len(wallets), "usdc": dist(usdc),
+            "holding_any_aave_usdc_share": parked / len(ws) if ws else 0,
+            "code_sample": {"n": len(sample), "eoa": eoa, "eip7702_delegated": delegated,
+                            "contract": len(sample) - eoa - delegated},
+            "top_by_usdc": sorted(rows, key=lambda x: -x[1])[:25],
+            "_rows": rows,
+        }
+
+    # ---- what settling one payment costs, against what the payment is worth
+    eth_usd = None
+    try:
+        rd = call(CHAINLINK_ETH_USD, sh("sig", "latestRoundData()"))
+        eth_usd = h2i(word(rd, 1)) / 1e8
+    except Exception:  # noqa: BLE001
+        try:
+            sp = h2i(word(call(UNI_WETH_USDC, sh("sig", "slot0()")), 0))
+            eth_usd = (sp / 2 ** 96) ** 2 * 1e12  # token0 WETH (18 dp), token1 USDC (6 dp)
+        except Exception as e:  # noqa: BLE001
+            print(f"eth price lookup failed: {e}", file=sys.stderr)
+    per_tx = {}
+    for r in receipts:
+        rows = payments_in([r])
+        if not rows:
+            continue
+        cost_wei = h2i(r.get("gasUsed")) * h2i(r.get("effectiveGasPrice")) + h2i(r.get("l1Fee"))
+        per_tx[r["transactionHash"]] = (r["from"].lower(), cost_wei, rows)
+    cost_rows = []  # (submitter, cost_usd per payment, amount, payments in that tx)
+    for sub, cost_wei, rows in per_tx.values():
+        for _, _, _, amt in rows:
+            cost_rows.append((sub, cost_wei / len(rows) / 1e18 * (eth_usd or 0), amt, len(rows)))
+    costs = [c for _, c, _, _ in cost_rows]
+    ratios = [c / a for _, c, a, _ in cost_rows if a > 0]
+    by_sub = {}
+    for sub, c, a, n in cost_rows:
+        x = by_sub.setdefault(sub, {"payments": 0, "cost": 0.0, "value": 0.0})
+        x["payments"] += 1
+        x["cost"] += c
+        x["value"] += a
+    share = lambda sub: by_sub[sub]["payments"] / len(cost_rows)
+    settlement = {
+        "eth_usd": eth_usd,
+        "payments_priced": len(cost_rows),
+        "payments_per_tx": dist([n for _, _, _, n in cost_rows]),
+        "cost_usd_per_payment": dist(costs),
+        "cost_as_share_of_payment": dist(ratios),
+        "share_of_payments_where_gas_exceeds_10pct": sum(1 for x in ratios if x > 0.10) / len(ratios) if ratios else None,
+        "gas_usd_per_day_est": (statistics.mean(costs) if costs else 0) * per_day,
+        "by_submitter": sorted([{"address": sub, "share_of_payments": share(sub),
+                                 "gas_usd_per_day_est": x["cost"] / x["payments"] * share(sub) * per_day,
+                                 "gas_as_share_of_value": x["cost"] / x["value"] if x["value"] else None}
+                                for sub, x in by_sub.items()], key=lambda y: -y["share_of_payments"])[:8],
+    }
+
+    payer_h = holdings(payers)
+    merchant_h = holdings(merchants)
+
+    # Classify the wallets that hold the money. For the 200 biggest payers, read the receipts of
+    # their own sampled payments: who submitted them and how big they were. A wallet whose
+    # payments went through a facilitator-like submitter at micro-payment size is an x402 payer;
+    # one that made a large gasless transfer through anything else is not, however much it holds.
+    big = sorted(payer_h.pop("_rows"), key=lambda x: -x[1])[:200]
+    merchant_h.pop("_rows")
+    want = [t for w, _, _ in big for t in payer_txs.get(w, [])]
+    targeted = [r for r in batch([("eth_getTransactionReceipt", [t]) for t in want], size=25) if r]
+    by_payer = {}
+    for sub, frm, to, amt in payments_in(targeted):
+        by_payer.setdefault(frm, []).append((sub, amt))
+    classified = []
+    for w, u, earning in big:
+        ps = by_payer.get(w, [])
+        x402 = bool(ps) and any(sub in facilitator_like for sub, _ in ps) and statistics.median(a for _, a in ps) <= 5.0
+        classified.append({"address": w, "usdc": u, "in_aave": earning, "x402": x402,
+                           "authorizations_in_sample": payers.get(w, 0),
+                           "median_payment": statistics.median(a for _, a in ps) if ps else None,
+                           "submitters": sorted({sub for sub, _ in ps})})
+    x402_big = [c for c in classified if c["x402"]]
+    other_big = [c for c in classified if not c["x402"]]
+    # Heavy users: wallets paying most often, whatever they hold. Who an x402 product is for.
+    heavy = sorted(payers.items(), key=lambda x: -x[1])[:30]
+    heavy_bal = dict(zip([w for w, _ in heavy], multicall_balances([(USDC, w) for w, _ in heavy])))
+
+    # ---- how the heaviest payers stay funded: USDC flowing in, from whom, how often
+    top_heavy = [w for w, _ in heavy[:20]]
+    inflows = []
+    for s_ in starts:
+        lo, hi = s_, s_ + SEGMENT_BLOCKS - 1
+        try:
+            inflows += rpc("eth_getLogs", [{"address": USDC, "fromBlock": hex(lo), "toBlock": hex(hi),
+                                            "topics": [TOPIC_TRANSFER, None, ["0x" + pad(w) for w in top_heavy]]}])
+        except Exception as e:  # noqa: BLE001
+            print(f"inflow scan {lo}: {e}", file=sys.stderr)
+    scale_week = WINDOW_DAYS * BLOCKS_PER_DAY / sampled_blocks
+    refills = {}
+    for lg in inflows:
+        to, frm = addr_topic(lg["topics"][2]), addr_topic(lg["topics"][1])
+        x = refills.setdefault(to, {"count": 0, "usdc": 0.0, "from": {}})
+        x["count"] += 1
+        x["usdc"] += h2i(lg["data"]) / 1e6
+        x["from"][frm] = x["from"].get(frm, 0) + 1
+    funders = {}
+    for w, x in refills.items():
+        for f_ in x["from"]:
+            funders.setdefault(f_, set()).add(w)
+    funding = {
+        "payers_scanned": len(top_heavy),
+        "per_payer": [{"address": w, "payments_per_week_est": n * scale_week,
+                       "inflows_per_week_est": refills.get(w, {}).get("count", 0) * scale_week,
+                       "usdc_in_per_week_est": refills.get(w, {}).get("usdc", 0) * scale_week,
+                       "distinct_funders": len(refills.get(w, {}).get("from", {})),
+                       "usdc_held": heavy_bal[w] / 1e6} for w, n in heavy[:20]],
+        "funders_shared_by_several_payers": sorted(
+            [{"funder": f_, "payers_funded": len(ws)} for f_, ws in funders.items() if len(ws) > 1],
+            key=lambda y: -y["payers_funded"])[:10],
+    }
+
+    # ---- what the heaviest payers buy
+    heavy_receipts = [r for r in batch([("eth_getTransactionReceipt", [t]) for w in top_heavy
+                                        for t in payer_txs.get(w, [])], size=25) if r]
+    bought = {}
+    for sub, frm, to, amt in payments_in(heavy_receipts):
+        x = bought.setdefault(frm, {})
+        x[to] = x.get(to, 0) + 1
+    for row in funding["per_payer"]:
+        row["pays"] = sorted(bought.get(row["address"], {}), key=lambda m: -bought[row["address"]][m])[:3]
+    top_sub = sorted(submitters.items(), key=lambda x: -x[1])[:10]
+    result = {
+        "chain": "base-mainnet", "latest_block": latest, "window_days": WINDOW_DAYS,
+        "sampled_blocks": sampled_blocks, "sampled_share_of_window": sampled_blocks / (WINDOW_DAYS * BLOCKS_PER_DAY),
+        "authorizations_in_sample": len(logs), "authorizations_per_day_est": per_day,
+        "receipts_sampled": len(receipts),
+        "top_submitters": [{"address": a, "share": c / len(receipts)} for a, c in top_sub],
+        "payment_usdc": dist(amounts),
+        "payers": {"unique_in_sample": len(payers), **payer_h},
+        "facilitator_like_submitters": sorted(facilitator_like),
+        "submitter_profiles": submitter_profiles,
+        "big_payers_classified": classified,
+        "big_payers_summary": {
+            "x402_count": len(x402_big), "x402_usdc": sum(c["usdc"] for c in x402_big),
+            "other_count": len(other_big), "other_usdc": sum(c["usdc"] for c in other_big),
+        },
+        "settlement_cost": settlement,
+        "heavy_payer_funding": funding,
+        "heaviest_payers": [{"address": w, "authorizations_in_sample": n,
+                             "authorizations_per_week_est": n / (sampled_blocks / (WINDOW_DAYS * BLOCKS_PER_DAY)),
+                             "usdc": heavy_bal[w] / 1e6} for w, n in heavy],
+        "merchants": {"unique_in_receipt_sample": len(merchants), **merchant_h},
+        "aave_usdc_supply": {"pool": pool, "aToken": a_token, "apr": apr, "apy": apy},
+        "rpc_calls": _n,
+    }
+    yld = lambda d: d.get("sum", 0) * apy if apy is not None else None
+    result["idle_yield_per_year_usd"] = {"payers_measured": yld(payer_h["usdc"]),
+                                         "merchants_measured": yld(merchant_h["usdc"])}
+    result["merchants_by_sampled_x402_revenue"] = [
+        {"address": a, "usdc_received_in_sample": v, "payments_in_sample": merchants[a]}
+        for a, v in sorted(revenue.items(), key=lambda x: -x[1])[:40]
+    ]
+    json.dump(result, open(sys.argv[1] if len(sys.argv) > 1 else "x402-measure.json", "w"), indent=2)
+
+    f = lambda x: f"{x:,.2f}"
+    p, m = payer_h["usdc"], merchant_h["usdc"]
+    lines = [
+        f"x402 on Base mainnet, measured at block {latest:,} (last {WINDOW_DAYS} days, {sampled_blocks:,} blocks sampled)",
+        "",
+        f"EIP-3009 authorizations in sample   {len(logs):,}   (~{per_day:,.0f} per day, extrapolated)",
+        f"receipts inspected                  {len(receipts):,}",
+        "top submitters (facilitators)       " + ", ".join(f"{a[:10]}.. {s:.0%}" for a, s in
+                                                           [(x['address'], x['share']) for x in result['top_submitters'][:5]]),
+        f"payment size, USDC                  median {f(result['payment_usdc'].get('median', 0))}, "
+        f"mean {f(result['payment_usdc'].get('mean', 0))}, p90 {f(result['payment_usdc'].get('p90', 0))}",
+        "",
+        f"Aave USDC supply rate on Base       " + (f"{apy:.2%} APY (live, from the pool)" if apy is not None else "unavailable"),
+        "",
+        "                         PAYERS                MERCHANTS",
+        f"wallets measured         {payer_h['measured_wallets']:<21,} {merchant_h['measured_wallets']:,}",
+        f"USDC held, median        {f(p.get('median', 0)):<21} {f(m.get('median', 0))}",
+        f"USDC held, mean          {f(p.get('mean', 0)):<21} {f(m.get('mean', 0))}",
+        f"USDC held, p90           {f(p.get('p90', 0)):<21} {f(m.get('p90', 0))}",
+        f"USDC held, total         {f(p.get('sum', 0)):<21} {f(m.get('sum', 0))}",
+        f"held by top 10%          {p.get('share_held_by_top_10pct', 0):<21.0%} {m.get('share_held_by_top_10pct', 0):.0%}",
+        f"holding zero USDC        {p.get('zero_share', 0):<21.0%} {m.get('zero_share', 0):.0%}",
+        f"already in Aave          {payer_h['holding_any_aave_usdc_share']:<21.1%} {merchant_h['holding_any_aave_usdc_share']:.1%}",
+        f"contracts (code sample)  {payer_h['code_sample']['contract']}/{payer_h['code_sample']['n']:<17} "
+        f"{merchant_h['code_sample']['contract']}/{merchant_h['code_sample']['n']}",
+        f"idle yield / year (USD)  {f(result['idle_yield_per_year_usd']['payers_measured'] or 0):<21} "
+        f"{f(result['idle_yield_per_year_usd']['merchants_measured'] or 0)}",
+        "",
+        "Top merchants by USDC held (address, USDC, already in Aave, payments in receipt sample):",
+    ]
+    for w, u, a in merchant_h["top_by_usdc"][:20]:
+        lines.append(f"  {w}  {u:>14,.2f}  {a:>10,.2f}  {merchants.get(w, 0)}")
+    bs = result["big_payers_summary"]
+    lines += [
+        "",
+        "Who holds the payer-side money: the 200 biggest payers, classified by their own payments",
+        f"  x402 payers (facilitator-submitted micro-payments)  {bs['x402_count']:>4} wallets  {bs['x402_usdc']:>16,.2f} USDC",
+        f"  everything else (large or non-facilitator transfers) {bs['other_count']:>4} wallets  {bs['other_usdc']:>16,.2f} USDC",
+        f"  idle yield / year, x402 payers only (at {apy:.2%})   {bs['x402_usdc'] * apy:>16,.2f} USD" if apy else "",
+        "",
+        "Biggest x402 payers (address, USDC, authorizations in sample, median payment):",
+    ]
+    for c in sorted(x402_big, key=lambda y: -y["usdc"])[:20]:
+        lines.append(f"  {c['address']}  {c['usdc']:>14,.2f}  {c['authorizations_in_sample']:>5}  {c['median_payment']}")
+    sc = result["settlement_cost"]
+    cr = sc["cost_as_share_of_payment"]
+    cu = sc["cost_usd_per_payment"]
+    lines += [
+        "",
+        f"What settling one payment costs (ETH at ${sc['eth_usd']:,.2f}, {sc['payments_priced']:,} payments priced)" if sc["eth_usd"] else "ETH price unavailable",
+        f"  gas per payment, USD           median {cu.get('median', 0):.5f}   p90 {cu.get('p90', 0):.5f}",
+        f"  gas as share of the payment    median {cr.get('median', 0):.1%}   p90 {cr.get('p90', 0):.1%}",
+        f"  payments where gas > 10%       {sc['share_of_payments_where_gas_exceeds_10pct'] or 0:.0%}",
+        f"  payments per settlement tx     median {sc['payments_per_tx'].get('median', 0)}   max {sc['payments_per_tx'].get('max', 0)}",
+        f"  gas spent settling, all x402   ~${sc['gas_usd_per_day_est']:,.0f} per day",
+        "  by submitter (share of payments, gas USD/day, gas as share of value):",
+    ]
+    for x in sc["by_submitter"][:6]:
+        g = x["gas_as_share_of_value"]
+        lines.append(f"    {x['address']}  {x['share_of_payments']:>5.0%}  {x['gas_usd_per_day_est']:>9,.0f}  {(g or 0):>6.1%}")
+    lines += ["", "How the heaviest payers stay funded (payments/wk, refills/wk, USDC in/wk, funders, held, top payTo):"]
+    for x in result["heavy_payer_funding"]["per_payer"][:12]:
+        lines.append(f"  {x['address'][:12]}..  {x['payments_per_week_est']:>9,.0f}  {x['inflows_per_week_est']:>7,.0f}  "
+                     f"{x['usdc_in_per_week_est']:>11,.2f}  {x['distinct_funders']:>3}  {x['usdc_held']:>9,.2f}  "
+                     f"{','.join(m[:10] for m in x.get('pays', []))}")
+    shared = result["heavy_payer_funding"]["funders_shared_by_several_payers"]
+    lines.append(f"  funders shared by several heavy payers: {len(shared)}" +
+                 (f" (largest funds {shared[0]['payers_funded']})" if shared else ""))
+    lines += ["", "Heaviest payers by frequency (address, authorizations/week est, USDC held):"]
+    for x in result["heaviest_payers"][:20]:
+        lines.append(f"  {x['address']}  {x['authorizations_per_week_est']:>10,.0f}  {x['usdc']:>14,.2f}")
+    lines += ["", "Submitters (address, payments in random sample, median USDC, distinct payTo, x402-like):"]
+    for x in submitter_profiles[:12]:
+        lines.append(f"  {x['address']}  {x['payments_in_sample']:>5}  {x['median_usdc']:>8.4f}  {x['distinct_payTo']:>5}  {x['x402_like']}")
+    lines += ["", "Top merchants by x402 revenue in the receipt sample (address, USDC, payments):"]
+    for x in result["merchants_by_sampled_x402_revenue"][:20]:
+        lines.append(f"  {x['address']}  {x['usdc_received_in_sample']:>12,.4f}  {x['payments_in_sample']}")
+    lines += ["", f"rpc calls: {_n}"]
+    report = "\n".join(lines)
+    print(report)
+    open((sys.argv[2] if len(sys.argv) > 2 else "x402-measure.txt"), "w").write(report + "\n")
+
+
+if __name__ == "__main__":
+    main()

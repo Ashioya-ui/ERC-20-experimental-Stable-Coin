@@ -2,7 +2,13 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { encode, decode, sameRequirement, authorizationTypedData, isAddress, isBytes32, isHex, isUint } from '../lib/protocol.mjs';
+import { readFileSync } from 'node:fs';
+import {
+  encode, decode, sameRequirement, authorizationTypedData, isAddress, isBytes32, isHex, isUint, PAY_INTENT_FIELDS,
+  vaultIntentTypedData, permitTypedData, splitSignature, intentTuple, permitTuple, voucherTypedData, PATH_STEP_FIELDS,
+  pathStepTypedData,
+} from '../lib/protocol.mjs';
+import { wellFormed, list } from '../lib/session.mjs';
 import { parseJsonOutput, parseSigner, first } from '../lib/cast.mjs';
 import { parseUsd, formatUnits } from '../agent.mjs';
 
@@ -73,4 +79,119 @@ test('dollar amounts', () => {
   assert.equal(formatUnits(5_000_000_000_000_000n, 18), '0.005');
   assert.equal(formatUnits(0n, 6), '0');
   assert.equal(formatUnits(-1n, 6), '-0.000001');
+});
+
+// ------------------------------------------------------------------------------------ vault router
+
+test('PayIntent fields reproduce the Solidity typehash string exactly', () => {
+  const sol = readFileSync(new URL('../../src/vault/VaultPayRouter.sol', import.meta.url), 'utf8');
+  const m = /"(PayIntent\([^"]+\))"/.exec(sol);
+  assert.ok(m, 'PAY_INTENT_TYPEHASH string not found in VaultPayRouter.sol');
+  const js = `PayIntent(${PAY_INTENT_FIELDS.map((f) => `${f.type} ${f.name}`).join(',')})`;
+  assert.equal(js, m[1]);
+});
+
+test('vault intent typed data', () => {
+  const intent = {
+    payer: '0x' + '1'.repeat(40), vault: '0x' + '2'.repeat(40), asset: '0x' + '9'.repeat(40), payTo: '0x' + '3'.repeat(40),
+    assets: 50_000n,
+    maxShares: 47_620, salt: '0x' + 'ab'.repeat(32), validAfter: 1, validBefore: 99, extra: 'ignored',
+  };
+  const td = vaultIntentTypedData({ chainId: 8453, router: '0x' + '4'.repeat(40), intent });
+  assert.equal(td.primaryType, 'PayIntent');
+  assert.deepEqual(td.domain, { name: 'VaultPayRouter', version: '1', chainId: 8453, verifyingContract: '0x' + '4'.repeat(40) });
+  assert.deepEqual(Object.keys(td.message), PAY_INTENT_FIELDS.map((f) => f.name), 'only the signed fields, in order');
+  assert.equal(td.message.assets, '50000', 'uint256 values travel as decimal strings');
+  assert.deepEqual(td.types.PayIntent, PAY_INTENT_FIELDS);
+});
+
+test('permit typed data', () => {
+  const td = permitTypedData({
+    name: 'Wrapped Aave Base USDC', version: '1', chainId: 8453, verifyingContract: '0x' + '5'.repeat(40),
+    owner: '0x' + '6'.repeat(40), spender: '0x' + '7'.repeat(40), value: 10n, nonce: 0n, deadline: 123,
+  });
+  assert.equal(td.primaryType, 'Permit');
+  assert.deepEqual(td.types.Permit.map((f) => f.name), ['owner', 'spender', 'value', 'nonce', 'deadline']);
+  assert.deepEqual(td.message, {
+    owner: '0x' + '6'.repeat(40), spender: '0x' + '7'.repeat(40), value: '10', nonce: '0', deadline: '123',
+  });
+});
+
+test('splitting a signature for a permit', () => {
+  const r = 'aa'.repeat(32);
+  const s = 'bb'.repeat(32);
+  assert.deepEqual(splitSignature(`0x${r}${s}1b`), { r: `0x${r}`, s: `0x${s}`, v: 27 });
+  assert.deepEqual(splitSignature(`0x${r}${s}01`), { r: `0x${r}`, s: `0x${s}`, v: 28 }, 'v 0/1 is normalised');
+  assert.throws(() => splitSignature(`0x${r}${s}`), /65-byte/);
+  assert.throws(() => splitSignature(`0x${r}${s}05`), /bad signature v/);
+});
+
+test('cast tuples for the router call', () => {
+  const it = {
+    payer: '0xP', vault: '0xV', asset: '0xA', payTo: '0xT', assets: 1, maxShares: 2, salt: '0xS', validAfter: 3, validBefore: 4,
+  };
+  assert.equal(intentTuple(it), '(0xP,0xV,0xA,0xT,1,2,0xS,3,4)');
+  assert.equal(permitTuple({ value: 9, deadline: 8, v: 27, r: '0xR', s: '0xS' }), '(9,8,27,0xR,0xS)');
+  assert.equal(permitTuple(null), `(0,0,0,0x${'0'.repeat(64)},0x${'0'.repeat(64)})`, 'deadline 0 means no permit');
+});
+
+test('the session voucher reproduces the escrow\'s Solidity typehash string and domain', () => {
+  const sol = readFileSync(new URL('../../src/vault/X402SessionEscrow.sol', import.meta.url), 'utf8');
+  const m = /VOUCHER_TYPEHASH = keccak256\("([^"]+)"\)/.exec(sol);
+  assert.ok(m, 'VOUCHER_TYPEHASH string not found in X402SessionEscrow.sol');
+  const td = voucherTypedData({ chainId: 8453, escrow: '0x' + '1'.repeat(40), sessionId: '0x' + 'a'.repeat(64), cumulative: 5n });
+  assert.equal(`Voucher(${td.types.Voucher.map((f) => `${f.type} ${f.name}`).join(',')})`, m[1]);
+  assert.match(sol, /EIP712\("X402SessionEscrow", "1"\)/);
+  assert.deepEqual(td.domain, { name: 'X402SessionEscrow', version: '1', chainId: 8453, verifyingContract: '0x' + '1'.repeat(40) });
+  assert.deepEqual(td.message, { sessionId: '0x' + 'a'.repeat(64), cumulative: '5' });
+});
+
+test('a session payload is checked for shape before anything else', () => {
+  const v = {
+    escrow: '0x' + '1'.repeat(40), sessionId: '0x' + 'a'.repeat(64), cumulative: '100', voucher: '0x' + 'ab'.repeat(65),
+  };
+  assert.ok(wellFormed(v));
+  const open = {
+    funder: '0x' + '2'.repeat(40), signer: '0x' + '3'.repeat(40), expiry: '1900000000', salt: '0x' + 'b'.repeat(64),
+    amount: '200000', validAfter: '0', validBefore: '1900000000', authorization: '0x' + 'cd'.repeat(65),
+  };
+  assert.ok(wellFormed({ ...v, open }));
+  for (const k of Object.keys(v)) assert.ok(!wellFormed({ ...v, [k]: 'x' }), k);
+  for (const k of Object.keys(open)) assert.ok(!wellFormed({ ...v, open: { ...open, [k]: '-1' } }), `open.${k}`);
+  assert.ok(!wellFormed({ ...v, open: null }));
+  assert.ok(!wellFormed(undefined));
+  assert.equal(list(['0xa', 1n, 2]), '[0xa,1,2]');
+});
+
+test('a path step reproduces X402SessionPaths\' Solidity typehash string and domain', () => {
+  const sol = readFileSync(new URL('../../src/vault/X402SessionPaths.sol', import.meta.url), 'utf8');
+  const m = /STEP_TYPEHASH = keccak256\(\s*"([^"]+)"\s*\)/.exec(sol);
+  assert.ok(m, 'STEP_TYPEHASH string not found in X402SessionPaths.sol');
+  assert.equal(`PathStep(${PATH_STEP_FIELDS.map((f) => `${f.type} ${f.name}`).join(',')})`, m[1]);
+  assert.match(sol, /EIP712\("X402SessionPaths", "1"\)/);
+  const step = {
+    pathId: '0x' + 'a'.repeat(64), payee: '0x' + '1'.repeat(40), signer: '0x' + '2'.repeat(40), expiry: 9n,
+    salt: '0x' + 'b'.repeat(64), amount: 5n, committed: 0n, deadline: 7n, extra: 'ignored',
+  };
+  const td = pathStepTypedData({ chainId: 8453, paths: '0x' + '3'.repeat(40), step });
+  assert.deepEqual(Object.keys(td.message), PATH_STEP_FIELDS.map((f) => f.name), 'only the signed fields, in order');
+  assert.equal(td.message.committed, '0');
+  assert.deepEqual(td.domain, { name: 'X402SessionPaths', version: '1', chainId: 8453, verifyingContract: '0x' + '3'.repeat(40) });
+});
+
+test('a session is opened one way, never two', () => {
+  const v = {
+    escrow: '0x' + '1'.repeat(40), sessionId: '0x' + 'a'.repeat(64), cumulative: '100', voucher: '0x' + 'ab'.repeat(65),
+  };
+  const pathStep = {
+    pathId: '0x' + 'c'.repeat(64), signer: '0x' + '3'.repeat(40), expiry: '1900000000', salt: '0x' + 'b'.repeat(64),
+    amount: '200000', committed: '0', deadline: '1800000060', signature: '0x' + 'cd'.repeat(65),
+  };
+  const open = {
+    funder: '0x' + '2'.repeat(40), signer: '0x' + '3'.repeat(40), expiry: '1900000000', salt: '0x' + 'b'.repeat(64),
+    amount: '200000', validAfter: '0', validBefore: '1900000000', authorization: '0x' + 'cd'.repeat(65),
+  };
+  assert.ok(wellFormed({ ...v, pathStep }));
+  assert.ok(!wellFormed({ ...v, pathStep, open }), 'both is neither');
+  for (const k of Object.keys(pathStep)) assert.ok(!wellFormed({ ...v, pathStep: { ...pathStep, [k]: '-1' } }), `pathStep.${k}`);
 });

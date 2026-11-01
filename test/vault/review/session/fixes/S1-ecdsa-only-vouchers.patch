@@ -1,0 +1,91 @@
+--- a/src/vault/X402SessionEscrow.sol
++++ b/src/vault/X402SessionEscrow.sol
+@@ -5,7 +5,6 @@
+ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+ import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+-import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
+ import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+ 
+ /// @notice USDC's EIP-3009 receive authorization, as the escrow uses it to open a session gaslessly.
+@@ -40,10 +39,10 @@
+ ///
+ ///         Safety, both ways. The merchant can never receive more than the deposit or more than the
+ ///         signer authorised, and vouchers are cumulative, so an old one can never be counted
+-///         twice. The funder cannot pull the deposit back before expiry, so a voucher the merchant
+-///         holds is good until then. A stolen signing key can only overpay the one merchant the
+-///         session names, and only up to the deposit: a per-merchant spending cap for agent keys,
+-///         enforced by the chain.
++///         twice. The funder cannot pull the deposit back before expiry, and a voucher is a plain
++///         ECDSA signature, which no one can revoke, so a voucher the merchant holds is good until
++///         then. A stolen signing key can only overpay the one merchant the session names, and only
++///         up to the deposit: a per-merchant spending cap for agent keys, enforced by the chain.
+ ///
+ ///         Nothing to trust. No owner, no fee, no upgrade path, no oracle. Ownerless and immutable;
+ ///         the escrow holds exactly the unclaimed balance of its open sessions.
+@@ -67,7 +66,7 @@
+         address funder; // deposits, and takes back what is unclaimed after expiry
+         address payee; // the only address that can ever be paid from this session
+         address token;
+-        address signer; // signs vouchers: normally the agent's key, not the funder's
++        address signer; // signs vouchers with its own ECDSA key: normally the agent's, not the funder's
+         uint128 deposited;
+         uint128 claimed;
+         uint64 expiry;
+@@ -245,8 +244,8 @@
+         return (true, cumulative - s.claimed);
+     }
+ 
+-    /// @notice Whether `signer` signed this voucher. For the first call of a session that the same
+-    ///         payment opens, when there is no session state to check against yet.
++    /// @notice Whether `signer`'s own key signed this voucher. For the first call of a session
++    ///         that the same payment opens, when there is no session state to check against yet.
+     function isVoucherSignedBy(address signer, bytes32 sessionId, uint256 cumulative, bytes calldata signature)
+         external
+         view
+@@ -361,15 +360,15 @@
+         if (block.timestamp > s.expiry) revert SessionExpired(sessionId);
+     }
+ 
+-    /// @dev ECDSA first, then ERC-1271. OpenZeppelin 5.4's SignatureChecker sends any signer that
+-    ///      has code straight to ERC-1271, which strands an EIP-7702 account whose delegate does not
+-    ///      implement it: its own key would never be checked. A contract address has no private
+-    ///      key, so trying ECDSA first cannot let anyone sign for one.
+-    function _validSignature(address signer, bytes32 digest, bytes calldata signature) internal view returns (bool) {
++    /// @dev ECDSA only, against the signer's own key. A voucher must stay valid from the moment the
++    ///      merchant serves against it until it is redeemed, and an ERC-1271 answer is the signer
++    ///      contract's to change at will (a key rotation, a flag, the block number): a contract
++    ///      signer could void every voucher the merchant holds, or pass a simulation and fail in
++    ///      the block. An EIP-7702 account signs with its own key, which no delegation revokes.
++    function _validSignature(address signer, bytes32 digest, bytes calldata signature) internal pure returns (bool) {
+         // The third return value only describes a failure; recovered and err decide.
+         // slither-disable-next-line unused-return
+         (address recovered, ECDSA.RecoverError err,) = ECDSA.tryRecover(digest, signature);
+-        if (err == ECDSA.RecoverError.NoError && recovered == signer) return true;
+-        return signer.code.length != 0 && SignatureChecker.isValidERC1271SignatureNow(signer, digest, signature);
++        return err == ECDSA.RecoverError.NoError && recovered == signer;
+     }
+ }
+--- a/test/vault/X402SessionEscrow.t.sol
++++ b/test/vault/X402SessionEscrow.t.sol
+@@ -240,12 +240,17 @@
+ 
+     // ------------------------------------------------------------------ signers
+ 
+-    function test_anERC1271SignerCanSignVouchers() public {
++    /// An ERC-1271 answer can change after the merchant has served against it, so a contract
++    /// cannot sign vouchers, not even one that would accept its owner's signature.
++    function test_anERC1271SignerCannotSignVouchers() public {
+         Mock1271Wallet wallet = new Mock1271Wallet(agent);
+         vm.prank(funder);
+         bytes32 id = escrow.open(merchant, address(usdc), address(wallet), uint64(block.timestamp + 1 days), "w", 1e6);
+-        escrow.redeem(id, 4e5, _voucher(AGENT_PK, id, 4e5)); // the wallet accepts its owner's signature
+-        assertEq(usdc.balanceOf(merchant), 4e5);
++        bytes memory v = _voucher(AGENT_PK, id, 4e5); // the wallet would accept its owner's signature
++        (bool ok,) = escrow.checkVoucher(id, 4e5, v);
++        assertFalse(ok);
++        vm.expectRevert(X402SessionEscrow.InvalidVoucher.selector);
++        escrow.redeem(id, 4e5, v);
+     }
+ 
+     /// An EIP-7702 account has code, and its delegate may not implement ERC-1271. Its own key

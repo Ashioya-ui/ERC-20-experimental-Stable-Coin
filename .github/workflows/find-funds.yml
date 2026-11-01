@@ -1,0 +1,72 @@
+name: find-funds
+
+# Locates test USDC that was claimed but has not arrived where the engine needs it.
+#
+# Reads public chain state only: no secrets are available to this workflow, and it signs
+# nothing. It checks the deployer on both Base Sepolia and Ethereum Sepolia -- faucet.circle.com
+# defaults to Ethereum Sepolia, and a claim made there lands at a different contract on a
+# different chain, where it is invisible to every other job in this repository.
+#
+# The scan carries no token filter, so it reports whatever arrived, and it prints each sender,
+# which is how a funding account identifies itself without anyone having to look up its address.
+#
+# RUN: push to `find-usdc`, or Run workflow (optionally naming extra addresses).
+
+on:
+  push:
+    branches: [find-usdc]
+  workflow_dispatch:
+    inputs:
+      extra:
+        description: "More addresses to check, space separated"
+        required: false
+        default: ""
+
+concurrency:
+  group: find-funds
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  find:
+    name: Find the test USDC
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Scan both chains
+        run: |
+          set -euo pipefail
+          DEPLOYER=$(jq -r .deployer deployments/84532.json)
+          ADMIN=$(jq -r .admin deployments/84532.json)
+          # Addresses committed to the repo are checked as well, so an account can be added
+          # without re-running anything by hand.
+          WATCH=""
+          [ -f deployments/watch-addresses.txt ] && \
+            WATCH=$(grep -oE '0x[0-9a-fA-F]{40}' deployments/watch-addresses.txt | tr '\n' ' ')
+          EXTRA=$(printf '%s' "${{ inputs.extra }}" | grep -oE '0x[0-9a-fA-F]{40}' | tr '\n' ' ' || true)
+          mkdir -p deployments
+          python3 -I tools/find-funds.py $DEPLOYER $ADMIN $WATCH $EXTRA \
+            | tee deployments/funds-report.txt
+
+      - name: Put it in the summary too
+        if: always()
+        run: |
+          { echo '## Where the test USDC is'; echo ''; echo '```'
+            cat deployments/funds-report.txt; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit the report
+        if: always()
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f deployments/funds-report.txt
+          git diff --cached --quiet && exit 0
+          git commit -q -m "funds: where the test USDC is, run ${{ github.run_id }}"
+          git push origin "HEAD:refs/heads/deployments/funds-${{ github.run_id }}"

@@ -47,6 +47,115 @@ export function authorizationTypedData({ primaryType, name, version, chainId, ve
   };
 }
 
+/** The EIP-712 domain fields every typed-data object here uses. */
+const DOMAIN_FIELDS = [
+  { name: 'name', type: 'string' },
+  { name: 'version', type: 'string' },
+  { name: 'chainId', type: 'uint256' },
+  { name: 'verifyingContract', type: 'address' },
+];
+
+/** Field order of VaultPayRouter's PayIntent; it must match PAY_INTENT_TYPEHASH exactly. */
+export const PAY_INTENT_FIELDS = [
+  { name: 'payer', type: 'address' },
+  { name: 'vault', type: 'address' },
+  { name: 'asset', type: 'address' },
+  { name: 'payTo', type: 'address' },
+  { name: 'assets', type: 'uint256' },
+  { name: 'maxShares', type: 'uint256' },
+  { name: 'salt', type: 'bytes32' },
+  { name: 'validAfter', type: 'uint256' },
+  { name: 'validBefore', type: 'uint256' },
+];
+
+/** The typed data a payer signs to pay through VaultPayRouter at `router` on `chainId`. */
+export function vaultIntentTypedData({ chainId, router, intent }) {
+  const message = {};
+  for (const { name } of PAY_INTENT_FIELDS) message[name] = String(intent[name]);
+  return {
+    types: { EIP712Domain: DOMAIN_FIELDS, PayIntent: PAY_INTENT_FIELDS },
+    primaryType: 'PayIntent',
+    domain: { name: 'VaultPayRouter', version: '1', chainId: Number(chainId), verifyingContract: router },
+    message,
+  };
+}
+
+/** The EIP-2612 typed data for a permit on `verifyingContract` (a vault's shares). */
+export function permitTypedData({ name, version, chainId, verifyingContract, owner, spender, value, nonce, deadline }) {
+  return {
+    types: {
+      EIP712Domain: DOMAIN_FIELDS,
+      Permit: [
+        { name: 'owner', type: 'address' },
+        { name: 'spender', type: 'address' },
+        { name: 'value', type: 'uint256' },
+        { name: 'nonce', type: 'uint256' },
+        { name: 'deadline', type: 'uint256' },
+      ],
+    },
+    primaryType: 'Permit',
+    domain: { name, version, chainId: Number(chainId), verifyingContract },
+    message: { owner, spender, value: String(value), nonce: String(nonce), deadline: String(deadline) },
+  };
+}
+
+/** A 65-byte r||s||v signature as the { v, r, s } a permit takes (v normalised to 27/28). */
+export function splitSignature(sig) {
+  const h = String(sig ?? '');
+  if (!/^0x[0-9a-fA-F]{130}$/.test(h)) throw new Error('expected a 65-byte signature');
+  let v = parseInt(h.slice(130, 132), 16);
+  if (v < 27) v += 27;
+  if (v !== 27 && v !== 28) throw new Error(`bad signature v ${v}`);
+  return { r: '0x' + h.slice(2, 66), s: '0x' + h.slice(66, 130), v };
+}
+
+/** The cast argument for a PayIntent tuple, in PAY_INTENT_FIELDS order. */
+export const intentTuple = (it) => `(${PAY_INTENT_FIELDS.map(({ name }) => String(it[name])).join(',')})`;
+
+/** The cast argument for a Permit tuple; deadline 0 means none. */
+export const permitTuple = (p) =>
+  p ? `(${p.value},${p.deadline},${p.v},${p.r},${p.s})` : `(0,0,0,0x${'0'.repeat(64)},0x${'0'.repeat(64)})`;
+
+/** The voucher an agent signs for each call of a session: everything owed so far. */
+export function voucherTypedData({ chainId, escrow, sessionId, cumulative }) {
+  return {
+    types: {
+      EIP712Domain: DOMAIN_FIELDS,
+      Voucher: [
+        { name: 'sessionId', type: 'bytes32' },
+        { name: 'cumulative', type: 'uint256' },
+      ],
+    },
+    primaryType: 'Voucher',
+    domain: { name: 'X402SessionEscrow', version: '1', chainId: Number(chainId), verifyingContract: escrow },
+    message: { sessionId, cumulative: String(cumulative) },
+  };
+}
+
+/** Field order of X402SessionPaths' PathStep; it must match STEP_TYPEHASH exactly. */
+export const PATH_STEP_FIELDS = [
+  { name: 'pathId', type: 'bytes32' },
+  { name: 'payee', type: 'address' },
+  { name: 'signer', type: 'address' },
+  { name: 'expiry', type: 'uint64' },
+  { name: 'salt', type: 'bytes32' },
+  { name: 'amount', type: 'uint256' },
+  { name: 'committed', type: 'uint256' },
+  { name: 'deadline', type: 'uint256' },
+];
+
+/** A step an agent signs to open a session from its path: valid at the state `committed` only. */
+export function pathStepTypedData({ chainId, paths, step }) {
+  const message = {};
+  for (const { name } of PATH_STEP_FIELDS) message[name] = String(step[name]);
+  return {
+    types: { EIP712Domain: DOMAIN_FIELDS, PathStep: PATH_STEP_FIELDS },
+    primaryType: 'PathStep',
+    domain: { name: 'X402SessionPaths', version: '1', chainId: Number(chainId), verifyingContract: paths },
+    message,
+  };
+}
+
 /** Same requirement (the fields that decide what is paid, to whom, on which chain). */
 export function sameRequirement(a, b) {
   return (

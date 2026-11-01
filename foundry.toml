@@ -28,6 +28,14 @@ runs = 10_000
 runs = 1_024
 depth = 256
 
+[profile.vault]
+# VaultPayRouter stands alone on OpenZeppelin, so it builds and tests without compiling
+# Uniswap v4 under via-IR. Only the directories differ from the default profile: every compiler
+# setting is inherited, so this is the configuration the router is tested and deployed with.
+src = "src/vault"
+test = "test/vault"
+script = "script/vault"
+
 [fmt]
 line_length = 110
 number_underscore = "thousands"

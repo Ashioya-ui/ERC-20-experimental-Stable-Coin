@@ -46,42 +46,112 @@ contract SeedPoolSepolia is Script {
         address me = msg.sender;
 
         // One swap leg, at least the oracle's threshold with a little headroom so rounding in
-        // the pool cannot drop a block below it.
-        uint256 leg = (minObs * 11) / 10;
-        // Liquidity must absorb a leg repeatedly. Alternating direction means it only has to
-        // cover a couple of legs at once. Concentrating the range (SEED_TICKS) buys far more
-        // depth per unit of capital than widening it, which is what keeps this inside a faucet
-        // budget; tunable because the right trade-off depends on how much USDC is actually on
-        // hand.
-        uint256 wsForLp = leg * vm.envOr("SEED_LP_LEGS", uint256(2));
-        uint256 usdcForLp = (wsForLp / 1e12) + 1;
-        uint256 usdcForMint = ((leg + wsForLp) / 1e12) + 2; // mint fee eats a little
-        uint256 need = usdcForMint + usdcForLp;
+        // the pool cannot drop a block below it. Kept tight: every wei above the threshold is
+        // a wei of depth the position does not get, and depth is what keeps a swap from
+        // exhausting the range and filling for less than the threshold -- which would move
+        // tokens and still record nothing.
+        uint256 leg = (minObs * 101) / 100;
+        // A concentrated range placed entirely on one side of the spot price is funded by one
+        // currency only -- v4 computes liquidity from amount0 alone above the range and from
+        // amount1 alone below it. Put the range on the side that wants USDC and the position
+        // needs no wsUSD at all, so the only minting this script does is the swap inventory.
+        bool singleSided = vm.envOr("SEED_SINGLE_SIDED", true);
+        uint256 lpLegs = vm.envOr("SEED_LP_LEGS", uint256(1));
 
+        // Each swap pays the pool fee, so an alternating round trip returns slightly less than
+        // it sent and the recycled inventory shrinks a little every lap. Reserve the whole fee
+        // bill up front -- twice the fee on every planned swap, plus a flat allowance for
+        // rounding in the pool's own maths.
+        uint256 swapReserve = ((leg / 1e12) * d.key.fee * swaps * 2) / 1e6 + 10_000;
+
+        bool wsIs0 = Currency.unwrap(d.key.currency0) == address(d.wsusd);
         uint256 have = IERC20(usdc).balanceOf(me);
+        // A second run finds the capital already inside the position and the deployer nearly
+        // empty, so the funding guard refuses and nothing happens. But a seeded pool does not
+        // need seeding again -- it needs swapping, and the inventory for that is whatever the
+        // last run left behind. Alternating swaps recycle it, and each leg records.
+        bool seeded = pm.getLiquidity(d.key.toId()) > 0;
+
+        // Two-sided depth is paid for twice over: the position's wsUSD side has to be minted,
+        // and minting is what USDC buys. So the budget splits -- one leg of swap inventory off
+        // the top, then whatever remains divided between the position's two sides. Taking a
+        // fixed multiple instead asks for more than the balance holds and skips the run; this
+        // asks for exactly what is there.
+        uint256 legUsdc = leg / 1e12;
+        uint256 budget = have > swapReserve + 64 ? have - swapReserve - 64 : 0;
+        uint256 perSide = budget > legUsdc ? (budget - legUsdc) / 2 : 0;
+        uint256 wantPerSide = (leg * lpLegs) / 1e12;
+        if (perSide > wantPerSide) perSide = wantPerSide;
+
+        uint256 wsForLp = singleSided ? 0 : perSide * 1e12;
+        uint256 usdcForMint = ((leg + wsForLp) / 1e12) + 2; // mint fee eats a little
+        // The floor: depth has to cover a whole leg, or the swap walks out of the range and
+        // fills for less than the oracle counts.
+
+        // Each swap pays the pool fee, so an alternating round trip returns slightly less than
+        // it sent and the recycled inventory shrinks a little every lap. Putting every spare
+        // wei into depth left no margin for that, and the second swap reverted 1,008 wei short
+        // on a 10.1 USDC leg. Reserve the whole fee bill up front -- twice the fee on every
+        // planned swap, plus a flat allowance for rounding in the pool's own maths.
+        // Above the floor, the position takes what is left after that reserve. A fixed
+        // multiple would leave USDC idle in the deployer while the range it defends runs thin.
+        uint256 usdcForLp = singleSided
+            ? (have > usdcForMint + legUsdc + swapReserve ? have - usdcForMint - swapReserve : wantPerSide + 1)
+            : perSide + 1;
+        // The mint already buys the swap inventory as well as the position's wsUSD side, so
+        // counting a leg again on top of it asked for 10 USDC that was never going to be
+        // spent -- and skipped the run for a shortfall of its own invention.
+        uint256 need = usdcForMint + usdcForLp + swapReserve;
         console2.log("minObservation (wsUSD wei)", minObs);
         console2.log("USDC needed (6dp)         ", need);
+        console2.log("USDC for depth (6dp)      ", usdcForLp);
+        console2.log("USDC held back for fees   ", swapReserve);
         console2.log("USDC held   (6dp)         ", have);
-        if (have < need) {
+        if (seeded && have < need) {
+            console2.log("pool already seeded; swapping against existing liquidity");
+        } else if (have < need) {
             console2.log("SHORTFALL (6dp)           ", need - have);
             console2.log("Get test USDC from faucet.circle.com (20 per claim) and run again.");
             revert("SeedPoolSepolia: not enough test USDC");
         }
 
-        bool wsIs0 = Currency.unwrap(d.key.currency0) == address(d.wsusd);
         (uint160 sqrtP, int24 tick,,) = pm.getSlot0(d.key.toId());
         int24 span = int24(int256(vm.envOr("SEED_TICKS", uint256(300))));
-        int24 lower = ((tick - span) / d.key.tickSpacing) * d.key.tickSpacing;
-        int24 upper = ((tick + span) / d.key.tickSpacing) * d.key.tickSpacing;
+        int24 sp = d.key.tickSpacing;
+        int24 lower;
+        int24 upper;
+        if (singleSided) {
+            // Strictly one side of spot, so the position is funded in USDC alone. Which side
+            // that is depends on the pool's currency order, and the first swap has to be the
+            // one that consumes this liquidity: selling wsUSD moves the price towards the
+            // USDC-only side, which is exactly the direction the swap loop starts in.
+            if (wsIs0) {
+                upper = ((tick - sp) / sp) * sp;
+                lower = ((tick - span) / sp) * sp;
+            } else {
+                lower = ((tick + sp) / sp) * sp;
+                upper = ((tick + span) / sp) * sp;
+            }
+            require(lower < upper, "SeedPoolSepolia: SEED_TICKS too narrow");
+        } else {
+            lower = ((tick - span) / sp) * sp;
+            upper = ((tick + span) / sp) * sp;
+        }
+
+        uint160 limUp = TickMath.getSqrtPriceAtTick(upper);
+        uint160 limDown = TickMath.getSqrtPriceAtTick(lower);
 
         vm.startBroadcast(me);
         PoolModifyLiquidityTest lp = new PoolModifyLiquidityTest(pm);
         PoolSwapTest router = new PoolSwapTest(pm);
 
-        IERC20(usdc).approve(address(d.stabilizer), usdcForMint);
-        d.stabilizer.mint(usdcForMint, me, 0);
+        bool swapOnly = seeded && have < need;
+        if (!swapOnly) {
+            IERC20(usdc).approve(address(d.stabilizer), usdcForMint);
+            d.stabilizer.mint(usdcForMint, me, 0);
+        }
         d.token.approve(address(d.wsusd), type(uint256).max);
-        d.wsusd.deposit(d.token.balanceOf(me), me);
+        if (d.token.balanceOf(me) > 0) d.wsusd.deposit(d.token.balanceOf(me), me);
 
         d.wsusd.approve(address(lp), type(uint256).max);
         IERC20(usdc).approve(address(lp), type(uint256).max);
@@ -95,6 +165,7 @@ contract SeedPoolSepolia is Script {
             wsIs0 ? wsForLp : usdcForLp,
             wsIs0 ? usdcForLp : wsForLp
         );
+        if (!swapOnly) {
         require(liq > 0, "SeedPoolSepolia: zero liquidity");
         lp.modifyLiquidity(
             d.key,
@@ -102,16 +173,34 @@ contract SeedPoolSepolia is Script {
             ""
         );
         console2.log("liquidity added", uint256(liq));
+        }
 
         // Alternating direction, one transaction each so every swap lands in its own block.
         for (uint256 i; i < swaps; ++i) {
-            bool zeroForOne = (i % 2 == 0) ? wsIs0 : !wsIs0;
+            // Seeding mints wsUSD first, so it can open selling wsUSD. A swap-only run owns
+            // whatever the last run left, which after a wsUSD sale is USDC -- so it opens on
+            // the other foot and alternates from there.
+            uint256 phase = swapOnly ? i + 1 : i;
+            bool zeroForOne = (phase % 2 == 0) ? wsIs0 : !wsIs0;
+            // amountSpecified is denominated in the token going IN, and the two legs of this
+            // pair do not share a scale: wsUSD is 18dp, USDC is 6dp. Sending the wsUSD figure
+            // on a USDC-funded swap asks the pool to spend 1e12 times the intended amount,
+            // which walks the price to the end of the tick space -- the "exceeds max
+            // transaction gas limit" the node returned, mis-read at first as a bitmap scan.
+            bool usdcIn = zeroForOne ? !wsIs0 : wsIs0;
+            uint256 amountIn = usdcIn ? (leg / 1e12) : leg;
             router.swap(
                 d.key,
                 SwapParams({
                     zeroForOne: zeroForOne,
-                    amountSpecified: -int256(leg),
-                    sqrtPriceLimitX96: zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
+                    amountSpecified: -int256(amountIn),
+                    // Bounded to this position's own edges, not MIN/MAX. Single-sided depth
+                    // means one side of spot holds nothing at all, and a swap aimed at the
+                    // extreme scans empty tick bitmaps the whole way there -- which the node
+                    // rejects outright as exceeding the per-transaction gas limit. The range
+                    // holds more than a leg, so stopping at its edge never truncates a fill
+                    // below the oracle's threshold.
+                    sqrtPriceLimitX96: zeroForOne ? limDown : limUp
                 }),
                 PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
                 ""

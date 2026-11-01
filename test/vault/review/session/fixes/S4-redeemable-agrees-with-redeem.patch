@@ -1,0 +1,21 @@
+--- a/src/vault/X402SessionEscrow.sol
++++ b/src/vault/X402SessionEscrow.sol
+@@ -221,13 +221,15 @@
+         return _sessions[sessionId];
+     }
+ 
+-    /// @notice What a voucher for `cumulative` could still pay right now (0 if closed or expired).
++    /// @notice What redeeming a voucher for `cumulative` would pay right now, signature aside: 0 if
++    ///         the session is closed or expired, or if redeem would refuse the amount (above the
++    ///         deposit, or nothing beyond what is claimed).
+     function redeemable(bytes32 sessionId, uint256 cumulative) external view returns (uint256) {
+         Session storage s = _sessions[sessionId];
+         // slither-disable-next-line timestamp
+         if (s.funder == address(0) || s.closed || block.timestamp > s.expiry) return 0;
+-        uint256 capped = cumulative < s.deposited ? cumulative : s.deposited;
+-        return capped > s.claimed ? capped - s.claimed : 0;
++        if (cumulative > s.deposited || cumulative <= s.claimed) return 0;
++        return cumulative - s.claimed;
+     }
+ 
+     /// @notice Whether a voucher would redeem right now, and for how much: what a merchant or

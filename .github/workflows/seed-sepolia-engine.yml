@@ -12,6 +12,12 @@ name: seed-sepolia-engine
 # RUN: push to `seed-sepolia`, or Run workflow.
 
 on:
+  # Every two hours, which is the faucet's own cooldown. The funding guard skips cleanly when
+  # the USDC has not arrived yet and the job seeds the moment it has, so filling the oracle
+  # needs no further instruction from anyone -- it happens on whichever run first finds the
+  # balance. Runs stop by themselves once the window is full.
+  schedule:
+    - cron: "17 */2 * * *"
   push:
     branches: [seed-sepolia]
   workflow_dispatch:
@@ -35,6 +41,8 @@ jobs:
     environment: base-sepolia
     permissions:
       contents: read
+    outputs:
+      trace: ${{ steps.broadcast.outputs.trace }}
     env:
       CHAIN_ID: "84532"
       RPC: https://sepolia.base.org
@@ -44,6 +52,12 @@ jobs:
       # behind it, and concentrating the range buys depth far more cheaply than widening it.
       SEED_LP_LEGS: "1"
       SEED_TICKS: "60"
+      # One-sided depth: the position sits entirely above spot and is funded in USDC alone,
+      # which is what brings the requirement inside what the deployer already holds.
+      # Two-sided: a range on one side of spot can only be traded in one direction, which is
+      # exactly the wall the single-sided run hit (v4 answered PriceLimitAlreadyExceeded).
+      # Filling eight blocks needs flow both ways.
+      SEED_SINGLE_SIDED: "false"
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
@@ -61,6 +75,10 @@ jobs:
           echo "oracle filled    $(cast call "$O" 'filled()(uint8)' --rpc-url "$RPC")"
           echo "smoothedEntropy  $(cast call "$O" 'smoothedEntropy()(uint256)' --rpc-url "$RPC")"
           echo "index            $(cast call "$T" 'index()(uint256)' --rpc-url "$RPC")"
+          F=$(cast call "$O" 'filled()(uint8)' --rpc-url "$RPC" | awk '{print $1}')
+          # Eight of eight means H is a measurement, not a warm-up constant. Nothing further to
+          # seed, and a scheduled run should not keep swapping for its own sake.
+          [ "${F:-0}" -ge 8 ] && echo "SEED_DONE=1" >> "$GITHUB_ENV" || true
 
       - name: What this run needs, and what is on hand
         env:
@@ -77,7 +95,12 @@ jobs:
           # and not only in a log.
           # Mirrors the script's own sizing so the number appears in the summary, not only in
           # a log. minObservation exceeds 64 bits, so bash arithmetic cannot do this.
-          NEED=$(python3 -c "m=$MINOBS;l=m*11//10;w=l*${SEED_LP_LEGS:-1};print((w//10**12+1)+((l+w)//10**12+2))")
+          # Mirrors the script: single-sided depth is funded in USDC alone, so the only
+          # wsUSD minted is the swap inventory (one leg).
+          FEE=$(jq -r .poolFee "deployments/$CHAIN_ID.json")
+          SS="${SEED_SINGLE_SIDED:-true}"
+          NEED=$(MINOBS="$MINOBS" HAVE="$HAVE" FEE="$FEE" SW="${SEED_SWAPS:-9}" SS="$SS" \
+            python3 -c 'import os; m=int(os.environ["MINOBS"]);s=int(os.environ["HAVE"]);f=int(os.environ["FEE"]); n=int(os.environ["SW"]);ss=os.environ["SS"]=="true"; l=m*101//100;lu=l//10**12;r=lu*f*n*2//10**6+10000; b=s-r-64 if s>r+64 else 0; p=min((b-lu)//2 if b>lu else 0,lu); w=0 if ss else p*10**12; mt=(l+w)//10**12+2; lp=(s-mt-r if ss and s>mt+lu+r else (lu+1 if ss else p+1)); print(mt+lp+r)')
           SHORT=$(( NEED > HAVE ? NEED - HAVE : 0 ))
           { echo "## Seeding the spectral engine"; echo ""
             echo "| | USDC (6dp) |"; echo "|---|---|"
@@ -92,20 +115,44 @@ jobs:
           echo "SEED_HAVE=$HAVE" >> "$GITHUB_ENV"
           echo "SEED_SHORT=$SHORT" >> "$GITHUB_ENV"
 
+      # Not gated on the funding check any more: once the pool holds a position the capital
+      # is inside it and the deployer is nearly empty, so the guard would skip for ever. The
+      # script decides for itself -- it seeds when it can and swaps the existing liquidity when
+      # it cannot, and still reverts with the shortfall if neither is possible.
       - name: Seed the pool and swap
-        if: env.SEED_SHORT == '0'
+        id: broadcast
+        if: env.SEED_DONE != '1'
         env:
           DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           KEY="$DEPLOYER_PRIVATE_KEY"; unset DEPLOYER_PRIVATE_KEY
           DEPLOYER=$(cast wallet address --private-key "$KEY")
           echo "deployer $DEPLOYER"
           echo "  ETH  $(cast balance "$DEPLOYER" --rpc-url "$RPC")"
           echo "  USDC $(cast call "$(jq -r .usdc "deployments/$CHAIN_ID.json")" \
                    'balanceOf(address)(uint256)' "$DEPLOYER" --rpc-url "$RPC")"
+          # A broadcast that fails has to be able to say why. This job holds the deployer key
+          # so it cannot be given write access, and the Actions log host is not reachable from
+          # where this gets analysed -- so the reason leaves as a job output instead, redacted
+          # and handed to the job that has no secrets.
+          set +e
           forge script script/SeedPoolSepolia.s.sol --rpc-url "$RPC" \
-            --private-key "$KEY" --sender "$DEPLOYER" --broadcast --slow
+            --private-key "$KEY" --sender "$DEPLOYER" --broadcast --slow -vvv \
+            > /tmp/bcast.raw 2>&1
+          RC=$?
+          set -e
+          unset KEY
+          sed -E -e "s/0x[0-9a-fA-F]{64}/0x<redacted-32-bytes>/g" \
+                 -e "s/$DEPLOYER/<deployer>/gI" /tmp/bcast.raw > /tmp/bcast.txt
+          tail -60 /tmp/bcast.txt
+          {
+            echo "trace<<SEED_TRACE_EOF"
+            echo "exit code $RC"
+            tail -c 30000 /tmp/bcast.txt
+            echo "SEED_TRACE_EOF"
+          } >> "$GITHUB_OUTPUT"
+          exit $RC
 
       # Not gated on the funding check: rebase() needs gas and nothing else, and there is
       # already distributable surplus from the mint fees the two x402 payments generated. This
@@ -154,6 +201,11 @@ jobs:
     env:
       CHAIN_ID: "84532"
       RPC: https://sepolia.base.org
+      SEED_LP_LEGS: "1"
+      # Two-sided: a range on one side of spot can only be traded in one direction, which is
+      # exactly the wall the single-sided run hit (v4 answered PriceLimitAlreadyExceeded).
+      # Filling eight blocks needs flow both ways.
+      SEED_SINGLE_SIDED: "false"
     steps:
       # No deployment secrets in this job: it only reads public chain state and pushes a record.
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -170,7 +222,12 @@ jobs:
           g() { cast call "$1" "$2" ${3:+"$3"} --rpc-url "$RPC" 2>/dev/null | awk '{print $1}'; }
           MINOBS=$(g "$O" 'minObservation()(uint256)')
           HAVE=$(g "$U" 'balanceOf(address)(uint256)' "$DEP")
-          NEED=$(python3 -c "m=$MINOBS;l=m*11//10;w=l*2;print((w//10**12+1)+((l+w)//10**12+2))")
+          LEGS=${SEED_LP_LEGS:-1}
+          SS=${SEED_SINGLE_SIDED:-true}
+          FEE=$(jq -r .poolFee "$D")
+          HAVE=${HAVE:-0}
+          NEED=$(MINOBS="$MINOBS" HAVE="$HAVE" FEE="$FEE" SW="${SEED_SWAPS:-9}" SS="$SS" \
+            python3 -c 'import os; m=int(os.environ["MINOBS"]);s=int(os.environ["HAVE"]);f=int(os.environ["FEE"]); n=int(os.environ["SW"]);ss=os.environ["SS"]=="true"; l=m*101//100;lu=l//10**12;r=lu*f*n*2//10**6+10000; b=s-r-64 if s>r+64 else 0; p=min((b-lu)//2 if b>lu else 0,lu); w=0 if ss else p*10**12; mt=(l+w)//10**12+2; lp=(s-mt-r if ss and s>mt+lu+r else (lu+1 if ss else p+1)); print(mt+lp+r)')
           mkdir -p deployments
           { echo "# Spectral engine state on Base Sepolia, run ${{ github.run_id }}"
             echo "oracle.filled          $(g "$O" 'filled()(uint8)')  of 8"
@@ -186,17 +243,32 @@ jobs:
             echo "deployer holds             $HAVE"
             echo "shortfall                  $(( NEED > HAVE ? NEED - HAVE : 0 ))"
             echo ""
+            echo "# usdc on this chain is Circle's Base Sepolia contract"
+            echo "usdc contract $U   (if a faucet claim is missing, it likely went to Ethereum Sepolia instead)"
+            echo ""
             echo "# accounts"
             echo "deployer ETH $(cast balance "$DEP" --rpc-url "$RPC")"
             echo "admin    ETH $(cast balance "$ADM" --rpc-url "$RPC")   (0 means emergency powers cannot be exercised)"
           } > deployments/84532-engine-state.txt
           cat deployments/84532-engine-state.txt
+      - name: Write the broadcast trace next to it
+        env:
+          SEED_TRACE: ${{ needs.seed.outputs.trace }}
+        run: |
+          set -euo pipefail
+          if [ -n "${SEED_TRACE:-}" ]; then
+            printf '%s\n' "$SEED_TRACE" > deployments/84532-seed-broadcast.txt
+            tail -30 deployments/84532-seed-broadcast.txt
+          else
+            echo "no trace from the broadcast job (it was skipped or produced none)"
+          fi
       - name: Commit it
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -f deployments/84532-engine-state.txt
+          [ -f deployments/84532-seed-broadcast.txt ] && git add -f deployments/84532-seed-broadcast.txt
           git diff --cached --quiet && exit 0
           git commit -q -m "engine(base-sepolia): measured state from run ${{ github.run_id }}"
           git push origin "HEAD:refs/heads/deployments/engine-${{ github.run_id }}"

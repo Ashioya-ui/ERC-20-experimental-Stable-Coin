@@ -1,0 +1,69 @@
+name: measure-x402
+
+# Measures who holds the money in x402 on Base mainnet -- the wallets that pay or the wallets that
+# get paid -- from public chain data (tools/measure-x402.py). Reads only: no secrets, nothing signed,
+# nothing sent. The report is committed to a branch, since the Actions log host is not reachable
+# from where it is analysed.
+#
+# RUN: push to `measure-x402`.
+
+on:
+  push:
+    branches: [measure-x402]
+
+concurrency:
+  group: measure-x402
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  measure:
+    name: Sample x402 on Base mainnet
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      report: ${{ steps.m.outputs.report }}
+      data: ${{ steps.m.outputs.data }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          version: v1.5.1
+      - id: m
+        run: |
+          set +e
+          python3 -I tools/measure-x402.py /tmp/x402.json /tmp/x402.txt > /tmp/run.log 2>&1; R=$?
+          set -e
+          tail -60 /tmp/run.log
+          { echo "report<<MX_EOF"; echo "exit $R"; cat /tmp/x402.txt 2>/dev/null || tail -c 20000 /tmp/run.log; echo "MX_EOF"; } >> "$GITHUB_OUTPUT"
+          { echo "data<<MX_EOF"; head -c 200000 /tmp/x402.json 2>/dev/null; echo; echo "MX_EOF"; } >> "$GITHUB_OUTPUT"
+          [ $R -eq 0 ]
+
+  publish:
+    name: Commit the measurement (no secrets)
+    needs: measure
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - env:
+          REPORT: ${{ needs.measure.outputs.report }}
+          DATA: ${{ needs.measure.outputs.data }}
+        run: |
+          set -euo pipefail
+          mkdir -p ci
+          printf '%s\n' "$REPORT" > ci/x402-measure.txt
+          printf '%s\n' "$DATA" > ci/x402-measure.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f ci/x402-measure.txt ci/x402-measure.json
+          git commit -q -m "measure(x402): Base mainnet, run ${{ github.run_id }}"
+          git push origin "HEAD:refs/heads/ci/measure-x402-${{ github.run_id }}"

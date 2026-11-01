@@ -22,7 +22,8 @@ export class CastError extends Error {
 // cast's own log lines (e.g. a provider's "failed to fetch block") can land on stdout and break
 // JSON output, so they are off unless RUST_LOG asks for them.
 const BASE_ENV = { ...process.env, RUST_LOG: process.env.RUST_LOG ?? 'off' };
-const TRANSIENT = /error sending request|connection (reset|closed|refused)|timed out|operation timed out/i;
+// A public endpoint's rate limit is transient too: the same read a moment later succeeds.
+const TRANSIENT = /error sending request|connection (reset|closed|refused)|timed out|operation timed out|429|too many requests|rate limit/i;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // No cast invocation may hang for ever. A `cast` whose RPC connection stops answering never
 // returns on its own, and the facilitator sends transactions one at a time through a promise
@@ -66,7 +67,7 @@ export async function cast(args, { env, retries = 0, timeoutMs = DEFAULT_TIMEOUT
       return await run(args, env, timeoutMs);
     } catch (e) {
       if (attempt >= retries || !TRANSIENT.test(`${e.message}\n${e.stderr}`)) throw e;
-      await sleep(150 * (attempt + 1));
+      await sleep(300 * 2 ** attempt); // back off: a rate limit needs room, not a quick retry
     }
   }
 }
