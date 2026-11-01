@@ -39,22 +39,22 @@ jobs:
           } > topics.env
           echo "x402BatchSettlement code size on Base: $(cast codesize "$BS" --rpc-url "$RPC") bytes"
           python3 - <<'PY'
-          import collections, json, os, time, urllib.request
+          import collections, json, os, subprocess, time
           rpc_url, bs, days = os.environ["RPC"], os.environ["BS"].lower(), int(os.environ["DAYS"])
           names = {}
           for line in open("topics.env"):
               k, v = line.strip().split("=")
               names[v.lower()] = k
           def rpc(method, params):
+              # Through cast: the public RPC turns away Python's default client.
               err = None
               for attempt in range(6):
                   try:
-                      req = urllib.request.Request(rpc_url, headers={"Content-Type": "application/json"},
-                          data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode())
-                      r = json.load(urllib.request.urlopen(req, timeout=30))
-                      if "error" in r:
-                          raise RuntimeError(r["error"])
-                      return r["result"]
+                      out = subprocess.run(["cast", "rpc", "--rpc-url", rpc_url, "--raw", method, json.dumps(params)],
+                                           capture_output=True, text=True, timeout=60)
+                      if out.returncode != 0:
+                          raise RuntimeError(out.stderr.strip()[-300:])
+                      return json.loads(out.stdout)
                   except Exception as e:
                       err = e
                       time.sleep(1 + attempt)
