@@ -135,10 +135,19 @@ jobs:
           DEP=${{ steps.fund.outputs.deployer }}
           # Out of the environment before forge starts: dependency code can read environment
           # variables, not command-line arguments (review S-02).
-          forge script script/vault/DeployX402SessionEscrow.s.sol --rpc-url "$RPC" \
-            --private-key "$KEY" --sender "$DEP" --broadcast --slow | tee deploy.log
-          forge script script/vault/DeployX402SessionPaths.s.sol --rpc-url "$RPC" \
-            --private-key "$KEY" --sender "$DEP" --broadcast --slow | tee -a deploy.log
+          # Both scripts are idempotent: a contract already at its CREATE2 address is skipped. The
+          # public RPC can report "nonce too low" for a transaction it has in fact mined, so a failed
+          # attempt is retried; the retry finds the contract and sends nothing twice.
+          deploy() {
+            for i in 1 2 3; do
+              forge script "$1" --rpc-url "$RPC" --private-key "$KEY" --sender "$DEP" \
+                --broadcast --slow | tee -a deploy.log && return 0
+              echo "attempt $i for $1 failed; retrying after the RPC catches up"; sleep 20
+            done
+            return 1
+          }
+          deploy script/vault/DeployX402SessionEscrow.s.sol
+          deploy script/vault/DeployX402SessionPaths.s.sol
           unset KEY
           cat deployments/8453-session-escrow.json deployments/8453-session-paths.json
           { echo "deployment<<XS_EOF"; jq -s '.[0] + {paths: .[1].paths}' deployments/8453-session-escrow.json \
@@ -176,7 +185,7 @@ jobs:
 
           # Home declares the end: one named merchant (Account 1), a cap of 0.20 USDC, two days.
           EXPIRY=$(( $(cast block latest --field timestamp --rpc-url "$RPC") + 172800 ))
-          SALT=$(cast keccak "x402-sessions-mainnet-${{ github.run_id }}")
+          SALT=$(cast keccak "x402-sessions-mainnet-${{ github.run_id }}-${{ github.run_attempt }}")
           cast send "$USDC" 'approve(address,uint256)' "$PATHS" "$DEPOSIT" --rpc-url "$RPC" --private-key "$KEY" >/dev/null
           DECLARE_TX=$(cast send "$PATHS" 'declare(address,address,uint64,bytes32,address[],uint256[],uint256)' \
             "$AGENT" "$USDC" "$EXPIRY" "$SALT" "[$DEP]" "[$DEPOSIT]" "$DEPOSIT" --rpc-url "$RPC" --private-key "$KEY" --json | jq -r .transactionHash)
@@ -327,5 +336,5 @@ jobs:
           git add -f deployments/8453-x402-sessions-report.txt
           [ -f deployments/8453-session-escrow.json ] && git add -f deployments/8453-session-escrow.json deployments/8453-session-paths.json
           git diff --cached --quiet && exit 0
-          git commit -q -m "base mainnet: x402 sessions, run ${{ github.run_id }}"
-          git push origin "HEAD:refs/heads/deployments/x402-sessions-mainnet-${{ github.run_id }}"
+          git commit -q -m "base mainnet: x402 sessions, run ${{ github.run_id }}-${{ github.run_attempt }}"
+          git push origin "HEAD:refs/heads/deployments/x402-sessions-mainnet-${{ github.run_id }}-${{ github.run_attempt }}"
