@@ -43,18 +43,25 @@ time with `goHome`. Why this holds is explained in
 
 The wire format is the x402 v2 `session` scheme: [`docs/design/x402-session-scheme.md`](../docs/design/x402-session-scheme.md).
 
-## Requirements
+## How this relates to x402's `batch-settlement`
 
-- Node.js 22 or later. There are no npm dependencies.
-- Foundry's `cast`: `curl -L https://foundry.paradigm.xyz | bash && foundryup`
+x402's own [`batch-settlement`](https://github.com/x402-foundation/x402/blob/main/specs/schemes/batch-settlement/scheme_batch_settlement.md)
+scheme works on the same principle: a deposit held in escrow, cumulative vouchers, redemption in
+batches. Its contracts have had professional audits and are deployed on Base. What this project
+adds is paths: one owner budget shared by several merchants, each with its own cap enforced
+on-chain, which the agent spends as it goes without ever holding the money.
+
+## Install
 
 ```sh
-git clone https://github.com/Ashioya-ui/ERC-20-experimental-Stable-Coin.git
-cd ERC-20-experimental-Stable-Coin
+npm install -g @pyzratio/x402-sessions                      # Node.js 22 or later, no dependencies
+curl -L https://foundry.paradigm.xyz | bash && foundryup    # Foundry's cast, which signs and sends
 export RPC_URL=https://mainnet.base.org
 ```
 
-The Base mainnet addresses are already in `deployments/`, so every command below works as is.
+The package carries the Base mainnet addresses, so every command below works as is. In a clone of
+this repository, `node x402/facilitator.mjs`, `node x402/merchant.mjs` and `node x402/agent.mjs`
+are the same three programs.
 
 ## Accept session payments (merchants)
 
@@ -74,7 +81,7 @@ The Base mainnet addresses are already in `deployments/`, so every command below
    FACILITATOR_SIGNER=keystore:$HOME/.foundry/keystores/facilitator \
    FACILITATOR_PASSWORD_FILE=$HOME/.facilitator-pw \
    FACILITATOR_SESSIONS_FILE=$HOME/.facilitator-sessions.json \
-   node x402/facilitator.mjs                            # listens on :4020
+   x402-session-facilitator                             # listens on :4020
    ```
 
 3. Put your API behind it. [`merchant.mjs`](merchant.mjs) is a working example: it answers
@@ -85,7 +92,7 @@ The Base mainnet addresses are already in `deployments/`, so every command below
    FACILITATOR_URL=http://127.0.0.1:4020 \
    MERCHANT_PAYTO=0xYourAddress \
    MERCHANT_TICK_PRICE=100 \
-   node x402/merchant.mjs                               # :4021; 100 = $0.0001 a call
+   x402-session-merchant                                # :4021; 100 = $0.0001 a call
    ```
 
 ## Pay with sessions (agents)
@@ -110,14 +117,15 @@ The Base mainnet addresses are already in `deployments/`, so every command below
    AGENT_KEYSTORE=$HOME/.foundry/keystores/agent AGENT_PASSWORD_FILE=$HOME/.agent-pw \
    AGENT_BUDGET=1 AGENT_MAX_PER_REQUEST=0.01 AGENT_SESSION_DEPOSIT=0.20 \
    AGENT_LEDGER=$HOME/.agent-ledger.json \
-   node x402/agent.mjs pay https://merchant.example/api/v1/tick --prefer session --times 1000
+   x402-session-agent pay https://merchant.example/api/v1/tick --prefer session --times 1000
    ```
 
    Add `AGENT_PATH=<path id>` when an owner holds the money. `AGENT_BUDGET` and
    `AGENT_MAX_PER_REQUEST` are in dollars, and the client refuses anything above them.
 
-The client is also a library: `createAgent({ rpcUrl, signer, policy, path })` from
-[`agent.mjs`](agent.mjs).
+The client is also a library: `import { createAgent } from '@pyzratio/x402-sessions'`, then
+`createAgent({ rpcUrl, signer, policy, path })` ([`agent.mjs`](agent.mjs)). The facilitator and the
+merchant are `@pyzratio/x402-sessions/facilitator` and `@pyzratio/x402-sessions/merchant`.
 
 ## Give an agent a budget (owners)
 
@@ -148,6 +156,8 @@ cast send $PATHS 'goHome(bytes32)' <path id> --account owner --rpc-url $RPC_URL
 ```
 
 ## Tests
+
+In a clone of this repository:
 
 ```sh
 cd x402 && node --test --test-concurrency=1 "test/*.test.mjs"    # the x402 client and facilitator

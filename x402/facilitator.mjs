@@ -33,6 +33,7 @@
 import http from 'node:http';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { cast, first, makeChain, parseSigner, signerAddress, UnconfirmedError } from './lib/cast.mjs';
+import { isMain } from './lib/cli.mjs';
 import { loadDeployment } from './lib/config.mjs';
 import {
   X402_VERSION, lc, isAddress, isBytes32, isHex, isUint, readJson, sendJson, closeAfter, PAY_INTENT_FIELDS, intentTuple,
@@ -997,7 +998,7 @@ export async function createFacilitator({
   };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   const signer = parseSigner(process.env.FACILITATOR_SIGNER, process.env.FACILITATOR_PASSWORD_FILE);
   const port = Number(process.env.FACILITATOR_PORT || 4020);
   const f = await createFacilitator({

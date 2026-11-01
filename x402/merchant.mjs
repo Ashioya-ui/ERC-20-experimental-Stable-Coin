@@ -25,6 +25,7 @@
 import http from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
 import { cast, first, makeChain } from './lib/cast.mjs';
+import { isMain } from './lib/cli.mjs';
 import { loadDeployment } from './lib/config.mjs';
 import { X402_VERSION, HEADER, encode, decode, sameRequirement, sendJson } from './lib/protocol.mjs';
 
@@ -193,7 +194,7 @@ export async function createMerchant({
   return { server, deployment: dep };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   const port = Number(process.env.MERCHANT_PORT || 4021);
   const m = await createMerchant({
     rpcUrl: process.env.RPC_URL || 'http://127.0.0.1:8545',

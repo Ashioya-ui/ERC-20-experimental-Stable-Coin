@@ -38,8 +38,9 @@
 import { randomBytes } from 'node:crypto';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { cast, first, makeChain, signTypedData, signerAddress } from './lib/cast.mjs';
+import { isMain } from './lib/cli.mjs';
 import { loadDeployment } from './lib/config.mjs';
 import {
   X402_VERSION, HEADER, encode, decode, lc, isAddress, isUint, authorizationTypedData, vaultIntentTypedData,
@@ -642,6 +643,15 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
 async function main(argv) {
   const { parseSigner } = await import('./lib/cast.mjs');
   const [cmd, ...rest] = argv;
+  const help = ['help', '--help', '-h'].includes(cmd);
+  if (help || !['address', 'balance', 'sessions', 'pay', 'convert', 'sweep'].includes(cmd)) {
+    console[help ? 'log' : 'error'](
+      `usage: ${basename(process.argv[1])} address | balance | sessions | pay <url> [--prefer session|USDC|vault|router|convert|sUSD]`
+        + ' [--out <file>] [--times <n>] | convert <usd> | sweep <to>',
+    );
+    if (!help) process.exitCode = 64;
+    return;
+  }
   const flag = (name) => {
     const i = rest.indexOf(`--${name}`);
     return i >= 0 ? rest[i + 1] : undefined;
@@ -727,16 +737,10 @@ async function main(argv) {
       ...(outFile && r.paid ? { savedTo: outFile } : { body: r.paid ? r.body.slice(0, 400) : undefined }),
     });
     if (!r.paid) process.exitCode = 2;
-    return;
   }
-  console.error(
-    'usage: agent.mjs address | balance | sessions | pay <url> [--prefer sUSD|USDC|vault|router|convert|session] [--out <file>] [--times <n>]'
-      + ' | convert <usd> | sweep <to>',
-  );
-  process.exitCode = 64;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMain(import.meta.url)) {
   main(process.argv.slice(2)).catch((e) => {
     console.error(`${e.name}: ${e.message}`);
     process.exitCode = e instanceof PolicyError ? 3 : 1;

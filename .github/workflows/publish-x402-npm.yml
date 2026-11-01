@@ -1,0 +1,90 @@
+# Publishes the x402 session client, facilitator and merchant to npm as @pyzratio/x402-sessions, with
+# provenance that ties the package to this repository and this workflow run. Needs the repository
+# secret NPM_TOKEN: an npm granular access token with read and write access. Runs when the branch
+# publish-x402-npm is pushed, or from the Actions tab.
+name: publish-x402-npm
+
+on:
+  push:
+    branches: [publish-x402-npm]
+  workflow_dispatch:
+
+concurrency:
+  group: publish-x402-npm
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  publish:
+    name: Publish @pyzratio/x402-sessions to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Stage the package
+        run: x402/npm/stage.sh npm-package
+      - name: Publish
+        id: pub
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ -n "$NODE_AUTH_TOKEN" ] || { echo "::error::No NPM_TOKEN secret: Settings > Secrets and variables > Actions > New repository secret."; exit 1; }
+          ME=$(npm whoami) || { echo "::error::npm refused NPM_TOKEN. Make a new granular token with read and write access and save it as NPM_TOKEN."; exit 1; }
+          cd npm-package
+          NAME=$(npm pkg get name | tr -d '"'); VERSION=$(npm pkg get version | tr -d '"')
+          # The plain name when it is free or already this account's; otherwise the account's scope.
+          if npm view "$NAME" name >/dev/null 2>&1 && ! npm owner ls "$NAME" 2>/dev/null | grep -q "^$ME "; then
+            NAME="@$ME/$NAME"
+            npm pkg set "name=$NAME"
+            echo "::notice::x402-sessions belongs to another npm account, so this publishes $NAME"
+          fi
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "::notice::$NAME@$VERSION is already on npm"
+          elif ! npm publish --provenance --access public 2>&1 | tee publish.log; then
+            if grep -q "previously published" publish.log; then
+              echo "::notice::$NAME@$VERSION is already on npm (the registry is still making it visible)"
+            else
+              # npm also refuses a free name that is too close to an existing one.
+              [[ "$NAME" != @* ]] || exit 1
+              NAME="@$ME/$NAME"
+              npm pkg set "name=$NAME"
+              echo "::notice::npm refused the plain name, so this publishes $NAME"
+              npm publish --provenance --access public
+            fi
+          fi
+          { echo "name=$NAME"; echo "version=$VERSION"; } >> "$GITHUB_OUTPUT"
+      - name: Install it from npm and run it
+        env:
+          NAME: ${{ steps.pub.outputs.name }}
+          VERSION: ${{ steps.pub.outputs.version }}
+        run: |
+          set -euo pipefail
+          # A new package can take several minutes to become installable.
+          for i in $(seq 1 60); do npm view "$NAME@$VERSION" version >/dev/null 2>&1 && break; sleep 10; done
+          cd "$(mktemp -d)"
+          npm init -y >/dev/null
+          npm install --no-audit --no-fund "$NAME@$VERSION"
+          npx x402-session-agent help
+          node --input-type=module -e "
+            const { createAgent } = await import('$NAME');
+            const { createFacilitator } = await import('$NAME/facilitator');
+            const { createMerchant } = await import('$NAME/merchant');
+            for (const f of [createAgent, createFacilitator, createMerchant]) if (typeof f !== 'function') throw new Error('missing export');
+            console.log('library exports load');"
+          {
+            echo "### $NAME@$VERSION is on npm"
+            echo
+            echo "- https://www.npmjs.com/package/$NAME"
+            echo "- install: \`npm install -g $NAME\`"
+          } >> "$GITHUB_STEP_SUMMARY"
