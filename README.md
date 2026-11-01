@@ -1,3 +1,16 @@
+# x402 sessions on Base
+
+**Live on Base mainnet.** An AI agent pays an x402 API thousands of times, and the chain settles
+once. Measured on mainnet: **$0.0000046 of gas a call**, 283 times less than settling each payment
+on its own. Escrow `0x175925a679f389D905686D7E484b030Ccd7992CB`, paths
+`0xa9BF003a805ef14161aab2482eFd2a9C64e5f3fF`, both source verified on Sourcify. Beta: use small
+amounts.
+
+**Get started: [`x402/README.md`](x402/README.md)** — accept session payments, pay with sessions,
+or give an agent a budget it cannot overspend.
+
+---
+
 # Spectrum Protocol
 
 > **Status: hardened (Phases 4 and 5), **live on Base Sepolia** (block 48884064), not on mainnet, not externally audited.** Phase 4 is
