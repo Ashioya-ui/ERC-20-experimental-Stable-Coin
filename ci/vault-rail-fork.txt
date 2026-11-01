@@ -1,0 +1,240 @@
+exit unit 0, rail 1, fork 0
+✔ headers are base64 JSON both ways (2.737115ms)
+✔ sameRequirement compares what is paid, to whom, on which chain (0.342718ms)
+✔ EIP-3009 typed data has the six fields in order and the right domain (0.276294ms)
+✔ validators (0.404654ms)
+✔ cast output: JSON is found even with stray log lines around it (seen on a busy anvil) (0.672822ms)
+✔ signer specs (0.307483ms)
+✔ dollar amounts (0.430411ms)
+✔ PayIntent fields reproduce the Solidity typehash string exactly (0.445499ms)
+✔ vault intent typed data (0.566404ms)
+✔ permit typed data (0.538272ms)
+✔ splitting a signature for a permit (0.512194ms)
+✔ cast tuples for the router call (0.275202ms)
+✔ the session voucher reproduces the escrow's Solidity typehash string and domain (0.484022ms)
+✔ a session payload is checked for shape before anything else (0.376471ms)
+✔ a path step reproduces X402SessionPaths' Solidity typehash string and domain (0.397641ms)
+✔ a session is opened one way, never two (0.238674ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 16
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 93.730679
+
+
+==== 0. anvil: chain 31337, a block every 2 seconds, transactions mined on arrival ====
+
+==== 1-3. USDC (FiatToken v2.2), v4 PoolManager, Spectrum (mainnet script), oracle live ====
+sUSD 0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE   stabilizer 0x3Aa5ebB10DC797CAC828524e59A333d0A371443c   USDC 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
+oracle filled: 8
+
+==== 4. SpectrumPayRouter ====
+router 0x36C02dA8a0983159322a80FFE9F24b1acfF8B570
+sUSD to pay 0.05 USDC: 50016187251755004 [5.001e16]
+
+==== 5. Agent wallets: encrypted keystores, test money ====
+client   0x47a7063006b4310E027714043519Ced92b57Cc9F   sUSD 599582175586922691000 [5.995e20]
+redteam  0x5dC42E87ab0A9b89c9Ef7930fC5FD17d8512e1ae   sUSD 24982590649455112125 [2.498e19]
+reviewer 0xD8804D981460CCEC46005fcE01c805C0D7e7Bce0   merchant 0xFA733CA855859722E2482803B3C28394E84fCEcE
+
+==== 6. Facilitator (:4020) and merchant (:4021) ====
+facilitator on http://127.0.0.1:4020 (eip155:31337), gas paid by 0x15d34aaf54267db7d7c367839aaf71a00a2c6a65
+merchant on http://127.0.0.1:4021 (eip155:31337)
+  kind: {'asset': '0x9a9f2ccfde556a7e9ff0848998aa4a0cfd8863ae', 'name': 'Spectrum Agentic USD', 'version': '1'}
+  kind: {'asset': '0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0', 'name': 'USD Coin', 'version': '2'}
+  kind: {'asset': '0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0', 'spectrumRouter': '0x36c02da8a0983159322a80ffe9f24b1acff8b570', 'payWith': '0x9a9f2ccfde556a7e9ff0848998aa4a0cfd8863ae'}
+  extensions: ['spectrum-router', 'spectrum-convert']
+
+==== 7. Demo: one sUSD balance pays every kind of x402 bill, and earns while idle ====
+client agent 0x47a7063006b4310e027714043519ced92b57cc9f
+  holds 599.582175 sUSD and 0.000000 USDC; no ETH, no vault position, no USDC float
+
+/api/v1/compute (priced in sUSD)
+  paid by: sUSD   settlement tx 0x773a497aca...
+  merchant received: 0.005000 sUSD
+  agent spent: 0.005000 sUSD
+
+/api/v1/premium (priced in USDC, router offered)
+  paid by: router   settlement tx 0x9073df5e77...
+  merchant received: 0.050000 USDC
+  agent spent: 0.050016 sUSD
+
+/api/v1/usdc-only (priced in plain USDC only)
+  paid by: convert (conversion tx 0xa5e03a6dac...)   settlement tx 0xf0eb0d9ffe...
+  merchant received: 0.020000 USDC
+  agent spent: 0.020006 sUSD
+
+a keeper first pays out the 2.536656 sUSD of fees already waiting (10 hourly rebases),
+so the day below measures interest alone
+idle for 1 day: the lending vault holds 4124.200000 of the 4876.930000 USDC reserve and earns 5% APY,
+  credited hourly (0.564984 USDC); a keeper rebased 24 of 24 hours; index 1000699884417973549 -> 1000855767884927176
+  client sUSD 599.926738 -> 600.020191  (+0.093453: 5.69% a year at this rate)
+  the same balance keeps paying bills: no claim, no unstake, no top-up
+
+after idling, /api/v1/premium again: paid by router
+
+==== 8. Node end-to-end tests ====
+▶ x402 rail
+  ✔ a protected route answers 402 with a decodable PAYMENT-REQUIRED (27.469147ms)
+  ✔ /supported lists sUSD, USDC and the router kind (6.717247ms)
+  ✔ a garbage PAYMENT-SIGNATURE gets a 402, not a crash (4.053545ms)
+  ✔ sUSD direct: exact amount to the merchant, gasless for the agent (596.605574ms)
+  ✔ router: an agent holding only sUSD pays a USDC price; the merchant gets exact USDC (703.409015ms)
+  ✔ USDC: standard x402 USDC passes through unchanged (470.775786ms)
+  ✔ convert: a USDC-only merchant is paid from sUSD by converting just enough first (798.765052ms)
+  ✔ /convert alone: sUSD to exact USDC for the agent itself (496.718822ms)
+  ✔ marketplace micro-payment: $0.001 through the router redeems the 0.01 sUSD minimum and refunds the rest in USDC (681.358891ms)
+  ✖ a smart account (ERC-1271) pays in sUSD and through the router (32.056939ms)
+  ✔ replay: a settled payment cannot be used again (575.806187ms)
+  ✔ tampering: lower amount, other recipient, lower advertised price, broken signature (609.128212ms)
+  ✔ time window: a stale authorization and a not-yet-valid one are refused (437.551939ms)
+  ✔ a signed payment from an empty account is refused before anything is sent (262.870441ms)
+  ✔ router intent: the authorization cannot be redirected to another payee, amount or salt (596.233068ms)
+  ✔ payTo guard: the facilitator never pays protocol contracts (440.236099ms)
+  ✔ version and network must match (326.898886ms)
+  ✔ a hostile maxTimeoutSeconds is rejected cleanly, never a 500, and cannot stretch the window (A-02) (687.644152ms)
+  ✔ idle USDC is spent before redeeming more sUSD, so micropayment change does not strand (A-04) (1244.736196ms)
+  ✔ a merchant-supplied router address is ignored by the agent (586.706664ms)
+  ✔ settlement failure: work done, payment failed, nothing delivered (402) (527.36689ms)
+  ✔ spend policy: per-request limit, budget and allow list stop the agent before it signs (1117.693335ms)
+  ✔ a rebase between signing and settlement does not break either payment kind (1061.121911ms)
+  ✔ settle is idempotent per request, and a cached success is never reused for other requirements (475.334406ms)
+  ✔ a lost receipt is reported as unconfirmed with its hash; a retry confirms it, and it was paid once (2209.688883ms)
+✖ x402 rail (15542.072071ms)
+▶ evm.mjs against published vectors
+  ✔ Keccak-256 (7.823221ms)
+  ✔ addresses of keys (7.956499ms)
+  ✔ EIP-712: the specification's Mail example, digest and signature (27.403359ms)
+  ✔ signatures recover to their signer and always carry a low s (407.185173ms)
+✔ evm.mjs against published vectors (451.937512ms)
+▶ evm.mjs against cast
+  ✔ the signatures this client makes are byte for byte the ones cast makes (84.205474ms)
+  ✔ keccak and abi-encode agree with cast (36.617822ms)
+✔ evm.mjs against cast (121.225748ms)
+▶ a key-file agent on the rail, with no cast in its path
+  ✔ JSON-RPC reads print exactly as cast prints them (92.031167ms)
+  ✔ pays a USDC price end to end (322.976541ms)
+✔ a key-file agent on the rail, with no cast in its path (968.489373ms)
+▶ MCP server
+  ✔ initializes and lists its two tools (63.160982ms)
+  ✔ answers unknown methods and bad input as errors, never by exiting (2.98892ms)
+  ✔ makes its wallet key on first use, readable by its owner only (33.212973ms)
+✔ MCP server (104.716468ms)
+▶ MCP server on the rail
+  ✔ a wallet the server made, once funded, pays a merchant through x402_fetch (410.795373ms)
+  ✔ the owner limits hold: a call over the per-call limit is refused before anything is signed (6.390978ms)
+✔ MCP server on the rail (1021.258066ms)
+▶ facilitator state across requests
+  ✔ a chain read that throws leaves nothing behind, and answers in the protocol, not a 500 (367.507392ms)
+  ✔ the HTTP surface answers 200 with an x402 body when a chain read throws (403.103174ms)
+  ✔ a request joining one in flight never inherits a rejection (371.707798ms)
+  ✔ settle never rejects, whatever the chain does (354.238706ms)
+  ✔ `unconfirmed` is bounded: many lost receipts cannot grow it for ever (468.344521ms)
+  ✔ one stuck send does not park every later settlement for ever (656.010137ms)
+  ✔ an unreadable receipt never drops the record that a transaction was broadcast (361.649136ms)
+  ✔ a receipt that really says reverted does release the key (358.655376ms)
+  ✔ success is only published once the send has committed (374.767206ms)
+  ✔ awkward requests do not take the process down (no handler to hide them) (893.232878ms)
+  ✔ the server keeps serving after an awkward request (877.47123ms)
+  ✔ an oversized body gets a 413, not a reset connection (392.563644ms)
+  ✔ a broadcast whose hash we never learned is never reported as unsent, and never retried (374.530233ms)
+✔ facilitator state across requests (6257.168254ms)
+▶ makeChain.send decides sent-or-not from the nonce, not the error
+  ✔ send fails but the nonce advanced: the node took it, so UnconfirmedError (18.810799ms)
+  ✔ send fails and the nonce did not move: nothing went out, so a plain failure (13.795228ms)
+✔ makeChain.send decides sent-or-not from the nonce, not the error (32.860381ms)
+✔ headers are base64 JSON both ways (1.746119ms)
+✔ sameRequirement compares what is paid, to whom, on which chain (0.321711ms)
+✔ EIP-3009 typed data has the six fields in order and the right domain (0.256158ms)
+✔ validators (0.397011ms)
+✔ cast output: JSON is found even with stray log lines around it (seen on a busy anvil) (0.647128ms)
+✔ signer specs (0.290131ms)
+✔ dollar amounts (0.413912ms)
+✔ PayIntent fields reproduce the Solidity typehash string exactly (0.355544ms)
+✔ vault intent typed data (0.528156ms)
+✔ permit typed data (0.512517ms)
+✔ splitting a signature for a permit (0.432156ms)
+✔ cast tuples for the router call (0.220351ms)
+✔ the session voucher reproduces the escrow's Solidity typehash string and domain (0.419563ms)
+✔ a session payload is checked for shape before anything else (0.403152ms)
+✔ a path step reproduces X402SessionPaths' Solidity typehash string and domain (0.399726ms)
+✔ a session is opened one way, never two (0.20872ms)
+ℹ tests 69
+ℹ suites 8
+ℹ pass 68
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 27978.670288
+
+✖ failing tests:
+
+test at test/e2e.test.mjs:147:3
+✖ a smart account (ERC-1271) pays in sUSD and through the router (32.056939ms)
+  Error: build output missing: run forge build
+      at Object.deploy1271 (file:///home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/x402/test/helpers.mjs:126:38)
+      at TestContext.<anonymous> (file:///home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/x402/test/e2e.test.mjs:149:28)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async Test.run (node:internal/test_runner/test:1054:7)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:744:7)
+
+fork of Base mainnet at block 53365435
+Compiling 45 files with Solc 0.8.26
+Solc 0.8.26 finished in 4.77s
+Compiler run successful!
+Script ran successfully.
+
+== Return ==
+router: contract VaultPayRouter 0x2e665A5E6C636fA00DBf1C0A845eB07929D51d6f
+
+== Logs ==
+  VaultPayRouter 0x2e665A5E6C636fA00DBf1C0A845eB07929D51d6f
+  chain id       8453
+
+## Setting up 1 EVM.
+
+==========================
+
+Chain 8453
+
+Estimated gas price: 0.010440726 gwei
+
+Estimated total gas used for script: 2525201
+
+Estimated amount required: 0.000026364931735926 ETH
+
+==========================
+
+
+==========================
+
+ONCHAIN EXECUTION COMPLETE & SUCCESSFUL.
+
+Transactions saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/broadcast/DeployVaultPayRouter.s.sol/8453/run-latest.json
+
+Sensitive values saved to: /home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/cache/DeployVaultPayRouter.s.sol/8453/run-latest.json
+
+{
+  "chainId": 8453,
+  "codehash": "0x6a473fb25f6eb97936905b2c1edd90cd5e8950de6bb26683846f1479adbd9c92",
+  "router": "0x2e665A5E6C636fA00DBf1C0A845eB07929D51d6f",
+  "salt": "0x6bc16b64077405698ba09013c414c21390b38a75e36ef6837507d84382f096a4"
+}
+✔ the facilitator offers the vault router, and only for the vault it trusts (5816.233149ms)
+✔ an agent with no ETH pays an x402 invoice from its Aave position (2003.813836ms)
+✔ a second payment works too, signing a fresh permit at the next nonce (532.158032ms)
+✔ a replayed payment is refused before it reaches the chain (559.430279ms)
+✔ a tampered intent is refused: checked fields locally, signed fields by simulation (313.097791ms)
+✔ an owner sweeps the agent's whole position home, through the facilitator's checks (510.73757ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9834.985659
