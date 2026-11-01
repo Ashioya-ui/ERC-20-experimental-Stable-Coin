@@ -1,0 +1,40 @@
+Base mainnet x402 session, finished by run 41268881409
+account 1 USDC before: 2242837
+collect  done earlier
+goHome   done earlier
+account 1 USDC after:  2242837   paths contract USDC: 0   escrow USDC: 0
+agent ETH: 0 (never held any)   account 1 ETH: 1952174265670472
+declare path      0xfb42623cedad6aa418cded8ee6c7760826a44419873abc51e58c205fd44ea2e6  status 0x1  gas 211,888  0.0000011692 ETH  $0.002648
+open (path step)  0x7886811ba9f729161dfb1edca54f92c23819fd34de844af53ed8e3ebbb204723  status 0x1  gas 284,394  0.0000016150 ETH  $0.003658
+redemption        0x787e024b53d5ac24ce6c1444b8a014c6249e201a3db9ffb45c91330b9974f60c  status 0x1  gas  72,811  0.0000004011 ETH  $0.000908
+close (payee)     0x7312f6be779549f4c6633e71bbee36e3a6f42c9a849f1dcf1879eb0a6eefd4fa  status 0x1  gas  77,628  0.0000004273 ETH  $0.000968
+ETH/USD 2264.90 (Chainlink on Base)
+settlement of 1000 paid calls (open + one redemption): $0.004566  = $0.00000457 per call
+whole lifecycle (declare, open, redeem, close): $0.008182  = $0.00000818 per call
+against $0.00129 of gas per x402 payment settled one at a time on Base mainnet: 283x cheaper per call
+
+--- sourcify
+exit escrow 0, paths 0
+[2m2026-11-01T03:22:38.272368Z[0m [31mERROR[0m [2mfoundry_compilers::cache[0m[2m:[0m [3merror[0m[2m=[0m"/home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/cache/solidity-files-cache.json": No such file or directory (os error 2)
+Start verifying contract `0x175925a679f389D905686D7E484b030Ccd7992CB` deployed on base
+Attempting to verify on Sourcify. Pass the --etherscan-api-key <API_KEY> to verify on Etherscan, or use the --verifier flag to verify on another provider.
+
+Submitting verification for [X402SessionEscrow] "0x175925a679f389D905686D7E484b030Ccd7992CB".
+Submitted contract for verification:
+	Verification Job ID: `ea53491a-82ff-4dd8-a6b4-b1beec5905a1`
+	URL: https://sourcify.dev/server/v2/verify/ea53491a-82ff-4dd8-a6b4-b1beec5905a1
+Warning: Verification is still pending...; waiting 15 seconds before trying again (7 tries remaining)
+Contract successfully verified:
+Status: `match`
+[2m2026-11-01T03:22:56.378793Z[0m [31mERROR[0m [2mfoundry_compilers::cache[0m[2m:[0m [3merror[0m[2m=[0m"/home/runner/work/ERC-20-experimental-Stable-Coin/ERC-20-experimental-Stable-Coin/cache/solidity-files-cache.json": No such file or directory (os error 2)
+Start verifying contract `0xa9BF003a805ef14161aab2482eFd2a9C64e5f3fF` deployed on base
+Constructor args: 0x000000000000000000000000175925a679f389d905686d7e484b030ccd7992cb
+Attempting to verify on Sourcify. Pass the --etherscan-api-key <API_KEY> to verify on Etherscan, or use the --verifier flag to verify on another provider.
+
+Submitting verification for [X402SessionPaths] "0xa9BF003a805ef14161aab2482eFd2a9C64e5f3fF".
+Submitted contract for verification:
+	Verification Job ID: `e5c09098-ed92-4378-9b41-b73510e4a11f`
+	URL: https://sourcify.dev/server/v2/verify/e5c09098-ed92-4378-9b41-b73510e4a11f
+Warning: Verification is still pending...; waiting 15 seconds before trying again (7 tries remaining)
+Contract successfully verified:
+Status: `match`
