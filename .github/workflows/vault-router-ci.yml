@@ -145,7 +145,8 @@ jobs:
           (cd x402 && node --test --test-reporter=spec test/unit.test.mjs) > /tmp/unit.txt 2>&1; U=$?
           # The whole Node suite on the anvil rail, including the pure-JS signer against cast and
           # the MCP server paying a merchant.
-          script/rehearsal/x402.sh > /tmp/rail.txt 2>&1; X=$?
+          # The ERC-1271 test deploys a mock wallet from the default profile's build output.
+          { forge build && script/rehearsal/x402.sh; } > /tmp/rail.txt 2>&1; X=$?
           script/rehearsal/x402-vault-fork.sh > /tmp/fork.txt 2>&1; R=$?
           SESSION_CALLS=1000 script/rehearsal/x402-session.sh > /tmp/session-local.txt 2>&1; L=$?
           SESSION_CALLS=1000 script/rehearsal/x402-session.sh --fork > /tmp/session-fork.txt 2>&1; F=$?
