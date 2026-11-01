@@ -135,9 +135,10 @@ jobs:
       - id: v
         env:
           FOUNDRY_PROFILE: vault
-          ETHERSCAN_API_KEY: unused # foundry.toml names it; Sourcify does not use it
         run: |
           set +e
+          # forge consults the [etherscan] entries even for --verifier sourcify; Sourcify needs none.
+          sed -i '/^\[etherscan\]/,/^$/d' foundry.toml
           forge verify-contract --verifier sourcify --chain 8453 --watch "$ESCROW" \
             src/vault/X402SessionEscrow.sol:X402SessionEscrow > v.txt 2>&1; R=$?
           forge verify-contract --verifier sourcify --chain 8453 --watch "$PATHS" \

@@ -298,10 +298,11 @@ jobs:
       - id: v
         env:
           FOUNDRY_PROFILE: vault
-          ETHERSCAN_API_KEY: unused # foundry.toml names it; Sourcify does not use it
           DEPLOYMENT: ${{ needs.mainnet.outputs.deployment }}
         run: |
           set +e
+          # forge consults the [etherscan] entries even for --verifier sourcify; Sourcify needs none.
+          sed -i '/^\[etherscan\]/,/^$/d' foundry.toml
           ESCROW=$(printf '%s' "$DEPLOYMENT" | jq -r .escrow)
           PATHS=$(printf '%s' "$DEPLOYMENT" | jq -r .paths)
           forge verify-contract --verifier sourcify --chain 8453 --watch "$ESCROW" \
