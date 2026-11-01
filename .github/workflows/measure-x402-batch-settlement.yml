@@ -11,7 +11,7 @@ permissions: {}
 jobs:
   measure:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     permissions:
       contents: read
     env:
@@ -39,58 +39,79 @@ jobs:
           } > topics.env
           echo "x402BatchSettlement code size on Base: $(cast codesize "$BS" --rpc-url "$RPC") bytes"
           python3 - <<'PY'
-          import collections, json, os, subprocess, time
-          rpc_url, bs, days = os.environ["RPC"], os.environ["BS"].lower(), int(os.environ["DAYS"])
+          import collections, itertools, json, os, subprocess, time
+          bs, days = os.environ["BS"].lower(), int(os.environ["DAYS"])
           names = {}
           for line in open("topics.env"):
               k, v = line.strip().split("=")
               names[v.lower()] = k
+          def call(url, method, params):
+              out = subprocess.run(["cast", "rpc", "--rpc-url", url, "--raw", method, json.dumps(params)],
+                                   capture_output=True, text=True, timeout=60)
+              if out.returncode != 0:
+                  raise RuntimeError(out.stderr.strip()[-300:])
+              return json.loads(out.stdout)
+          # Public endpoints rate-limit a single client, so the calls rotate across several and pause.
+          urls = []
+          for u in ["https://mainnet.base.org", "https://base-rpc.publicnode.com", "https://base.llamarpc.com",
+                    "https://base.drpc.org", "https://1rpc.io/base"]:
+              try:
+                  if int(call(u, "eth_chainId", []), 16) == 8453:
+                      urls.append(u)
+              except Exception as e:
+                  print(f"skip {u}: {str(e)[:100]}")
+          print("rpcs:", ", ".join(urls))
+          ring = itertools.cycle(urls)
+          TRANSIENT = ("429", "request limit", "rate limit", "too many requests", "timed out", "timeout", "502", "503", "504", "connection")
           def rpc(method, params):
-              # Through cast: the public RPC turns away Python's default client.
-              err = None
-              for attempt in range(6):
+              last = None
+              for attempt in range(3 * len(urls) + 3):
                   try:
-                      out = subprocess.run(["cast", "rpc", "--rpc-url", rpc_url, "--raw", method, json.dumps(params)],
-                                           capture_output=True, text=True, timeout=60)
-                      if out.returncode != 0:
-                          raise RuntimeError(out.stderr.strip()[-300:])
-                      return json.loads(out.stdout)
+                      r = call(next(ring), method, params)
+                      time.sleep(0.3)
+                      return r
                   except Exception as e:
-                      err = e
-                      time.sleep(1 + attempt)
-              raise err
+                      last = e
+                      if not any(k in str(e).lower() for k in TRANSIENT):
+                          raise                      # a range or size error: the caller narrows the range
+                      time.sleep(min(30, 2 + 2 * attempt))
+              raise last
           head = int(rpc("eth_blockNumber", []), 16)
           start = head - days * 43200          # Base makes a block every 2 s
           counts, daily = collections.Counter(), collections.defaultdict(collections.Counter)
-          channels, receivers, payers, tokens = set(), set(), set(), collections.Counter()
-          sums = collections.Counter()
-          step, b, calls = 10000, start, 0
-          while b <= head:
-              e = min(b + step - 1, head)
-              try:
-                  logs = rpc("eth_getLogs", [{"address": bs, "fromBlock": hex(b), "toBlock": hex(e)}])
-                  calls += 1
-              except Exception as ex:
-                  if step > 250:
-                      step //= 2
-                      continue
-                  raise
-              for l in logs:
-                  t = l["topics"]
-                  name = names.get(t[0].lower(), "other")
-                  counts[name] += 1
-                  daily[(int(l["blockNumber"], 16) - start) // 43200][name] += 1
-                  amount = int(l["data"][2:66] or "0", 16)
-                  if name in ("Deposited", "Claimed", "Settled", "Refunded", "WithdrawFinalized"):
-                      sums[name] += amount
-                  if name == "ChannelCreated":
-                      channels.add(t[1])
-                      cfg = l["data"][2:]
-                      payers.add("0x" + cfg[24:64])                  # config.payer is the first word
-                  if name == "Settled":
-                      receivers.add(t[1]); tokens["0x" + t[2][-40:]] += 1
-              b = e + 1
-          print(f"window: blocks {start:,}..{head:,} ({days} days), {calls} getLogs calls, final step {step}")
+          channels, receivers, payers, tokens, sums = set(), set(), set(), collections.Counter(), collections.Counter()
+          step, b, calls, t0, note = 10000, start, 0, time.time(), "complete"
+          try:
+              while b <= head:
+                  if time.time() - t0 > 18 * 60:
+                      note = f"stopped at the time budget; covered blocks {start:,}..{b - 1:,}"
+                      break
+                  e = min(b + step - 1, head)
+                  try:
+                      logs = rpc("eth_getLogs", [{"address": bs, "fromBlock": hex(b), "toBlock": hex(e)}])
+                      calls += 1
+                  except Exception as ex:
+                      if step > 250:
+                          step //= 2
+                          continue
+                      raise
+                  for l in logs:
+                      t = l["topics"]
+                      name = names.get(t[0].lower(), "other")
+                      counts[name] += 1
+                      daily[(int(l["blockNumber"], 16) - start) // 43200][name] += 1
+                      amount = int(l["data"][2:66] or "0", 16)
+                      if name in ("Deposited", "Claimed", "Settled", "Refunded", "WithdrawFinalized"):
+                          sums[name] += amount
+                      if name == "ChannelCreated":
+                          channels.add(t[1])
+                          payers.add("0x" + l["data"][2:][24:64])     # config.payer is the first word
+                      if name == "Settled":
+                          receivers.add(t[1]); tokens["0x" + t[2][-40:]] += 1
+                  b = e + 1
+          except Exception as ex:
+              note = f"stopped by an error at block {b:,}: {str(ex)[:160]}"
+          print(f"window: blocks {start:,}..{head:,} ({days} days); {calls} getLogs calls, final step {step}; {note}")
           print("events:", dict(counts) or "none")
           print(f"channels created: {len(channels)}, distinct payers: {len(payers)}, distinct receivers settled to: {len(receivers)}")
           print("tokens settled:", dict(tokens) or "none")
