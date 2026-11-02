@@ -1,0 +1,20 @@
+# Spectral engine state on Base Sepolia, run 41421692697
+oracle.filled          8  of 8
+oracle.smoothedEntropy 500000000000000000
+sUSD.index             1000600157523627209
+sUSD.totalSupply       13047127609000874558
+lens.distributable     2874390999125442
+pool liquidity         
+
+# funding, USDC 6dp
+minObservation (wsUSD wei) 10000000000000000000
+needed                     30328183
+deployer holds             140023135
+shortfall                  0
+
+# usdc on this chain is Circle's Base Sepolia contract
+usdc contract 0x036CbD53842c5426634e7929541eC2318f3dCF7e   (if a faucet claim is missing, it likely went to Ethereum Sepolia instead)
+
+# accounts
+deployer ETH 7699486931563243
+admin    ETH 0   (0 means emergency powers cannot be exercised)
