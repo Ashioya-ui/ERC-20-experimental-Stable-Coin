@@ -271,7 +271,8 @@ async function handle(m) {
   switch (method) {
     case 'initialize':
       return reply({
-        protocolVersion: PROTOCOLS.includes(params?.protocolVersion) ? params.protocolVersion : PROTOCOLS[1],
+        // The client's version when this server speaks it, otherwise the latest this server speaks (MCP lifecycle rule).
+        protocolVersion: PROTOCOLS.includes(params?.protocolVersion) ? params.protocolVersion : PROTOCOLS[0],
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: 'x402-sessions', title: 'x402 payments', version: VERSION },
         instructions: INSTRUCTIONS,
