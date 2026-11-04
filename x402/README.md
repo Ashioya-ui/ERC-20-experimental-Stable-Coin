@@ -24,9 +24,29 @@ others) can pay x402 APIs with this. It needs Node.js and nothing else.
 4. **Use paid APIs.** Ask your agent to fetch any x402 URL. It pays when the server asks, never more
    than your limit per call, and stops at your budget.
 
-Without settings, the budget is $1 and the limit is $0.10 a call. The wallet key lives in
+Without settings, the budget is $1, the limit is $0.10 a call and $0.50 a minute. The wallet key lives in
 `~/.x402-sessions/agent.key` on your computer, so keep only what the agent should spend in it.
 For money the agent should never hold at all, see [paths](#give-an-agent-a-budget-owners).
+
+## Limits that hold when the agent misbehaves
+
+The MCP server enforces these, so a looping or hijacked agent stays inside them. Each is proved in
+[`docs/design/agent-limits.md`](../docs/design/agent-limits.md); for a path agent, the contract
+proves the ceiling on-chain, and `x402_wallet` reads it:
+
+- **Signed is spent.** Every voucher and payment authorization counts against the budget the moment it
+  is signed, whatever the merchant answers. A one-off authorization that expires unused is released.
+- **Timeouts.** No request waits more than `AGENT_TIMEOUT_S` (30 s). A timeout after the payment left
+  is reported as "charged, not delivered", never as success.
+- **Merchants that take payment without serving are paused.** After `AGENT_MAX_UNDELIVERED` (2) paid
+  calls in a row that were not served, the merchant is paused for `AGENT_BREAKER_SECONDS` (600).
+- **Spending speed.** `AGENT_MAX_PER_MINUTE` caps what can be spent in any minute (default: five calls'
+  worth), so a retry loop cannot drain the budget in seconds.
+- **One paid call at a time.** Calls that arrive together are paid in turn, so no two can pass the
+  same check.
+- **The ceiling, live.** For a path agent, `x402_wallet` shows what the path can still pay out and
+  what each merchant can still receive on-chain (set `AGENT_PATH_MERCHANTS` to list the path's
+  merchants; otherwise it shows those already paid).
 
 ## How sessions work
 

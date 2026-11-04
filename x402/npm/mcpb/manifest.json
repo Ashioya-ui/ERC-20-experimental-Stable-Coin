@@ -15,18 +15,27 @@
   },
   "homepage": "https://github.com/Ashioya-ui/ERC-20-experimental-Stable-Coin/tree/main/x402",
   "license": "MIT",
-  "keywords": ["x402", "payments", "usdc", "base", "agents"],
+  "keywords": [
+    "x402",
+    "payments",
+    "usdc",
+    "base",
+    "agents"
+  ],
   "server": {
     "type": "node",
     "entry_point": "server/x402/mcp.mjs",
     "mcp_config": {
       "command": "node",
-      "args": ["${__dirname}/server/x402/mcp.mjs"],
+      "args": [
+        "${__dirname}/server/x402/mcp.mjs"
+      ],
       "env": {
         "AGENT_BUDGET": "${user_config.budget}",
         "AGENT_MAX_PER_REQUEST": "${user_config.max_per_call}",
         "AGENT_PATH": "${user_config.path_id}",
-        "RPC_URL": "${user_config.rpc_url}"
+        "RPC_URL": "${user_config.rpc_url}",
+        "AGENT_PATH_MERCHANTS": "${user_config.path_merchants}"
       }
     }
   },
@@ -37,7 +46,7 @@
     },
     {
       "name": "x402_wallet",
-      "description": "Show the wallet address to fund, the USDC balance, the limits and what has been spent."
+      "description": "Show the wallet address to fund, the USDC balance, the limits, what has been spent, and for a path what it and each merchant can still receive."
     }
   ],
   "user_config": {
@@ -70,9 +79,20 @@
       "description": "An X402SessionPaths path id, when an owner holds the money instead of this wallet.",
       "default": "",
       "required": false
+    },
+    "path_merchants": {
+      "type": "string",
+      "title": "Path merchants (optional)",
+      "description": "The merchants on the owner's path, comma-separated, to show what each can still receive.",
+      "default": "",
+      "required": false
     }
   },
   "compatibility": {
-    "platforms": ["darwin", "win32", "linux"]
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ]
   }
 }

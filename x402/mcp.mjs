@@ -13,6 +13,11 @@
 //   AGENT_PATH             an X402SessionPaths path id, when an owner holds the money instead
 //   RPC_URL                Base JSON-RPC endpoints, comma-separated (default: two public ones)
 //   X402_HOME              where the wallet key and the spending ledger live (default ~/.x402-sessions)
+//   AGENT_TIMEOUT_S        the longest one paid request may take (default 30)
+//   AGENT_MAX_PER_MINUTE   the most the agent may spend in any minute, in dollars (default: 5 calls'
+//                          worth, five times AGENT_MAX_PER_REQUEST)
+//   AGENT_MAX_UNDELIVERED  paid calls in a row a merchant may leave unserved before it is paused (2)
+//   AGENT_PATH_MERCHANTS   the path's merchants, comma-separated, to show what each can still receive
 
 // stdout carries the protocol and nothing else; anything printed goes to stderr.
 console.log = console.info = console.debug = (...a) => console.error(...a);
@@ -21,7 +26,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'n
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { createAgent, formatUnits, parseUsd, PolicyError } from './agent.mjs';
+import { createAgent, formatUnits, parseUsd, policyFromEnv, PolicyError } from './agent.mjs';
 import { isMain } from './lib/cli.mjs';
 import { addressOfKey, newKey } from './lib/evm.mjs';
 
@@ -94,7 +99,9 @@ const policy = {
   budget: parseUsd(env.AGENT_BUDGET || '1'),
   maxPerRequest: parseUsd(env.AGENT_MAX_PER_REQUEST || '0.10'),
   sessionDeposit: parseUsd(env.AGENT_SESSION_DEPOSIT || '0.20'),
+  ...policyFromEnv(env),
 };
+policy.maxPerMinute ??= policy.maxPerRequest * 5n; // a loop of failing calls cannot drain the budget in seconds
 
 let agentPromise = null;
 function agent() {
@@ -119,12 +126,22 @@ function fundingLine(a) {
 
 async function walletText() {
   const a = await agent();
+  await a.reconcile(); // payments that expired unused stop counting against the budget
   const b = await a.balances();
   const sessions = Object.values(a.sessions());
+  const path = await a.pathState();
+  const paused = Object.entries(a.breakers()).filter(([, x]) => x.until > Date.now());
   return [
     `Address: ${a.address} (${a.deployment.network === 'eip155:8453' ? 'Base' : a.deployment.network})`,
     `USDC: ${formatUnits(b.usdc, 6)}`,
     `Spent: ${usd(a.spent)} of a ${usd(policy.budget)} budget; at most ${usd(policy.maxPerRequest)} a call.`,
+    ...(path ? [
+      `Path: it can still pay out at most ${usd(path.canStillPay)}; ${usd(path.committed)} committed of ${usd(path.bound)}.`,
+      ...(path.merchants.length
+        ? [`Per merchant, at most still: ${path.merchants.map((m) => `${m.payee} ${usd(m.remaining)} (cap ${usd(m.cap)})`).join('; ')}`]
+        : []),
+    ] : []),
+    ...(paused.length ? [`Paused merchants (paid, did not serve): ${paused.map(([k, x]) => `${k} until ${new Date(x.until).toISOString()}`).join('; ')}`] : []),
     sessions.length
       ? `Open sessions: ${sessions.map((s) => `${s.payee} (${usd(BigInt(s.cumulative))} used of ${usd(BigInt(s.deposit))})`).join('; ')}`
       : 'Open sessions: none.',
@@ -142,13 +159,16 @@ async function fetchText({ url, method = 'GET', headers = {}, body, prefer = 'se
     body: body === undefined ? undefined : String(body),
   });
   const cost = a.spent - before;
-  const head = [`HTTP ${r.status}`];
+  const head = [r.status === 0 ? 'no answer' : `HTTP ${r.status}`];
   if (r.paid) head.push(`paid ${usd(cost)} by ${r.mode === 'USDC' ? 'a USDC transfer' : r.mode}`);
+  const undelivered = !r.delivered && r.charged > 0n;
+  if (undelivered) head.push(`charged ${usd(r.charged)}, not delivered`);
   if (r.paid || r.mode) head.push(`spent ${usd(a.spent)} of ${usd(policy.budget)}`);
-  if (r.error) head.push(`payment refused: ${r.error}`);
+  if (r.error) head.push(`${r.status === 402 ? 'payment refused' : 'error'}: ${r.error}`);
+  if (undelivered) head.push('do not retry this URL now: the merchant was paid and did not serve the call');
   const text = String(r.body ?? '');
   const shown = text.length > MAX_BODY ? `${text.slice(0, MAX_BODY)}\n[... ${text.length - MAX_BODY} more characters]` : text;
-  return { text: `${head.join(', ')}\n\n${shown}`, isError: r.status === 402 && !r.paid };
+  return { text: `${head.join(', ')}\n\n${shown}`, isError: (r.status === 402 && !r.paid) || undelivered };
 }
 
 async function callTool(name, args) {
@@ -160,7 +180,9 @@ async function callTool(name, args) {
     }
     return { content: [{ type: 'text', text: `unknown tool ${name}` }], isError: true };
   } catch (e) {
-    let text = e instanceof PolicyError ? `Not paid: ${e.message}. The owner sets the limits (AGENT_BUDGET, AGENT_MAX_PER_REQUEST).` : `Error: ${e.message}`;
+    let text = e instanceof PolicyError
+      ? `Not paid: ${e.message}. The owner sets the limits (AGENT_BUDGET, AGENT_MAX_PER_REQUEST, AGENT_MAX_PER_MINUTE).`
+      : e?.name === 'TimeoutError' ? 'Error: the server did not answer in time. Nothing was paid; the call may be tried again.' : `Error: ${e.message}`;
     if (/insufficient|balance|exceeds/i.test(e.message) && agentPromise) {
       try {
         text += `\n${fundingLine(await agentPromise)}`;
