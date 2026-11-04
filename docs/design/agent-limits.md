@@ -11,11 +11,24 @@ the agent signs that can move money: a session voucher, an EIP-3009 authorizatio
 router) or a vault pay intent. Its **value** is the most it can move: a voucher's increment over the
 previous one, an authorization's amount, an intent's assets.
 
-## Lemma 0. Paid calls do not interleave
+## Lemma 0. Paid calls do not interleave, in one process or across many
 
-`pay()` runs `payNow()` under `withLock('pay', …)`, which chains every call on the previous one's
-completion. So from the checks in `choose()` to the last bookkeeping after the merchant's answer,
-no other paid call runs. Only `reconcile()` may run meanwhile, and it only lowers `spent`.
+One wallet is often paid from by several processes at once: Claude Desktop starts one server, and
+every Claude Code or Cursor session starts another, all with the same `~/.x402-sessions`.
+
+`pay()` runs `payNow()` under `withLock('pay', …)`, which chains every call in the process on the
+previous one's completion, and inside it under `withLedger(…)`, which holds the wallet's lock file
+(`ledger.json.lock`, created with `O_EXCL`, so exactly one process holds it) for the whole call and
+first reads the ledger afresh from disk. `reconcile()` takes the same two locks. So from the checks
+in `choose()` to the last bookkeeping after the merchant's answer, no other paid call and no
+reconciliation runs in any process, and the call starts from everything every process has counted.
+The ledger is written whole to a temporary file and renamed over the old one, so a reader never
+sees half a ledger. A lock left by a process that died is broken once its holder is gone (or after
+five minutes); a waiter gives up after two minutes, before anything is signed.
+
+0.3.0 held only the in-process lock. Two processes each read the ledger once at start, so each
+checked the budget against its own count, and each overwrote the other's file: two servers with a
+$0.004 budget both paid a $0.0025 call, and the ledger kept one of the two payments.
 
 ## Theorem 1. Budget
 
@@ -23,8 +36,9 @@ At every moment, the money that has left the agent through its instruments, plus
 unexpired instruments can still move, is at most `spent`, and `spent ≤ budget`.
 
 *Proof.* Every instrument is added to `spent` before it leaves the process: a voucher in
-`authorizeSession()` at signing; an authorization or a first-sent vault intent by `record()` before
-the request carrying it is made. A re-sent vault intent is the same instrument and is not added again.
+`authorizeSession()` at signing; an authorization (for a version 1 or a version 2 offer alike) or a
+first-sent vault intent by `record()` before the request carrying it is made. A re-sent vault intent
+is the same instrument and is not added again.
 Each addition of value `v` happens only after `refusal()` found `spent + v ≤ budget` in the same
 paid call (Lemma 0; the reopening of a dead session checks again before signing). Meanwhile `spent`
 can only fall, so the inequality still holds when `v` is added. `spent` falls only in
@@ -40,10 +54,11 @@ any other. The budget can no longer be exceeded through failures.
 
 In any 60-second window, the instruments signed have total value at most `maxPerMinute`.
 
-*Proof.* Each signature records `(time, value)` in the rate window, and is preceded in the same call
-by the check that the values recorded in the previous 60 s plus the new value are at most
-`maxPerMinute` (`refusal()`; Lemma 0). Take any window and its last signature at time `t`: every
-signature in the window lies in `(t − 60 s, t]`, which that check covered. ∎
+*Proof.* Each signature records `(time, value)` in the rate window, which is kept in the ledger and
+so is shared by every process paying from the wallet. It is preceded in the same call by the check
+that the values recorded in the previous 60 s plus the new value are at most `maxPerMinute`
+(`refusal()`; Lemma 0). Take any window and its last signature at time `t`: every signature in the
+window lies in `(t − 60 s, t]`, which that check covered. ∎
 
 The MCP server sets `maxPerMinute` to five calls' worth (`5 × maxPerRequest`) unless
 `AGENT_MAX_PER_MINUTE` says otherwise. A looping model cannot spend a $1 budget in seconds at

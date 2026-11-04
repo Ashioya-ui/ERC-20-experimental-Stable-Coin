@@ -401,9 +401,14 @@ export function makeJsChain(rpcUrl) {
   if (!urls.length) throw new Error('no RPC URL');
   let at = 0;
   let id = 0;
+  // A request that never reached a node (DNS, refused, reset, TLS, no answer in time) is the next
+  // endpoint's to answer. fetch reports all of these as a TypeError or a timeout; a node's own
+  // JSON-RPC error is not one of them and is final unless it names a transient condition.
+  const unreached = (e) => e instanceof TypeError || e?.name === 'TimeoutError' || e?.name === 'AbortError';
+  const why = (e) => `${e?.message}${e?.cause?.code ? ` (${e.cause.code})` : e?.cause?.message ? ` (${e.cause.message})` : ''}`;
   async function rpc(method, params) {
     let last;
-    for (let attempt = 0; attempt < 3 * urls.length + 2; attempt++) {
+    for (let attempt = 0; attempt < 2 * urls.length + 1; attempt++) {
       const url = urls[at % urls.length];
       try {
         const res = await fetch(url, {
@@ -429,13 +434,13 @@ export function makeJsChain(rpcUrl) {
         }
         return body.result;
       } catch (e) {
-        if (!(e instanceof Transient) && !TRANSIENT.test(String(e?.cause?.code || e?.name || e?.message))) throw e;
+        if (!(e instanceof Transient) && !unreached(e) && !TRANSIENT.test(`${e?.message} ${e?.cause?.code ?? ''}`)) throw e;
         last = e;
         at += 1;
-        await sleep(Math.min(8000, 250 * 2 ** attempt));
+        await sleep(Math.min(4000, 250 * 2 ** attempt));
       }
     }
-    throw new Error(`no RPC endpoint answered ${method} (${urls.join(', ')}): ${last?.message}`);
+    throw Object.assign(new Error(`no RPC endpoint answered ${method} (${urls.join(', ')}): ${why(last)}`), { code: 'RPC_UNREACHABLE' });
   }
   return {
     rpcUrl: urls[0],

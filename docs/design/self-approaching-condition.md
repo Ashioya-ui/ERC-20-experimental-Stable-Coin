@@ -2,8 +2,9 @@
 
 A curve is **self-approaching** when, for any three points a, b, c in order along it, |bc| ≤ |ac|:
 every point moves closer to everything still ahead. Such a curve's length is bounded by a constant
-times the distance between its ends (Icking, Klein and Langetepe), and a path built under the
-condition can never wander.
+times the distance between its ends (Icking, Klein and Langetepe). This rail asks for more than the
+condition: every step is monotone, one coordinate upward inside the box [0, E], so the total
+committed is at most |E|_1, the sum of the caps, with no constant factor.
 
 This rail uses the condition as its security invariant. It is structural: it is checked by the
 contract in O(1) gas per act, with no watcher, oracle or off-chain policy to compromise.

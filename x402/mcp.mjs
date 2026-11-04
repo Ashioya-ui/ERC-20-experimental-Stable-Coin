@@ -42,9 +42,34 @@ const PROTOCOLS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 const DEFAULT_RPC = 'https://mainnet.base.org,https://base-rpc.publicnode.com';
 const MAX_BODY = 20_000;
 
-const env = process.env;
+// Settings arrive as environment variables from many hosts. A host that has no value for an
+// optional setting may pass an empty string, "undefined", "null" or its own unreplaced template
+// (Claude Desktop's ${user_config.x}); each of those means "not set".
+const env = Object.fromEntries(
+  Object.entries(process.env)
+    .map(([k, v]) => [k, String(v ?? '').trim()])
+    .filter(([, v]) => v !== '' && v !== 'undefined' && v !== 'null' && !/^\$\{[^}]*\}$/.test(v)),
+);
 const HOME = env.X402_HOME || join(homedir(), '.x402-sessions');
 const usd = (units) => `$${formatUnits(units, 6)}`;
+
+// A setting that cannot be read never stops the server: it is reported in every answer, and the
+// limit it was meant to set pays nothing until it is fixed.
+const problems = [];
+/** A dollar setting: "1", "0.10", "$2", "1e-3" (rounded to the cent's ten-thousandth, 6 decimals). */
+function dollars(name, fallback) {
+  const raw = env[name];
+  if (raw === undefined) return parseUsd(fallback);
+  const s = raw.replace(/^\$/, '').trim();
+  try {
+    return parseUsd(s);
+  } catch {
+    const n = Number(s);
+    if (Number.isFinite(n) && n >= 0 && n < 1e15) return parseUsd(n.toFixed(6));
+    problems.push(`${name} is "${raw}", which is not a dollar amount, so nothing is paid until it is fixed`);
+    return 0n;
+  }
+}
 
 const INSTRUCTIONS = [
   'x402_fetch fetches a URL and, when the server answers 402 Payment Required (the x402 protocol),',
@@ -96,12 +121,26 @@ function wallet() {
 }
 
 const policy = {
-  budget: parseUsd(env.AGENT_BUDGET || '1'),
-  maxPerRequest: parseUsd(env.AGENT_MAX_PER_REQUEST || '0.10'),
-  sessionDeposit: parseUsd(env.AGENT_SESSION_DEPOSIT || '0.20'),
-  ...policyFromEnv(env),
+  budget: dollars('AGENT_BUDGET', '1'),
+  maxPerRequest: dollars('AGENT_MAX_PER_REQUEST', '0.10'),
+  sessionDeposit: dollars('AGENT_SESSION_DEPOSIT', '0.20'),
 };
+const hardening = { ...env };
+for (const k of ['AGENT_TIMEOUT_S', 'AGENT_MAX_UNDELIVERED', 'AGENT_BREAKER_SECONDS']) {
+  try {
+    policyFromEnv({ [k]: env[k] });
+  } catch (e) {
+    problems.push(`${e.message}, so its default applies`);
+    delete hardening[k];
+  }
+}
+delete hardening.AGENT_MAX_PER_MINUTE; // a dollar setting, read below
+Object.assign(policy, policyFromEnv(hardening));
+if (env.AGENT_MAX_PER_MINUTE) policy.maxPerMinute = dollars('AGENT_MAX_PER_MINUTE', '0');
 policy.maxPerMinute ??= policy.maxPerRequest * 5n; // a loop of failing calls cannot drain the budget in seconds
+const pathId = env.AGENT_PATH && /^0x[0-9a-fA-F]{64}$/.test(env.AGENT_PATH) ? env.AGENT_PATH : undefined;
+if (env.AGENT_PATH && !pathId) problems.push(`AGENT_PATH is "${env.AGENT_PATH}", which is not a path id (0x and 64 hex digits), so it is ignored`);
+const settingsNote = () => (problems.length ? [`Settings to fix: ${problems.join('; ')}.`] : []);
 
 let agentPromise = null;
 function agent() {
@@ -109,14 +148,18 @@ function agent() {
     rpcUrl: env.RPC_URL || DEFAULT_RPC,
     signer: wallet(),
     ledgerFile: env.AGENT_LEDGER || join(HOME, 'ledger.json'),
-    path: env.AGENT_PATH || undefined,
+    path: pathId,
     policy,
+    userAgent: `x402-sessions/${VERSION} (+https://www.npmjs.com/package/@pyzratio/x402-sessions)`,
   }).catch((e) => {
     agentPromise = null; // a failed start (an RPC down) is tried again on the next call
     throw e;
   });
   return agentPromise;
 }
+
+/** "could not reach Base" for an RPC failure, the message itself otherwise. */
+const reason = (e) => (e?.code === 'RPC_UNREACHABLE' ? `could not reach Base right now (${e.message})` : e?.message ?? String(e));
 
 function fundingLine(a) {
   return a.path
@@ -125,16 +168,35 @@ function fundingLine(a) {
 }
 
 async function walletText() {
-  const a = await agent();
-  await a.reconcile(); // payments that expired unused stop counting against the budget
-  const b = await a.balances();
+  // The address comes from the key file alone, so it is always shown, even when Base cannot be read.
+  const w = wallet();
+  let a;
+  let b;
+  let path;
+  try {
+    a = await agent();
+    await a.reconcile(); // payments that expired unused stop counting against the budget
+    b = await a.balances();
+    path = await a.pathState();
+  } catch (e) {
+    return [
+      `Address: ${w.address} (Base)`,
+      `USDC: unknown: ${reason(e)}. Ask again in a minute.`,
+      `Limits: ${usd(policy.budget)} budget; at most ${usd(policy.maxPerRequest)} a call.`,
+      ...settingsNote(),
+      pathId
+        ? `Payments come from path ${pathId}, which its owner funds and can recall at any time.`
+        : `To fund it, send USDC on Base to ${w.address}. It needs no ETH: a payment is a signature, and the seller pays the gas.`,
+      `The key is in ${w.path}.`,
+    ].join('\n');
+  }
   const sessions = Object.values(a.sessions());
-  const path = await a.pathState();
   const paused = Object.entries(a.breakers()).filter(([, x]) => x.until > Date.now());
   return [
     `Address: ${a.address} (${a.deployment.network === 'eip155:8453' ? 'Base' : a.deployment.network})`,
     `USDC: ${formatUnits(b.usdc, 6)}`,
     `Spent: ${usd(a.spent)} of a ${usd(policy.budget)} budget; at most ${usd(policy.maxPerRequest)} a call.`,
+    ...settingsNote(),
     ...(path ? [
       `Path: it can still pay out at most ${usd(path.canStillPay)}; ${usd(path.committed)} committed of ${usd(path.bound)}.`,
       ...(path.merchants.length
@@ -158,9 +220,12 @@ async function fetchText({ url, method = 'GET', headers = {}, body, prefer = 'se
     prefer, method: String(method).toUpperCase(), headers: Object.fromEntries(Object.entries(headers ?? {}).map(([k, v]) => [k, String(v)])),
     body: body === undefined ? undefined : String(body),
   });
-  const cost = a.spent - before;
+  const cost = r.charged ?? a.spent - before;
   const head = [r.status === 0 ? 'no answer' : `HTTP ${r.status}`];
-  if (r.paid) head.push(`paid ${usd(cost)} by ${r.mode === 'USDC' ? 'a USDC transfer' : r.mode}`);
+  if (r.paid) {
+    head.push(`paid ${usd(cost)} by ${r.mode === 'USDC' ? 'a USDC transfer' : r.mode}${r.mode !== 'session' && !r.settlement ? ' (the server sent no settlement receipt)' : ''}`);
+    if (r.settlement?.transaction) head.push(`transaction ${r.settlement.transaction}`);
+  }
   const undelivered = !r.delivered && r.charged > 0n;
   if (undelivered) head.push(`charged ${usd(r.charged)}, not delivered`);
   if (r.paid || r.mode) head.push(`spent ${usd(a.spent)} of ${usd(policy.budget)}`);
@@ -182,7 +247,9 @@ async function callTool(name, args) {
   } catch (e) {
     let text = e instanceof PolicyError
       ? `Not paid: ${e.message}. The owner sets the limits (AGENT_BUDGET, AGENT_MAX_PER_REQUEST, AGENT_MAX_PER_MINUTE).`
-      : e?.name === 'TimeoutError' ? 'Error: the server did not answer in time. Nothing was paid; the call may be tried again.' : `Error: ${e.message}`;
+      : e?.name === 'TimeoutError' ? 'Error: the server did not answer in time. Nothing was paid; the call may be tried again.'
+        : `Error: ${reason(e)}.${name === 'x402_fetch' ? ' Nothing was paid.' : ''}`;
+    if (problems.length) text += `\n${settingsNote()[0]}`;
     if (/insufficient|balance|exceeds/i.test(e.message) && agentPromise) {
       try {
         text += `\n${fundingLine(await agentPromise)}`;

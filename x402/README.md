@@ -5,13 +5,16 @@ Pay an x402 API a thousand times and settle on-chain once.
 ## Give your agent x402 payments
 
 Any agent that speaks MCP (Claude Desktop, Claude Code, Cursor, Windsurf, VS Code, Codex CLI and
-others) can pay x402 APIs with this. It needs Node.js and nothing else.
+others) can pay x402 APIs with this, version 1 and version 2 alike. It needs Node.js 18 or later and
+nothing else.
 
 1. **Add it to your agent.**
    - **Claude Desktop:** download
      [`x402-sessions.mcpb`](https://github.com/Ashioya-ui/ERC-20-experimental-Stable-Coin/releases/latest/download/x402-sessions.mcpb)
      and open it. Claude Desktop installs it and asks for your budget and your limit per call.
-   - **Claude Code:** `claude mcp add x402 -- npx -y @pyzratio/x402-sessions`
+   - **Claude Code:** `claude mcp add --scope user x402 -- npx -y @pyzratio/x402-sessions`
+     (`--scope user` makes it available in every folder, not only the one you ran it in). On Windows
+     outside WSL: `claude mcp add --scope user x402 -- cmd /c npx -y @pyzratio/x402-sessions`.
    - **Any other MCP client:** add this server to its MCP settings.
      ```json
      { "mcpServers": { "x402": { "command": "npx", "args": ["-y", "@pyzratio/x402-sessions"],
@@ -42,8 +45,10 @@ proves the ceiling on-chain, and `x402_wallet` reads it:
   calls in a row that were not served, the merchant is paused for `AGENT_BREAKER_SECONDS` (600).
 - **Spending speed.** `AGENT_MAX_PER_MINUTE` caps what can be spent in any minute (default: five calls'
   worth), so a retry loop cannot drain the budget in seconds.
-- **One paid call at a time.** Calls that arrive together are paid in turn, so no two can pass the
-  same check.
+- **One paid call at a time, per wallet.** Calls that arrive together are paid in turn, so no two can
+  pass the same check, and that holds across processes: Claude Desktop and every Claude Code or
+  Cursor session paying from the same wallet share one ledger, read afresh under a lock for each
+  call, so the budget and the minute limit are the wallet's, not each window's.
 - **The ceiling, live.** For a path agent, `x402_wallet` shows what the path can still pay out and
   what each merchant can still receive on-chain (set `AGENT_PATH_MERCHANTS` to list the path's
   merchants; otherwise it shows those already paid).
