@@ -73,6 +73,12 @@ function readLedger(file) {
   return l;
 }
 
+const ownerOf = (v) => {
+  if (!v) return null;
+  if (!isAddress(v)) throw new Error(`AGENT_OWNER must be an address, not ${v}`);
+  return lc(v);
+};
+
 export function policyFromEnv(env = process.env) {
   const num = (k, d) => {
     if (env[k] === undefined || env[k] === '') return d;
@@ -90,6 +96,8 @@ export function policyFromEnv(env = process.env) {
     maxUndelivered: num('AGENT_MAX_UNDELIVERED', 2),
     breakerSeconds: num('AGENT_BREAKER_SECONDS', 600),
     pathMerchants: env.AGENT_PATH_MERCHANTS ? env.AGENT_PATH_MERCHANTS.split(',').map((x) => x.trim()).filter(Boolean) : null,
+    owner: ownerOf(env.AGENT_OWNER),
+    float: env.AGENT_FLOAT ? parseUsd(env.AGENT_FLOAT) : null,
   };
 }
 
@@ -122,6 +130,8 @@ export async function createAgent({
     maxUndelivered: policy.maxUndelivered ?? 2,
     breakerSeconds: policy.breakerSeconds ?? 600,
     pathMerchants: policy.pathMerchants ?? null,
+    owner: policy.owner ? lc(policy.owner) : null,
+    float: policy.float ?? null,
   };
   if (ledgerFile) mkdirSync(dirname(ledgerFile), { recursive: true, mode: 0o700 });
   const ledger = readLedger(ledgerFile);
@@ -379,7 +389,7 @@ export async function createAgent({
     let deposit = limits.sessionDeposit ?? (isUint(r.extra?.suggestedDeposit) ? BigInt(r.extra.suggestedDeposit) : price * 1000n);
     if (limits.maxSessionDeposit != null && deposit > limits.maxSessionDeposit) deposit = limits.maxSessionDeposit;
     if (limits.budget != null && deposit > limits.budget - spent) deposit = limits.budget - spent;
-    const held = await chain.uint(A.usdc, 'balanceOf(address)(uint256)', [from]);
+    const held = await topUp(deposit);
     if (deposit > held) deposit = held;
     if (deposit < price) {
       if (held < price) throw new Error('insufficient funds for a session deposit');
@@ -436,8 +446,40 @@ export async function createAgent({
     };
   }
 
+  async function allowanceLeft() {
+    if (!limits.owner) return 0n;
+    const [allowed, held] = await Promise.all([
+      chain.uint(A.usdc, 'allowance(address,address)(uint256)', [limits.owner, from]),
+      chain.uint(A.usdc, 'balanceOf(address)(uint256)', [limits.owner]),
+    ]);
+    return allowed < held ? allowed : held;
+  }
+  let pulledNow = null;
+  async function topUp(need) {
+    const held = await chain.uint(A.usdc, 'balanceOf(address)(uint256)', [from]);
+    if (!limits.owner || held >= need) return held;
+    const room = await allowanceLeft();
+    const target = limits.float != null && limits.float > need ? limits.float : need;
+    const pull = target - held > room ? room : target - held;
+    if (pull <= 0n) return held;
+    let sent;
+    try {
+      sent = await chain.send(A.usdc, 'transferFrom(address,address,uint256)', [limits.owner, from, String(pull)], signer);
+    } catch (e) {
+      throw new Error(/insufficient funds/i.test(e.message)
+        ? `the agent needs a little ETH on Base to pull from the owner: send about 0.0001 ETH to ${from}`
+        : `pulling $${formatUnits(pull, 6)} from the owner failed: ${e.message}`);
+    }
+    if (!sent.ok) throw new Error(`pulling $${formatUnits(pull, 6)} from the owner reverted (transaction ${sent.hash})`);
+    pulledNow = { usd: pull, transaction: sent.hash };
+    (ledger.pulls ??= []).push({ at: new Date().toISOString(), usd: formatUnits(pull, 6), transaction: sent.hash });
+    saveLedger();
+    return held + pull;
+  }
+
   async function options(accepts) {
     const bal = await balances();
+    if (limits.owner) bal.usdc += await allowanceLeft();
     const out = [];
     for (const r of Array.isArray(accepts) ? accepts : []) {
       if (sessionRequirement(r)) {
@@ -803,7 +845,11 @@ export async function createAgent({
   }
 
   function pay(url, options = {}) {
-    return withLock('pay', () => withLedger(() => payNow(url, options)));
+    return withLock('pay', () => withLedger(async () => {
+      pulledNow = null;
+      const r = await payNow(url, options);
+      return pulledNow ? { ...r, pulled: pulledNow } : r;
+    }));
   }
 
   async function wouldFail(payload) {
@@ -856,6 +902,7 @@ export async function createAgent({
       conversion = await convert(o.r.amount);
       o = { ...o, mode: 'USDC', cost: BigInt(o.r.amount) };
     }
+    if (o.mode === 'USDC') await topUp(o.cost);
     const retryKey = o.mode === 'vault' ? `${payUrl}|${lc(o.r.payTo)}|${o.r.amount}|${o.vault}` : null;
     const prior = retryKey ? unsettled.get(retryKey) : null;
     const payload = prior && BigInt(prior.vaultPay.intent.validBefore) > (await chain.timestamp()) + 15n
@@ -951,6 +998,8 @@ export async function createAgent({
   return {
     address: from, owner, deployment: dep, balances, pay, convert, sweep, choose, authorize, reconcile, pathState,
     sessions: () => ledger.sessions,
+    allowanceLeft,
+    ethBalance: async () => (typeof chain.rpc === 'function' ? BigInt(await chain.rpc('eth_getBalance', [from, 'latest'])) : null),
     breakers: () => ledger.breakers,
     resetBreaker(payTo) {
       if (payTo) delete ledger.breakers[lc(payTo)];

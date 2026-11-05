@@ -41,7 +41,9 @@
         "AGENT_MAX_PER_MONTH": "${user_config.max_per_month}",
         "AGENT_APPROVAL_MAX": "${user_config.approval_max}",
         "X402_FUNDING_URL": "${user_config.funding_url}",
-        "X402_YELLOWCARD_KEY": "${user_config.yellowcard_key}"
+        "X402_YELLOWCARD_KEY": "${user_config.yellowcard_key}",
+        "AGENT_OWNER": "${user_config.owner_address}",
+        "AGENT_FLOAT": "${user_config.float}"
       }
     }
   },
@@ -143,6 +145,21 @@
       "description": "The public Yellow Card widget key, when you have one.",
       "default": "",
       "required": false
+    },
+    "owner_address": {
+      "type": "string",
+      "title": "Your wallet address (optional)",
+      "description": "Keep the money in your own wallet and approve this agent for a USDC allowance on Base. It pulls just enough when it pays; approve it for 0 to stop it.",
+      "required": false,
+      "default": ""
+    },
+    "float": {
+      "type": "number",
+      "title": "Most kept in the agent wallet (USD)",
+      "description": "With your wallet address set: the most the agent holds at a time.",
+      "required": false,
+      "default": 1,
+      "min": 0
     }
   },
   "compatibility": {

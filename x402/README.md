@@ -48,6 +48,8 @@ The key is in `~/.x402-sessions/agent.key`. Hold only what the agent may spend.
 | `AGENT_TIMEOUT_S` | 30 | One request |
 | `AGENT_MAX_UNDELIVERED` | 2 | Paid calls in a row a merchant may leave unserved |
 | `AGENT_BREAKER_SECONDS` | 600 | How long that merchant is paused |
+| `AGENT_OWNER` | none | Your wallet: the agent pulls from your USDC allowance |
+| `AGENT_FLOAT` | $1 | With `AGENT_OWNER`: the most the agent holds at a time |
 
 1. Signed is spent. An authorization that expires unused is released.
 2. One paid call at a time per wallet, across every process that uses it.
@@ -56,6 +58,11 @@ The key is in `~/.x402-sessions/agent.key`. Hold only what the agent may spend.
 5. A request missing an input the server requires is refused before paying.
 6. A timeout after payment is reported as charged, not delivered.
 7. On a pay-on-delivery session, each voucher covers only the calls already received.
+
+**Owner allowance.** Set `AGENT_OWNER` to your wallet and approve the agent for a USDC allowance on Base. The money stays
+with you; the agent pulls just enough when it pays, up to `AGENT_FLOAT`. A stolen agent key can take at most what the
+agent holds plus the allowance left, and approving the agent for 0 stops it. The pulls are transactions from the
+agent, so it needs a little ETH on Base (0.0001 ETH covers many).
 
 ## Funding service
 
