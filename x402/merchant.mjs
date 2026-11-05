@@ -13,6 +13,7 @@ export async function createMerchant({
   tickPrice = process.env.MERCHANT_TICK_PRICE || '100',
   sessionMinRemaining = process.env.MERCHANT_SESSION_MIN_REMAINING || '900',
   sessionDeposit = process.env.MERCHANT_SESSION_DEPOSIT || '1000000',
+  payOnDelivery = process.env.MERCHANT_PAY_ON_DELIVERY === '1',
 }) {
   const chain = makeChain(rpcUrl);
   const dep = await loadDeployment(chain);
@@ -36,7 +37,7 @@ export async function createMerchant({
     scheme: 'session', network: dep.network, amount: String(amount), asset: A.usdc, payTo: to, maxTimeoutSeconds: 60,
     extra: {
       ...dep.domains.usdc, escrow: A.sessionEscrow, minRemainingSeconds: String(sessionMinRemaining),
-      suggestedDeposit: String(sessionDeposit),
+      suggestedDeposit: String(sessionDeposit), ...(payOnDelivery ? { payOnDelivery: true } : {}),
     },
   });
 
@@ -67,6 +68,15 @@ export async function createMerchant({
       path: '/api/v1/tick', description: 'One metered call, paid through an x402 session', mimeType: 'application/json',
       accepts: () => [session(tickPrice)],
       handler: async () => json({ tick: ++ticks, price: `${tickPrice} USDC units`, servedAt: new Date().toISOString() }),
+    });
+  }
+  if (testRoutes && A.sessionEscrow) {
+    routes.push({
+      path: '/api/v1/broken', description: 'Test: a session route that fails to serve', mimeType: 'application/json',
+      accepts: () => [session(tickPrice)],
+      handler: async () => {
+        throw new Error('not served');
+      },
     });
   }
   if (testRoutes && A.sUSD) {
