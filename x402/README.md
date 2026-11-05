@@ -55,6 +55,7 @@ The key is in `~/.x402-sessions/agent.key`. Hold only what the agent may spend.
 4. Every USDC payment is simulated against the USDC contract first. One that would fail is not sent.
 5. A request missing an input the server requires is refused before paying.
 6. A timeout after payment is reported as charged, not delivered.
+7. On a pay-on-delivery session, each voucher covers only the calls already received.
 
 ## Funding service
 
@@ -158,6 +159,8 @@ same programs. Library: `import { createAgent } from '@pyzratio/x402-sessions'`,
    FACILITATOR_URL=http://127.0.0.1:4020 MERCHANT_PAYTO=0xYourAddress MERCHANT_TICK_PRICE=100 \
    x402-session-merchant                                # :4021; 100 = $0.0001 a call
    ```
+   `MERCHANT_PAY_ON_DELIVERY=1` serves each call before it is paid: the voucher with a call pays for the calls
+   before it, so a buyer never pays for a call it did not get, and the merchant's credit is one call.
 
 ### Agents
 

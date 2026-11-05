@@ -319,7 +319,7 @@ export async function createAgent({
     const s = ledger.sessions[sessionKey(r)];
     if (!s) return null;
     const now = await chainNow();
-    if (BigInt(s.deposit) - BigInt(s.cumulative) < BigInt(r.amount)) return null;
+    if (BigInt(s.deposit) - BigInt(s.received ?? s.cumulative) < BigInt(r.amount)) return null;
     if (BigInt(s.expiry) < now + minRemainingOf(r)) return null;
     const pending = s.open ?? s.pathStep ?? null;
     if (pending && BigInt(s.open ? s.open.validBefore : s.pathStep.deadline) <= now + 15n) {
@@ -420,7 +420,9 @@ export async function createAgent({
   async function authorizeSession(o) {
     const price = BigInt(o.r.amount);
     const s = (await usableSession(o.r)) ?? (await newSession(o.r));
-    const cumulative = BigInt(s.cumulative) + price;
+    const pod = o.r.extra?.payOnDelivery === true;
+    if (pod) s.received ??= s.cumulative;
+    const cumulative = pod ? BigInt(s.received) : BigInt(s.cumulative) + price;
     const voucher = await signTypedData(
       voucherTypedData({ chainId: dep.chainId, escrow: s.escrow, sessionId: s.sessionId, cumulative }), signer, work,
     );
@@ -718,7 +720,17 @@ export async function createAgent({
     const payload = await authorize(o);
     const s = ledger.sessions[sessionKey(o.r)];
     const paymentPayload = { x402Version: X402_VERSION, resource: required.resource, accepted: o.r, payload };
-    const charged = BigInt(o.r.amount);
+    const pod = o.r.extra?.payOnDelivery === true;
+    let charged = BigInt(o.r.amount);
+    const uncharge = () => {
+      if (!pod || charged === 0n) return;
+      spent -= charged;
+      ledger.spent = String(spent);
+      const i = ledger.recent.findLastIndex((x) => x.usd === String(charged));
+      if (i >= 0) ledger.recent.splice(i, 1);
+      charged = 0n;
+      saveLedger();
+    };
     let res;
     let text;
     try {
@@ -729,6 +741,7 @@ export async function createAgent({
       text = await res.text();
     } catch (e) {
       noteOutcome(o.r.payTo, 'failed');
+      uncharge();
       return {
         status: 0, paid: false, delivered: false, charged, mode: 'session', requirement: o.r, body: '', paymentPayload,
         error: e?.name === 'TimeoutError' ? timeoutError('after the voucher was sent') : `no answer after the voucher was sent: ${e.message}`,
@@ -744,8 +757,10 @@ export async function createAgent({
       s.open = null;
       s.pathStep = null;
       s.served += 1;
+      if (pod) s.received = String(BigInt(s.received ?? s.cumulative) + charged);
       saveLedger();
-    } else if (!retried && DEAD_SESSION.has(error)) {
+    } else if (pod && !delivered) uncharge();
+    if (!paid && !retried && DEAD_SESSION.has(error)) {
       const key = sessionKey(o.r);
       if (ledger.sessions[key] === s) {
         ledger.retired.push({ ...s, retiredBecause: error });
