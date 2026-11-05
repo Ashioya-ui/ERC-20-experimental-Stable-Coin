@@ -4,7 +4,7 @@
   "display_name": "x402 payments",
   "version": "0.0.0",
   "description": "Lets your agent pay x402 APIs in USDC on Base, within a budget you set.",
-  "long_description": "Gives the agent a wallet on Base the first time it is used, and three tools: x402_discover finds paid APIs on the x402 Bazaar, x402_fetch fetches a URL and pays when the server answers 402 Payment Required, and x402_wallet shows the address to fund, the balance and what has been spent. Every payment stays inside the total budget and the per-call limit set here. Where a server offers sessions, the agent deposits once and pays each call with a signed voucher, settled on-chain later in one transaction. The wallet needs USDC only, never ETH.",
+  "long_description": "A wallet on Base and four tools: x402_wallet, x402_fund, x402_discover and x402_fetch. Every payment stays inside the budget and limits set here; one past a limit needs your approval. Where a server offers sessions, calls are paid with signed vouchers and settled on-chain in one transaction. USDC only, no ETH.",
   "author": {
     "name": "Ashioya-ui",
     "url": "https://github.com/Ashioya-ui"

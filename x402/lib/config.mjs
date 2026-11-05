@@ -1,16 +1,4 @@
-// Addresses and EIP-712 domains of the rail on one chain, read from files the forge scripts
-// write and from the network's own config:
-//   deployments/<chainId>.json               a Spectrum deployment (sUSD, stabilizer, ...), optional
-//   deployments/<chainId>-router.json        the sUSD pay router, optional (needs the above)
-//   deployments/<chainId>-vault-router.json  VaultPayRouter, optional
-//   deployments/<chainId>-session-escrow.json X402SessionEscrow, optional
-//   deployments/<chainId>-session-paths.json  X402SessionPaths over that escrow, optional
-//   config/<chainId>.json                    the network: USDC and the vaults it trusts
-//
-// A chain with no Spectrum deployment is complete with USDC and VaultPayRouter alone: that is the
-// Base mainnet rail, where agents pay from an Aave position they already hold and nothing is
-// issued.
-
+// Addresses and EIP-712 domains for a chain, from deployments/ and config/.
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,10 +21,6 @@ export async function loadDeployment(chain) {
   if (!isAddress(usdc)) {
     throw new Error(`nothing known about chain ${chainId}: no deployments/${chainId}.json and no config/${chainId}.json`);
   }
-  // The vaults this side trusts with a payment. VAULTS overrides; otherwise the network's own
-  // primary vault, the one the fork tests run against. A payer may name any vault on-chain, but a
-  // facilitator pays gas for every attempt and an agent signs for every one, so neither takes a
-  // vault it has not chosen.
   const vaults = (process.env.VAULTS ? process.env.VAULTS.split(',') : [net?.external?.vault])
     .map((v) => String(v ?? '').trim())
     .filter(isAddress)

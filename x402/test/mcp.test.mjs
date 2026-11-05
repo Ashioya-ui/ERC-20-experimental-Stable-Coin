@@ -1,5 +1,3 @@
-// The MCP server (mcp.mjs) as an MCP client sees it: the handshake and tool list everywhere, and on
-// a live rail a wallet it made itself, funded, paying a merchant through x402_fetch.
 
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -71,7 +69,7 @@ describe('MCP server', () => {
   });
 
   test('makes its wallet key on first use, readable by its owner only', async () => {
-    await c.call('x402_wallet'); // the RPC is unreachable here, so this fails after the key exists
+    await c.call('x402_wallet');
     assert.equal(statSync(join(home, 'agent.key')).mode & 0o777, 0o600);
     assert.equal(statSync(home).mode & 0o777, 0o700);
   });

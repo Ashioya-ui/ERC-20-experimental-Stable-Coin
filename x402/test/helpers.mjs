@@ -1,6 +1,3 @@
-// Test world for the x402 rail: a running chain with Spectrum and the pay router deployed
-// (script/rehearsal/x402.sh sets one up), an in-process facilitator and merchant on ephemeral
-// ports, and agents with fresh encrypted keystores funded from anvil's unlocked account.
 
 import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -15,14 +12,12 @@ import { createMerchant } from '../merchant.mjs';
 import { createAgent } from '../agent.mjs';
 
 export const RPC = process.env.RPC_URL || 'http://127.0.0.1:8545';
-// anvil accounts 0 (deployer, USDC minter) and 4; unlocked on anvil only
 const FUNDER = (process.env.X402_FUNDER || '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266').toLowerCase();
 const FACILITATOR = (process.env.X402_FACILITATOR_ACCOUNT || '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65').toLowerCase();
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 export const ATTACKER = '0x000000000000000000000000000000000000a77a';
 
-/** true, or why the suite cannot run. */
 export async function available() {
   try {
     const dep = await loadDeployment(makeChain(RPC));
@@ -64,7 +59,6 @@ export async function setup() {
   async function fundUSDC(to, amount) {
     await send(A.usdc, 'mint(address,uint256)', [to, amount]);
   }
-  /** Deposit `assets` USDC (6 decimals) and mint the sUSD to `to`. */
   async function fundSUSD(to, assets) {
     await fundUSDC(FUNDER, assets);
     await send(A.usdc, 'approve(address,uint256)', [A.stabilizer, assets]);
@@ -91,14 +85,12 @@ export async function setup() {
     return a;
   }
 
-  /** Sign an EIP-3009 authorization with explicit fields (to build invalid or odd payments). */
   async function signAuthorization(signer, { token, primaryType = 'TransferWithAuthorization', message }) {
     const domain = token === A.sUSD ? dep.domains.sUSD : dep.domains.usdc;
     const typed = authorizationTypedData({ primaryType, ...domain, chainId: dep.chainId, verifyingContract: token, message });
     return signTypedData(typed, signer, dir);
   }
 
-  /** The 402 of `url` and a signed payment for it, not yet sent. */
   async function signedFor(a, url, prefer) {
     const required = decode((await fetch(url)).headers.get(HEADER.required));
     const o = await a.choose(required.accepts, prefer);
@@ -120,7 +112,6 @@ export async function setup() {
   const now = () => chain.timestamp();
   const index = () => chain.uint(A.sUSD, 'index()(uint256)');
 
-  /** Deploy MockERC1271Wallet(owner) from the forge build output. */
   async function deploy1271(owner) {
     const artifact = join(ROOT, 'out', 'MockERC1271Wallet.sol', 'MockERC1271Wallet.json');
     if (!existsSync(artifact)) throw new Error('build output missing: run forge build');
@@ -130,7 +121,6 @@ export async function setup() {
     return out.contractAddress.toLowerCase();
   }
 
-  /** A second facilitator (on `chainOverride`, e.g. a wrapped chain) and a merchant that uses it. */
   const extra = [];
   async function stack(chainOverride) {
     const f = await createFacilitator({ rpcUrl: RPC, signer: { kind: 'unlocked', address: FACILITATOR }, chain: chainOverride });

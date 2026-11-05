@@ -1,4 +1,3 @@
-// Unit tests of the pure parts of the x402 rail (no chain needed).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -51,10 +50,6 @@ test('cast output: JSON is found even with stray log lines around it (seen on a 
   assert.throws(() => parseJsonOutput(log), /no JSON object/);
   assert.equal(first('5000000 [5e6]'), '5000000');
 
-  // A log line can itself be JSON, and then "the first JSON object" is not the answer that was
-  // asked for. makeChain.receipt passes a predicate so it cannot mistake one for a receipt:
-  // reading a log record as a receipt with no status would report a payment that went through
-  // as failed, and throw away the record that it was ever broadcast.
   const jsonLog = '{"level":"ERROR","target":"alloy_provider","message":"failed to fetch block"}';
   const isReceipt = (v) => 'transactionHash' in v;
   assert.equal(parseJsonOutput(`${jsonLog}\n${receipt}`).level, 'ERROR', 'without a predicate, the log line wins');
@@ -67,7 +62,6 @@ test('signer specs', () => {
   assert.deepEqual(parseSigner('keystore:/k/agent', '/k/pw'), { kind: 'keystore', path: '/k/agent', passwordFile: '/k/pw' });
   assert.throws(() => parseSigner('keystore:/k/agent'), /password file/);
   assert.deepEqual(parseSigner('key:/k/agent.key'), { kind: 'key', path: '/k/agent.key' });
-  // A key itself is never accepted in a spec: only a path to the file that holds it.
   assert.throws(() => parseSigner('privatekey:0x01'), /unlocked:<address>, keystore:<path> or key:<path>/);
 });
 
@@ -83,7 +77,6 @@ test('dollar amounts', () => {
   assert.equal(formatUnits(-1n, 6), '-0.000001');
 });
 
-// ------------------------------------------------------------------------------------ vault router
 
 test('PayIntent fields reproduce the Solidity typehash string exactly', () => {
   const sol = readFileSync(new URL('../../src/vault/VaultPayRouter.sol', import.meta.url), 'utf8');

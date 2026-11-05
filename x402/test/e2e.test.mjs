@@ -1,8 +1,3 @@
-// End-to-end tests of the x402 rail against a live chain: merchant -> facilitator -> chain,
-// with agents that hold sUSD, USDC, or an ERC-1271 smart account.
-//
-//   script/rehearsal/x402.sh            sets up the chain and runs this suite
-//   RPC_URL=... npm test                against a chain that is already set up (from x402/)
 
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,9 +10,9 @@ import { available, setup, absDiff, reasonOf, submit, ATTACKER, RPC } from './he
 const ready = await available();
 const skip = ready === true ? false : `no Spectrum deployment with the pay router at ${RPC} (${ready}); run script/rehearsal/x402.sh`;
 
-const COMPUTE = 5_000_000_000_000_000n; // 0.005 sUSD
-const PREMIUM = 50_000n; // 0.05 USDC
-const USDC_ONLY = 20_000n; // 0.02 USDC
+const COMPUTE = 5_000_000_000_000_000n;
+const PREMIUM = 50_000n;
+const USDC_ONLY = 20_000n;
 const rand32 = () => '0x' + randomBytes(32).toString('hex');
 
 describe('x402 rail', { skip }, () => {
@@ -29,7 +24,6 @@ describe('x402 rail', { skip }, () => {
   });
   after(async () => w?.close());
 
-  // ------------------------------------------------------------------ the protocol surface
 
   test('a protected route answers 402 with a decodable PAYMENT-REQUIRED', async () => {
     const res = await fetch(url('/api/v1/compute'));
@@ -64,7 +58,6 @@ describe('x402 rail', { skip }, () => {
     assert.equal(reasonOf(res), 'invalid PAYMENT-SIGNATURE header');
   });
 
-  // ------------------------------------------------------------------ the four ways to pay
 
   test('sUSD direct: exact amount to the merchant, gasless for the agent', async () => {
     const a = await w.agent({ sUSD: 10_000_000n });
@@ -160,7 +153,6 @@ describe('x402 rail', { skip }, () => {
     assert.equal((await w.bal.usdc(w.merchantAddress)) - m0, PREMIUM);
   });
 
-  // ------------------------------------------------------------------ what must fail
 
   test('replay: a settled payment cannot be used again', async () => {
     const a = await w.agent({ sUSD: 10_000_000n });
@@ -200,7 +192,6 @@ describe('x402 rail', { skip }, () => {
     res = await submit(url('/api/v1/compute'), forged);
     assert.equal(reasonOf(res), 'invalid_exact_evm_payload_signature');
 
-    // after all that, the honest payment still goes through
     res = await submit(url('/api/v1/compute'), pp);
     assert.equal(res.status, 200);
   });
@@ -208,7 +199,7 @@ describe('x402 rail', { skip }, () => {
   test('time window: a stale authorization and a not-yet-valid one are refused', async () => {
     const a = await w.agent({ sUSD: 10_000_000n });
     const { paymentPayload: stale } = await w.signedFor(a, url('/api/v1/compute'));
-    await w.warp(70); // past maxTimeoutSeconds (60)
+    await w.warp(70);
     let res = await submit(url('/api/v1/compute'), stale);
     assert.equal(res.status, 402);
     assert.equal(reasonOf(res), 'invalid_exact_evm_payload_authorization_valid_before');
@@ -290,12 +281,10 @@ describe('x402 rail', { skip }, () => {
       assert.equal(v.isValid, false, `maxTimeoutSeconds=${JSON.stringify(t)}`);
       assert.ok(v.invalidReason, `no invalidReason for ${JSON.stringify(t)} (a 500 leaked instead)`);
     }
-    // null and undefined mean "not specified", so they fall back to the 60 s default.
     for (const t of [null, undefined]) {
       const r = { ...o.r, maxTimeoutSeconds: t };
       assert.equal((await w.post('/verify', { x402Version: 2, paymentPayload: { ...pp, accepted: r }, paymentRequirements: r })).isValid, true);
     }
-    // An absurd timeout must not let a far-future authorization through: it is capped.
     const far = JSON.parse(JSON.stringify(pp));
     const now = await w.now();
     far.payload.authorization.validBefore = String(now + 86_400n);
@@ -304,13 +293,10 @@ describe('x402 rail', { skip }, () => {
     const wide = { ...o.r, maxTimeoutSeconds: '99999999999' };
     const v = await w.post('/verify', { x402Version: 2, paymentPayload: { ...far, accepted: wide }, paymentRequirements: wide });
     assert.equal(v.invalidReason, 'invalid_exact_evm_payload_authorization_valid_before');
-    // The honest requirement still verifies.
     assert.equal((await w.post('/verify', { x402Version: 2, paymentPayload: pp, paymentRequirements: o.r })).isValid, true);
   });
 
   test('idle USDC is spent before redeeming more sUSD, so micropayment change does not strand (A-04)', async () => {
-    // Holding both, a USDC-priced invoice must come out of the USDC the agent already has:
-    // that costs no redeem fee and leaves the earning balance untouched.
     const a = await w.agent({ sUSD: 10_000_000n, usdc: 1_000_000n });
     const s0 = await w.bal.sUSD(a.address);
     const u0 = await w.bal.usdc(a.address);
@@ -320,7 +306,6 @@ describe('x402 rail', { skip }, () => {
     assert.equal(u0 - (await w.bal.usdc(a.address)), PREMIUM, 'exactly the price, no fee');
     assert.equal(await w.bal.sUSD(a.address), s0, 'the earning balance was not touched');
 
-    // With no USDC, the same invoice still routes out of sUSD.
     const b = await w.agent({ sUSD: 10_000_000n });
     const r2 = await b.pay(url('/api/v1/premium'));
     assert.equal(r2.paid, true, r2.error);
@@ -346,14 +331,13 @@ describe('x402 rail', { skip }, () => {
     assert.ok(!r.body.includes('shouldNotBeDelivered'));
   });
 
-  // ------------------------------------------------------------------ agent policy
 
   test('spend policy: per-request limit, budget and allow list stop the agent before it signs', async () => {
     const m0 = await w.bal.sUSD(w.merchantAddress);
-    const capped = await w.agent({ sUSD: 1_000_000n, policy: { maxPerRequest: 1_000n } }); // $0.001
+    const capped = await w.agent({ sUSD: 1_000_000n, policy: { maxPerRequest: 1_000n } });
     await assert.rejects(capped.pay(url('/api/v1/compute')), (e) => e instanceof PolicyError && /per-request limit/.test(e.message));
 
-    const budgeted = await w.agent({ sUSD: 1_000_000n, policy: { budget: 8_000n } }); // $0.008
+    const budgeted = await w.agent({ sUSD: 1_000_000n, policy: { budget: 8_000n } });
     assert.equal((await budgeted.pay(url('/api/v1/compute'))).paid, true);
     await assert.rejects(budgeted.pay(url('/api/v1/compute')), (e) => e instanceof PolicyError && /budget exhausted/.test(e.message));
     assert.equal(budgeted.spent, 5_000n);
@@ -363,13 +347,12 @@ describe('x402 rail', { skip }, () => {
     assert.ok(absDiff((await w.bal.sUSD(w.merchantAddress)) - m0, COMPUTE) <= 2n, 'only the one allowed payment went through');
   });
 
-  // ------------------------------------------------------------------ rebasing and settlement
 
   test('a rebase between signing and settlement does not break either payment kind', async () => {
     const a = await w.agent({ sUSD: 20_000_000n });
-    await w.warp(3601); // a rebase is due
+    await w.warp(3601);
     const vault = w.first(await w.chain.call(w.A.treasury, 'vault()(address)'));
-    await w.fundUSDC(vault, 1_000_000n); // a little vault interest, so there is surplus to distribute
+    await w.fundUSDC(vault, 1_000_000n);
     const direct = await w.signedFor(a, url('/api/v1/compute'));
     const routed = await w.signedFor(a, url('/api/v1/premium'));
     const i0 = await w.index();
@@ -428,7 +411,7 @@ describe('x402 rail', { skip }, () => {
     assert.equal(s2.transaction, s1.transaction);
     assert.ok(absDiff((await w.bal.sUSD(w.merchantAddress)) - m0, COMPUTE) <= 2n, 'paid exactly once');
 
-    lose = 1; // through a merchant: it asks again by itself and delivers
+    lose = 1;
     const r = await a.pay(`${s.merchantUrl}/api/v1/compute`);
     assert.equal(r.paid, true, r.error);
   });

@@ -1,6 +1,3 @@
-// Experiment: does an agent treasury actually come out ahead?
-// Yield accrues on the whole balance; the router fee is charged per payment on the payment
-// amount. So there is a daily spend rate at which fees cancel the yield. Measure it.
 import { makeChain, first } from '../lib/cast.mjs';
 import { loadDeployment } from '../lib/config.mjs';
 import { createAgent, formatUnits } from '../agent.mjs';
@@ -15,10 +12,6 @@ const rpc = (m, ...p) => import('../lib/cast.mjs').then(({ cast }) => cast(['rpc
 const agent = await createAgent({ rpcUrl: E.RPC_URL, facilitatorUrl: E.FACILITATOR_URL,
   signer: { kind: 'keystore', path: `${E.X402_WALLETS}/client`, passwordFile: E.AGENT_PASSWORD_FILE } });
 
-// Fees and yield are only comparable if the yield measured is ONE day's interest and not a
-// backlog. Surplus accumulates whenever nobody calls rebase, so drain it first: without this the
-// measurement silently reports whatever had piled up and the break-even comes out several times
-// too generous.
 async function drain(maxHours = 96) {
   let n = 0;
   while (n < maxHours && (await chain.uint(A.lens, 'distributable()(uint256)')) > 0n) {
@@ -28,8 +21,8 @@ async function drain(maxHours = 96) {
   return n;
 }
 
-const INVOICE = 50_000n;           // the price /api/v1/premium actually charges
-const N = 12;                      // payments in the measured window
+const INVOICE = 50_000n;
+const N = 12;
 const bal = () => chain.uint(A.sUSD, 'balanceOf(address)(uint256)', [agent.address]);
 const usdc = () => chain.uint(A.usdc, 'balanceOf(address)(uint256)', [agent.address]);
 
@@ -46,7 +39,6 @@ const t1 = await bal(), u1 = await usdc();
 const spentSUSD = t0 - t1, spentUSDC = u0 > u1 ? u0 - u1 : 0n;
 const totalInvoiced = BigInt(N) * INVOICE;
 
-// Now let a day of yield accrue on what remains, hourly, at 5% APY.
 const vault = first(await chain.call(A.treasury, 'vault()(address)'));
 let credited = 0n, rebases = 0;
 for (let h = 0; h < 24; h++) {

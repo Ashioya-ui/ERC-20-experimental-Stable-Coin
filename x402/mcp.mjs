@@ -1,29 +1,6 @@
 #!/usr/bin/env node
-// x402 payments for any agent: an MCP server (Model Context Protocol, stdio) that Claude, Cursor,
-// VS Code and any other MCP client can add with one line. It needs Node.js and nothing else. The
-// first time it is used it makes the agent a wallet on Base; every payment then stays inside the
-// limits its owner set.
-//
-//   npx -y @pyzratio/x402-sessions
-//
-// Settings, all optional, from the environment:
-//   AGENT_BUDGET           the most the agent may spend in total, in dollars (default 1)
-//   AGENT_MAX_PER_REQUEST  the most one call may cost, in dollars (default 0.10)
-//   AGENT_SESSION_DEPOSIT  what a session escrows when it opens, in dollars (default 0.20)
-//   AGENT_PATH             an X402SessionPaths path id, when an owner holds the money instead
-//   RPC_URL                Base JSON-RPC endpoints, comma-separated (default: two public ones)
-//   X402_HOME              where the wallet key and the spending ledger live (default ~/.x402-sessions)
-//   AGENT_TIMEOUT_S        the longest one paid request may take (default 30)
-//   AGENT_MAX_PER_MINUTE   the most the agent may spend in any minute, in dollars (default: 5 calls'
-//                          worth, five times AGENT_MAX_PER_REQUEST)
-//   AGENT_MAX_UNDELIVERED  paid calls in a row a merchant may leave unserved before it is paused (2)
-//   AGENT_MAX_PER_DAY, AGENT_MAX_PER_WEEK, AGENT_MAX_PER_MONTH  the most signed in any 24 hours, 7 days
-//                          or 30 days, in dollars (no cap unless set)
-//   AGENT_APPROVAL_MAX     the most one payment past a limit may be when the owner approves it (default 5)
-//   X402_DISCOVERY_URL     the x402 Bazaar search x402_discover uses (default: Coinbase's public one)
-//   AGENT_PATH_MERCHANTS   the path's merchants, comma-separated, to show what each can still receive
+// x402-sessions MCP server (stdio): x402_wallet, x402_fetch, x402_discover, x402_fund.
 
-// stdout carries the protocol and nothing else; anything printed goes to stderr.
 console.log = console.info = console.debug = (...a) => console.error(...a);
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -46,9 +23,6 @@ const PROTOCOLS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 const DEFAULT_RPC = 'https://mainnet.base.org,https://base-rpc.publicnode.com';
 const MAX_BODY = 20_000;
 
-// Settings arrive as environment variables from many hosts. A host that has no value for an
-// optional setting may pass an empty string, "undefined", "null" or its own unreplaced template
-// (Claude Desktop's ${user_config.x}); each of those means "not set".
 const env = Object.fromEntries(
   Object.entries(process.env)
     .map(([k, v]) => [k, String(v ?? '').trim()])
@@ -57,10 +31,7 @@ const env = Object.fromEntries(
 const HOME = env.X402_HOME || join(homedir(), '.x402-sessions');
 const usd = (units) => `$${formatUnits(units, 6)}`;
 
-// A setting that cannot be read never stops the server: it is reported in every answer, and the
-// limit it was meant to set pays nothing until it is fixed.
 const problems = [];
-/** A dollar setting: "1", "0.10", "$2", "1e-3" (rounded to the cent's ten-thousandth, 6 decimals). */
 function dollars(name, fallback) {
   const raw = env[name];
   if (raw === undefined) return parseUsd(fallback);
@@ -154,7 +125,6 @@ const TOOLS = [
   },
 ];
 
-/** The agent's key file, made on first use (0600, in a 0700 directory). */
 function wallet() {
   mkdirSync(HOME, { recursive: true, mode: 0o700 });
   const path = join(HOME, 'agent.key');
@@ -167,7 +137,7 @@ const policy = {
   budget: dollars('AGENT_BUDGET', '1'),
   maxPerRequest: dollars('AGENT_MAX_PER_REQUEST', '0.10'),
   sessionDeposit: dollars('AGENT_SESSION_DEPOSIT', '0.20'),
-  approvalMax: dollars('AGENT_APPROVAL_MAX', '5'), // the most one owner-approved payment may be
+  approvalMax: dollars('AGENT_APPROVAL_MAX', '5'),
 };
 const hardening = { ...env };
 for (const k of ['AGENT_TIMEOUT_S', 'AGENT_MAX_UNDELIVERED', 'AGENT_BREAKER_SECONDS']) {
@@ -178,13 +148,13 @@ for (const k of ['AGENT_TIMEOUT_S', 'AGENT_MAX_UNDELIVERED', 'AGENT_BREAKER_SECO
     delete hardening[k];
   }
 }
-for (const k of ['AGENT_MAX_PER_MINUTE', 'AGENT_MAX_PER_DAY', 'AGENT_MAX_PER_WEEK', 'AGENT_MAX_PER_MONTH', 'AGENT_APPROVAL_MAX']) delete hardening[k]; // dollar settings, read below
+for (const k of ['AGENT_MAX_PER_MINUTE', 'AGENT_MAX_PER_DAY', 'AGENT_MAX_PER_WEEK', 'AGENT_MAX_PER_MONTH', 'AGENT_APPROVAL_MAX']) delete hardening[k];
 Object.assign(policy, { ...policyFromEnv(hardening), approvalMax: policy.approvalMax });
 if (env.AGENT_MAX_PER_MINUTE) policy.maxPerMinute = dollars('AGENT_MAX_PER_MINUTE', '0');
 if (env.AGENT_MAX_PER_DAY) policy.maxPerDay = dollars('AGENT_MAX_PER_DAY', '0');
 if (env.AGENT_MAX_PER_WEEK) policy.maxPerWeek = dollars('AGENT_MAX_PER_WEEK', '0');
 if (env.AGENT_MAX_PER_MONTH) policy.maxPerMonth = dollars('AGENT_MAX_PER_MONTH', '0');
-policy.maxPerMinute ??= policy.maxPerRequest * 5n; // a loop of failing calls cannot drain the budget in seconds
+policy.maxPerMinute ??= policy.maxPerRequest * 5n;
 const pathId = env.AGENT_PATH && /^0x[0-9a-fA-F]{64}$/.test(env.AGENT_PATH) ? env.AGENT_PATH : undefined;
 if (env.AGENT_PATH && !pathId) problems.push(`AGENT_PATH is "${env.AGENT_PATH}", which is not a path id (0x and 64 hex digits), so it is ignored`);
 const settingsNote = () => (problems.length ? [`Settings to fix: ${problems.join('; ')}.`] : []);
@@ -199,20 +169,14 @@ function agent() {
     policy,
     userAgent: `x402-sessions/${VERSION} (+https://www.npmjs.com/package/@pyzratio/x402-sessions)`,
   }).catch((e) => {
-    agentPromise = null; // a failed start (an RPC down) is tried again on the next call
+    agentPromise = null;
     throw e;
   });
   return agentPromise;
 }
 
-/** "could not reach Base" for an RPC failure, the message itself otherwise. */
 const reason = (e) => (e?.code === 'RPC_UNREACHABLE' ? `could not reach Base right now (${e.message})` : e?.message ?? String(e));
 
-/**
- * How to fund the wallet, shortest first. `want` is what to suggest sending (USDC units): a
- * filled-in MetaMask send (one tap on a phone; a QR code from a desktop browser), and the same
- * payment request as an EIP-681 link any wallet can scan.
- */
 function fundingLines(a, want) {
   if (a.path) return [`Payments come from path ${a.path}, which its owner funds and can recall at any time.`];
   const lines = [`To fund it, send USDC on Base to ${a.address}. It needs no ETH: a payment is a signature, and the seller pays the gas.`];
@@ -220,7 +184,7 @@ function fundingLines(a, want) {
   const usdc = a.deployment?.addresses?.usdc;
   const chainId = Number(a.deployment?.chainId);
   if (usdc && chainId && want > 0n) {
-    const dollarsWanted = Math.max(1, Math.ceil(Number(want) / 1e6)); // the on-ramp takes whole dollars
+    const dollarsWanted = Math.max(1, Math.ceil(Number(want) / 1e6));
     lines.push(
       `One tap with MetaMask (a filled-in send of ${usd(want)} USDC on Base, to confirm in the app): `
         + `https://link.metamask.io/send/${usdc}@${chainId}/transfer?address=${a.address}&uint256=${want}`,
@@ -236,14 +200,13 @@ const stamp = () => `Checked ${new Date().toISOString().slice(0, 19).replace('T'
 const hhmm = (unixSeconds) => `${new Date(Number(unixSeconds) * 1000).toISOString().slice(11, 16)} UTC`;
 
 async function walletText() {
-  // The address comes from the key file alone, so it is always shown, even when Base cannot be read.
   const w = wallet();
   let a;
   let b;
   let path;
   try {
     a = await agent();
-    await a.reconcile(); // payments that expired unused stop counting against the budget
+    await a.reconcile();
     b = await a.balances();
     path = await a.pathState();
   } catch (e) {
@@ -260,11 +223,9 @@ async function walletText() {
   }
   const sessions = Object.values(a.sessions());
   const paused = Object.entries(a.breakers()).filter(([, x]) => x.until > Date.now());
-  // Signed payments the server has not collected: they count until they expire unused.
   const held = a.ledger().payments.filter((p) => p.pending);
   const heldUsd = held.reduce((s, p) => s + parseUsd(p.usd), 0n);
   const releases = held.reduce((m, p) => (BigInt(p.pending.validBefore) > m ? BigInt(p.pending.validBefore) : m), 0n);
-  // Suggest topping the wallet up to what the budget still allows.
   const room = policy.budget - a.spent;
   const want = room > b.usdc ? room - b.usdc : 0n;
   return [
@@ -272,7 +233,6 @@ async function walletText() {
     `USDC: ${formatUnits(b.usdc, 6)}`,
     `Spent: ${usd(a.spent)} of a ${usd(policy.budget)} budget; at most ${usd(policy.maxPerRequest)} a call.`,
     ...a.windows().filter((w) => w.name !== 'minute').map((w) => `Signed ${w.what}: ${usd(w.spent)} of a ${usd(w.cap)} ${w.name} cap.`),
-    // The proved ceiling (docs/design/agent-limits.md): the most this agent can still move on its own.
     `Most it can move from here without you: ${usd(room > 0n ? (room < b.usdc ? room : b.usdc) : 0n)} (the smaller of the balance and the budget left). `
       + (clientCaps?.elicitation
         ? `Past a limit, it asks you to approve each payment (at most ${usd(policy.approvalMax)}); the agent cannot approve itself.`
@@ -304,7 +264,6 @@ async function fetchText({ url, method = 'GET', headers = {}, body, prefer = 'se
   const r = await a.pay(String(url), {
     prefer, method: String(method).toUpperCase(), headers: Object.fromEntries(Object.entries(headers ?? {}).map(([k, v]) => [k, String(v)])),
     body: body === undefined ? undefined : String(body),
-    // Owner approval past a limit, where the client can ask its user (MCP elicitation).
     approve: clientCaps?.elicitation ? (q) => approve({ ...q, url }) : undefined,
   });
   const cost = r.charged ?? a.spent - before;
@@ -316,7 +275,6 @@ async function fetchText({ url, method = 'GET', headers = {}, body, prefer = 'se
     if (r.settlement?.transaction) head.push(`transaction ${r.settlement.transaction}`);
   }
   const undelivered = !r.delivered && r.charged > 0n;
-  // A one-off payment the server did not settle has not left the wallet: it is held until it expires.
   const auth = r.paymentPayload?.payload?.authorization;
   const collected = r.settlement?.success === true;
   if (undelivered && auth && !collected) {
@@ -334,8 +292,6 @@ async function fetchText({ url, method = 'GET', headers = {}, body, prefer = 'se
 }
 
 const DISCOVERY = env.X402_DISCOVERY_URL || 'https://api.cdp.coinbase.com/platform/v2/x402/discovery/search';
-// Funding through licensed partners: the endpoint that holds the partner key (x402/funding.mjs),
-// and Yellow Card's public widget key. Each method is offered only when it is set up.
 const FUNDING_URL = (env.X402_FUNDING_URL || '').replace(/\/$/, '');
 const YELLOWCARD_KEY = env.X402_YELLOWCARD_KEY || '';
 const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
@@ -368,7 +324,6 @@ async function fundText({ method, amount_kes: kes, amount_usd: usdAmount, phone,
   return `${out.message}\nAsk "Show my x402 wallet" in a minute or two to see it arrive.`;
 }
 
-/** Paid APIs from the x402 Bazaar that this wallet can pay: USDC on Base, within the per-call limit. */
 async function discoverText({ query, max_price_usd: maxPrice, limit = 8 }) {
   const q = String(query ?? '').trim().slice(0, 400);
   if (!q) throw new Error('query is required: say what the API should do');
@@ -423,7 +378,6 @@ async function callTool(name, args) {
         const ag = await agentPromise;
         text += `\n${fundingLine(ag, policy.budget > ag.spent ? policy.budget - ag.spent : 0n)}`;
       } catch {
-        // the funding hint is best effort
       }
     }
     return { content: [{ type: 'text', text }], isError: true };
@@ -432,7 +386,6 @@ async function callTool(name, args) {
 
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 
-// Requests this server sends the client (elicitation), by id, until the client answers.
 let clientCaps = {};
 const asked = new Map();
 let askId = 0;
@@ -452,12 +405,7 @@ function ask(method, params, timeoutMs) {
   });
 }
 
-/**
- * One-tap owner approval of a payment past a limit the owner set, through the MCP client's own
- * prompt (elicitation). The client shows it to the person, not to the model, so the agent cannot
- * approve itself. No answer within APPROVAL_SECONDS is a refusal.
- */
-const APPROVAL_SECONDS = 110; // under the wallet lock's 120 s wait, so other windows are not starved
+const APPROVAL_SECONDS = 110;
 async function approve({ usd: amount, payTo, reason: why, url }) {
   const host = (() => {
     try {
@@ -479,8 +427,8 @@ async function approve({ usd: amount, payTo, reason: why, url }) {
 }
 
 async function handle(m) {
-  if (m && typeof m === 'object' && typeof m.method !== 'string' && asked.has(m.id)) return asked.get(m.id)(m); // an answer to our request
-  if (!m || typeof m !== 'object' || typeof m.method !== 'string') return; // responses and junk
+  if (m && typeof m === 'object' && typeof m.method !== 'string' && asked.has(m.id)) return asked.get(m.id)(m);
+  if (!m || typeof m !== 'object' || typeof m.method !== 'string') return;
   const { id, method, params } = m;
   const isRequest = id !== undefined && id !== null;
   const reply = (result) => isRequest && send({ jsonrpc: '2.0', id, result });
@@ -488,7 +436,6 @@ async function handle(m) {
     case 'initialize':
       clientCaps = params?.capabilities ?? {};
       return reply({
-        // The client's version when this server speaks it, otherwise the latest this server speaks (MCP lifecycle rule).
         protocolVersion: PROTOCOLS.includes(params?.protocolVersion) ? params.protocolVersion : PROTOCOLS[0],
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: 'x402-sessions', title: 'x402 payments', version: VERSION },

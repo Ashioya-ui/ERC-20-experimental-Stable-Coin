@@ -1,4 +1,3 @@
-// Red-team helpers. No existing file is modified; this only reads deployment + builds requests.
 import { parseSigner } from '../lib/cast.mjs';
 import { createAgent } from '../agent.mjs';
 import { encode, decode, HEADER, X402_VERSION } from '../lib/protocol.mjs';
@@ -19,7 +18,7 @@ export async function post(base, path, body, { raw } = {}) {
   });
   let j = null, t = null;
   t = await res.text();
-  try { j = JSON.parse(t); } catch { /* keep text */ }
+  try { j = JSON.parse(t); } catch { }
   return { status: res.status, json: j, text: t };
 }
 
@@ -30,7 +29,6 @@ export async function get402(path) {
   return { status: res.status, required };
 }
 
-// Pay the merchant directly with a crafted PAYMENT-SIGNATURE payload object.
 export async function payMerchant(path, paymentPayload, { method = 'GET' } = {}) {
   const res = await fetch(`${MER}${path}`, {
     method, redirect: 'manual',
