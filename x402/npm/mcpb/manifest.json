@@ -48,7 +48,7 @@
   "tools": [
     {
       "name": "x402_fund",
-      "description": "Add money to the wallet the way the owner picks: an M-Pesa prompt, a card checkout, Yellow Card, or one-tap MetaMask links; it lands straight in the wallet."
+      "description": "Add money the way the owner picks: an M-Pesa prompt (credited at an API that takes M-Pesa, or as USDC through the funding service), a card checkout, Yellow Card, or one-tap MetaMask links."
     },
     {
       "name": "x402_discover",

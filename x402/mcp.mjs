@@ -10,6 +10,8 @@ import { createInterface } from 'node:readline';
 import { createAgent, formatUnits, parseUsd, policyFromEnv, PolicyError } from './agent.mjs';
 import { isMain } from './lib/cli.mjs';
 import { addressOfKey, newKey } from './lib/evm.mjs';
+import { decode, mpesaRequirement } from './lib/protocol.mjs';
+import { kes } from './mpesa.mjs';
 
 const PKG = (() => {
   try {
@@ -79,9 +81,10 @@ const TOOLS = [
     name: 'x402_fund',
     title: 'Add money to the wallet',
     description:
-      'Add money to this agent\'s wallet, straight to its address on Base, the way the owner picks: "mpesa" (an M-Pesa prompt ' +
-      'on their phone; needs their Kenyan number, the name on the account and an amount in KES), "card" (a card checkout ' +
-      'link; same details), "yellowcard" (Yellow Card\'s checkout) or "metamask" (one-tap links from a MetaMask wallet). ' +
+      'Add money the way the owner picks. "mpesa" with "for" (the URL of an API that takes M-Pesa): an M-Pesa prompt on their ' +
+      'phone for whole shillings, credited at that API; add "every" (day, week or month) for a standing order they approve once ' +
+      'and cancel from M-Pesa. "mpesa" without "for", or "card": USDC on Base through the funding service (needs their Kenyan ' +
+      'number, the name on the account and an amount in KES). "yellowcard": Yellow Card\'s checkout. "metamask": one-tap links. ' +
       'Ask the owner which before calling it; never call it without them asking to add money.',
     inputSchema: {
       type: 'object',
@@ -91,6 +94,9 @@ const TOOLS = [
         amount_usd: { type: 'number', description: 'For metamask: the amount in US dollars (default: what the budget still allows).' },
         phone: { type: 'string', description: 'For mpesa and card: the owner\'s Kenyan mobile number.' },
         name: { type: 'string', description: 'For mpesa and card: the name on the M-Pesa or card account.' },
+        for: { type: 'string', description: 'For mpesa: the URL of an API that takes M-Pesa. The shillings become credit there.' },
+        every: { type: 'string', enum: ['day', 'week', 'month'], description: 'For mpesa with "for": repeat as an M-Pesa standing order.' },
+        until: { type: 'string', description: 'For a standing order: its last day (YYYY-MM-DD). Default: 90 days.' },
       },
       required: ['method'],
     },
@@ -228,6 +234,11 @@ async function walletText() {
   const releases = held.reduce((m, p) => (BigInt(p.pending.validBefore) > m ? BigInt(p.pending.validBefore) : m), 0n);
   const room = policy.budget - a.spent;
   const want = room > b.usdc ? room - b.usdc : 0n;
+  const mpesa = [];
+  for (const m of Object.values(a.mpesa())) {
+    const c = await fetch(`${m.credit}/${a.address}`, { signal: AbortSignal.timeout(10_000) }).then((r) => r.json()).catch(() => null);
+    mpesa.push(c?.kes ? `M-Pesa credit at ${m.shortcode}: KES ${c.kes.available} of KES ${c.kes.credited} (${new URL(m.credit).origin})` : `M-Pesa credit at ${m.shortcode}: unknown, its service did not answer`);
+  }
   return [
     `Address: ${a.address} (${a.deployment.network === 'eip155:8453' ? 'Base' : a.deployment.network})`,
     `USDC: ${formatUnits(b.usdc, 6)}`,
@@ -251,6 +262,7 @@ async function walletText() {
     sessions.length
       ? `Open sessions: ${sessions.map((s) => `${s.payee} (${usd(BigInt(s.cumulative))} used of ${usd(BigInt(s.deposit))})`).join('; ')}`
       : 'Open sessions: none.',
+    ...mpesa,
     ...fundingLines(a, want),
     `The key is in ${join(HOME, 'agent.key')}.`,
     stamp(),
@@ -270,7 +282,9 @@ async function fetchText({ url, method = 'GET', headers = {}, body, prefer = 'se
   const head = [r.status === 0 ? 'no answer' : `HTTP ${r.status}`];
   if (r.approved) head.push(`approved by the owner past this limit: ${r.approved}`);
   if (r.paid) {
-    head.push(`paid ${usd(cost)} by ${r.mode === 'USDC' ? 'a USDC transfer' : r.mode}${r.mode !== 'session' && !r.settlement ? ' (the server sent no settlement receipt)' : ''}`);
+    head.push(r.mode === 'mpesa'
+      ? `paid KES ${kes(r.kes)} from M-Pesa credit (${usd(cost)})${r.kesLeft != null ? `, KES ${kes(r.kesLeft)} left` : ''}`
+      : `paid ${usd(cost)} by ${r.mode === 'USDC' ? 'a USDC transfer' : r.mode}${r.mode !== 'session' && !r.settlement ? ' (the server sent no settlement receipt)' : ''}`);
     if (r.simulated) head.push('simulated against the USDC contract before it was sent');
     if (r.settlement?.transaction) head.push(`transaction ${r.settlement.transaction}`);
   }
@@ -297,7 +311,47 @@ const YELLOWCARD_KEY = env.X402_YELLOWCARD_KEY || '';
 const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 const fundingMethods = () => ['metamask', ...(FUNDING_URL ? ['mpesa', 'card'] : []), ...(YELLOWCARD_KEY ? ['yellowcard'] : [])];
 
-async function fundText({ method, amount_kes: kes, amount_usd: usdAmount, phone, name }) {
+async function mpesaFund({ url, phone, amount, every, until }) {
+  if (!/^https?:\/\//i.test(String(url ?? ''))) throw new Error('for must be the http:// or https:// URL of an API that takes M-Pesa');
+  const w = wallet();
+  const ua = { 'user-agent': `x402-sessions/${VERSION}` };
+  const res = await fetch(String(url), { headers: ua, signal: AbortSignal.timeout(20_000) });
+  let offer = null;
+  if (res.status === 402) {
+    let required = null;
+    try {
+      const h = res.headers.get('payment-required');
+      required = h ? decode(h) : await res.json();
+    } catch {
+    }
+    offer = (Array.isArray(required?.accepts) ? required.accepts : []).find(mpesaRequirement) ?? null;
+  }
+  if (!offer) throw new Error(`${url} does not take M-Pesa: its 402 answer has no M-Pesa offer`);
+  const target = every ? offer.extra.ratiba : offer.extra.topup;
+  if (!/^https?:\/\//.test(String(target ?? ''))) throw new Error(`${url} does not offer ${every ? 'standing orders' : 'top-ups'}`);
+  const post = await fetch(target, {
+    method: 'POST', headers: { ...ua, 'content-type': 'application/json' }, signal: AbortSignal.timeout(40_000),
+    body: JSON.stringify({ address: w.address, phone, amount, every, until }),
+  });
+  const out = await post.json().catch(() => ({}));
+  if (!out?.ok) throw new Error(out?.message || `the M-Pesa service answered HTTP ${post.status}`);
+  if (every) return out.message;
+  const credit = async () => (await fetch(`${offer.extra.credit}/${w.address}`, { headers: ua, signal: AbortSignal.timeout(10_000) })).json();
+  for (const end = Date.now() + 90_000; Date.now() < end;) {
+    await new Promise((r) => setTimeout(r, 3000));
+    const s = await (await fetch(`${target}/${encodeURIComponent(out.id)}`, { headers: ua, signal: AbortSignal.timeout(20_000) })).json().catch(() => ({}));
+    if (s.state === 'paid') {
+      const c = await credit().catch(() => null);
+      return `KES ${amount} added by M-Pesa${s.receipt ? ` (receipt ${s.receipt})` : ''}.`
+        + (c?.kes ? ` M-Pesa credit at ${offer.payTo}: KES ${c.kes.available}.` : '');
+    }
+    if (s.state === 'failed') throw new Error(`the M-Pesa payment did not go through: ${s.reason}`);
+  }
+  return `${out.message} Not confirmed yet: after approving, ask "Show my x402 wallet".`;
+}
+
+async function fundText({ method, amount_kes: kes, amount_usd: usdAmount, phone, name, for: forUrl, every, until }) {
+  if (method === 'mpesa' && forUrl) return mpesaFund({ url: forUrl, phone, amount: kes, every, until });
   const w = wallet();
   if (pathId) return `Payments come from path ${pathId}: its owner funds the path, not this wallet.`;
   const offered = fundingMethods();
