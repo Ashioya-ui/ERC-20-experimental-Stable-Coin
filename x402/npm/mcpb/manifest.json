@@ -4,7 +4,7 @@
   "display_name": "x402 payments",
   "version": "0.0.0",
   "description": "Lets your agent pay x402 APIs in USDC on Base, within a budget you set.",
-  "long_description": "Gives the agent a wallet on Base the first time it is used, and two tools: x402_fetch fetches a URL and pays when the server answers 402 Payment Required, and x402_wallet shows the address to fund, the balance and what has been spent. Every payment stays inside the total budget and the per-call limit set here. Where a server offers sessions, the agent deposits once and pays each call with a signed voucher, settled on-chain later in one transaction. The wallet needs USDC only, never ETH.",
+  "long_description": "Gives the agent a wallet on Base the first time it is used, and three tools: x402_discover finds paid APIs on the x402 Bazaar, x402_fetch fetches a URL and pays when the server answers 402 Payment Required, and x402_wallet shows the address to fund, the balance and what has been spent. Every payment stays inside the total budget and the per-call limit set here. Where a server offers sessions, the agent deposits once and pays each call with a signed voucher, settled on-chain later in one transaction. The wallet needs USDC only, never ETH.",
   "author": {
     "name": "Ashioya-ui",
     "url": "https://github.com/Ashioya-ui"
@@ -15,29 +15,52 @@
   },
   "homepage": "https://github.com/Ashioya-ui/ERC-20-experimental-Stable-Coin/tree/main/x402",
   "license": "MIT",
-  "keywords": ["x402", "payments", "usdc", "base", "agents"],
+  "keywords": [
+    "x402",
+    "payments",
+    "usdc",
+    "base",
+    "agents"
+  ],
   "server": {
     "type": "node",
     "entry_point": "server/x402/mcp.mjs",
     "mcp_config": {
       "command": "node",
-      "args": ["${__dirname}/server/x402/mcp.mjs"],
+      "args": [
+        "${__dirname}/server/x402/mcp.mjs"
+      ],
       "env": {
         "AGENT_BUDGET": "${user_config.budget}",
         "AGENT_MAX_PER_REQUEST": "${user_config.max_per_call}",
         "AGENT_PATH": "${user_config.path_id}",
-        "RPC_URL": "${user_config.rpc_url}"
+        "RPC_URL": "${user_config.rpc_url}",
+        "AGENT_PATH_MERCHANTS": "${user_config.path_merchants}",
+        "AGENT_MAX_PER_DAY": "${user_config.max_per_day}",
+        "AGENT_MAX_PER_WEEK": "${user_config.max_per_week}",
+        "AGENT_MAX_PER_MONTH": "${user_config.max_per_month}",
+        "AGENT_APPROVAL_MAX": "${user_config.approval_max}",
+        "X402_FUNDING_URL": "${user_config.funding_url}",
+        "X402_YELLOWCARD_KEY": "${user_config.yellowcard_key}"
       }
     }
   },
   "tools": [
+    {
+      "name": "x402_fund",
+      "description": "Add money to the wallet the way the owner picks: an M-Pesa prompt, a card checkout, Yellow Card, or one-tap MetaMask links; it lands straight in the wallet."
+    },
+    {
+      "name": "x402_discover",
+      "description": "Find paid APIs on the x402 Bazaar that this wallet can pay, with their price, usage and an example of the inputs they need. Free."
+    },
     {
       "name": "x402_fetch",
       "description": "Fetch a URL, paying with x402 in USDC on Base when the server asks, within your limits."
     },
     {
       "name": "x402_wallet",
-      "description": "Show the wallet address to fund, the USDC balance, the limits and what has been spent."
+      "description": "Show the wallet address to fund, the USDC balance, the limits, what has been spent, and for a path what it and each merchant can still receive."
     }
   ],
   "user_config": {
@@ -57,6 +80,35 @@
       "min": 0,
       "required": false
     },
+    "max_per_day": {
+      "type": "number",
+      "title": "Most per day (USD, optional)",
+      "description": "The most the agent may sign for in any 24 hours. Leave empty for no daily cap.",
+      "min": 0,
+      "required": false
+    },
+    "max_per_week": {
+      "type": "number",
+      "title": "Most per week (USD, optional)",
+      "description": "The most in any 7 days. Leave empty for no weekly cap.",
+      "min": 0,
+      "required": false
+    },
+    "max_per_month": {
+      "type": "number",
+      "title": "Most per month (USD, optional)",
+      "description": "The most in any 30 days. Leave empty for no monthly cap.",
+      "min": 0,
+      "required": false
+    },
+    "approval_max": {
+      "type": "number",
+      "title": "Most you can approve past a limit (USD)",
+      "description": "When the agent hits a limit, Claude asks you to approve that one payment. This is the most such a payment may be.",
+      "default": 5,
+      "min": 0,
+      "required": false
+    },
     "rpc_url": {
       "type": "string",
       "title": "Base RPC endpoints",
@@ -70,9 +122,34 @@
       "description": "An X402SessionPaths path id, when an owner holds the money instead of this wallet.",
       "default": "",
       "required": false
+    },
+    "path_merchants": {
+      "type": "string",
+      "title": "Path merchants (optional)",
+      "description": "The merchants on the owner's path, comma-separated, to show what each can still receive.",
+      "default": "",
+      "required": false
+    },
+    "funding_url": {
+      "type": "string",
+      "title": "Funding service (optional)",
+      "description": "The M-Pesa and card funding service URL, when your provider gives you one.",
+      "default": "",
+      "required": false
+    },
+    "yellowcard_key": {
+      "type": "string",
+      "title": "Yellow Card widget key (optional)",
+      "description": "The public Yellow Card widget key, when you have one.",
+      "default": "",
+      "required": false
     }
   },
   "compatibility": {
-    "platforms": ["darwin", "win32", "linux"]
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ]
   }
 }

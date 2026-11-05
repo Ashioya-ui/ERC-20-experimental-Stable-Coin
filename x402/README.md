@@ -5,13 +5,18 @@ Pay an x402 API a thousand times and settle on-chain once.
 ## Give your agent x402 payments
 
 Any agent that speaks MCP (Claude Desktop, Claude Code, Cursor, Windsurf, VS Code, Codex CLI and
-others) can pay x402 APIs with this. It needs Node.js and nothing else.
+others) can pay x402 APIs with this, version 1 and version 2 alike. It needs Node.js 18 or later and
+nothing else.
 
 1. **Add it to your agent.**
    - **Claude Desktop:** download
      [`x402-sessions.mcpb`](https://github.com/Ashioya-ui/ERC-20-experimental-Stable-Coin/releases/latest/download/x402-sessions.mcpb)
-     and open it. Claude Desktop installs it and asks for your budget and your limit per call.
-   - **Claude Code:** `claude mcp add x402 -- npx -y @pyzratio/x402-sessions`
+     and open it. Claude Desktop installs it and asks for your budget and your limit per call. If
+     opening the file does nothing (Windows often has no app set for `.mcpb`): Settings → Desktop
+     app → Extensions → Manage → Advanced settings → Install extension, and pick the file.
+   - **Claude Code:** `claude mcp add --scope user x402 -- npx -y @pyzratio/x402-sessions`
+     (`--scope user` makes it available in every folder, not only the one you ran it in). On Windows
+     outside WSL: `claude mcp add --scope user x402 -- cmd /c npx -y @pyzratio/x402-sessions`.
    - **Any other MCP client:** add this server to its MCP settings.
      ```json
      { "mcpServers": { "x402": { "command": "npx", "args": ["-y", "@pyzratio/x402-sessions"],
@@ -19,14 +24,72 @@ others) can pay x402 APIs with this. It needs Node.js and nothing else.
      ```
 2. **Ask your agent for its wallet:** "Show my x402 wallet." The first time, it makes a wallet on
    Base and shows the address.
-3. **Fund it.** Send USDC on Base to that address from Coinbase, MetaMask or any wallet that holds
-   USDC on Base. A few dollars covers thousands of small calls. It needs no ETH.
-4. **Use paid APIs.** Ask your agent to fetch any x402 URL. It pays when the server asks, never more
-   than your limit per call, and stops at your budget.
+3. **Fund it.** Ask your agent to add money and pick how: an **M-Pesa** prompt on your phone, a **card**
+   checkout, **Yellow Card**, or **MetaMask** (`x402_fund`). M-Pesa and card go through Kotani Pay
+   and land straight in the agent's wallet as USDC on Base. The wallet answer also includes a one-tap MetaMask link: on a phone it opens MetaMask with
+   the USDC send on Base already filled in (address, amount, network), so funding is one Confirm;
+   any other wallet can scan the `ethereum:` payment request next to it. From M-Pesa or a bank:
+   buy USDC on Base in your wallet app (MetaMask: Buy) or on an exchange, then use the link. A few
+   dollars covers thousands of small calls. It needs no ETH. No crypto yet? The same answer has a
+   MetaMask Buy link with USDC on Base filled in: pay by card, or a local method where MetaMask
+   offers one, then use the one-tap send.
+4. **Find and use paid APIs.** Ask your agent to find one ("find a paid API for flight prices"):
+   `x402_discover` searches the x402 Bazaar, the public directory of pay-per-call APIs, and lists
+   those your wallet can pay with their price, usage and the inputs they need. Then ask it to fetch any x402 URL, for example
+   "Fetch https://2s.io/api/crypto/gas-oracle?chain=base with x402_fetch". It pays when the server
+   asks, never more than your limit per call, and stops at your budget. When the server publishes
+   its inputs with its price, a request missing a required one is refused before anything is paid.
 
-Without settings, the budget is $1 and the limit is $0.10 a call. The wallet key lives in
+Without settings, the budget is $1, the limit is $0.10 a call and $0.50 a minute. The wallet key lives in
 `~/.x402-sessions/agent.key` on your computer, so keep only what the agent should spend in it.
 For money the agent should never hold at all, see [paths](#give-an-agent-a-budget-owners).
+
+## The funding service (M-Pesa and card)
+
+M-Pesa and card funding use a licensed on-ramp partner, Kotani Pay, whose API key cannot ship in a
+public package. `x402/funding.mjs` is the one small service that holds it: it creates the order
+(USDC on Base to the agent's address), sends the M-Pesa prompt or returns the card checkout, and
+holds no wallet or money. It limits each phone to one order every two minutes and each caller to
+ten an hour.
+
+```bash
+KOTANI_API_KEY=... KOTANI_API_URL=https://<production api>/api/v3 PUBLIC_URL=https://<this service> \
+  npx -y -p @pyzratio/x402-sessions x402-funding
+```
+
+Point agents at it with `X402_FUNDING_URL` (Claude Desktop: "Funding service"). Yellow Card's
+checkout needs only its public widget key: `X402_YELLOWCARD_KEY`.
+
+## Limits that hold when the agent misbehaves
+
+The MCP server enforces these, so a looping or hijacked agent stays inside them. Each is proved in
+[`docs/design/agent-limits.md`](../docs/design/agent-limits.md); for a path agent, the contract
+proves the ceiling on-chain, and `x402_wallet` reads it:
+
+- **Signed is spent.** Every voucher and payment authorization counts against the budget the moment it
+  is signed, whatever the merchant answers. A one-off authorization that expires unused is released.
+- **Timeouts.** No request waits more than `AGENT_TIMEOUT_S` (30 s). A timeout after the payment left
+  is reported as "charged, not delivered", never as success.
+- **Merchants that take payment without serving are paused.** After `AGENT_MAX_UNDELIVERED` (2) paid
+  calls in a row that were not served, the merchant is paused for `AGENT_BREAKER_SECONDS` (600).
+- **Spending speed.** `AGENT_MAX_PER_MINUTE` caps what can be spent in any minute (default: five calls'
+  worth), so a retry loop cannot drain the budget in seconds. `AGENT_MAX_PER_DAY`, `AGENT_MAX_PER_WEEK`
+  and `AGENT_MAX_PER_MONTH` cap any rolling 24 hours, 7 days and 30 days (Claude Desktop asks for them
+  at install); the wallet shows each against its cap.
+- **One paid call at a time, per wallet.** Calls that arrive together are paid in turn, so no two can
+  pass the same check, and that holds across processes: Claude Desktop and every Claude Code or
+  Cursor session paying from the same wallet share one ledger, read afresh under a lock for each
+  call, so the budget and the minute limit are the wallet's, not each window's.
+- **You approve what goes past a limit.** When a payment would break a limit, Claude asks you to
+  approve that one payment (in clients with MCP elicitation, up to `AGENT_APPROVAL_MAX`, $5); the
+  agent cannot approve itself, and no answer in 110 seconds is a no.
+- **Simulated before it leaves.** Every USDC payment is run against the USDC contract first; one the
+  chain would reject is never sent.
+- **The most it can lose, shown.** The wallet shows the most the agent can still move without you:
+  the smaller of its balance and the budget left, proved, not insured.
+- **The ceiling, live.** For a path agent, `x402_wallet` shows what the path can still pay out and
+  what each merchant can still receive on-chain (set `AGENT_PATH_MERCHANTS` to list the path's
+  merchants; otherwise it shows those already paid).
 
 ## How sessions work
 

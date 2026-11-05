@@ -10,6 +10,12 @@ export const HEADER = {
   response: 'PAYMENT-RESPONSE',
 };
 
+// x402 version 1, which many live merchants still speak: the 402's JSON body is the offer, an
+// offer prices in `maxAmountRequired` on a named network, the paid retry carries X-PAYMENT and the
+// receipt comes back in X-PAYMENT-RESPONSE. The agent pays version 1 offers in the `exact` scheme.
+export const HEADER_V1 = { signature: 'X-PAYMENT', response: 'X-PAYMENT-RESPONSE' };
+export const V1_NETWORKS = { base: 8453, 'base-sepolia': 84532 };
+
 export const encode = (obj) => Buffer.from(JSON.stringify(obj), 'utf8').toString('base64');
 export const decode = (b64) => JSON.parse(Buffer.from(String(b64), 'base64').toString('utf8'));
 

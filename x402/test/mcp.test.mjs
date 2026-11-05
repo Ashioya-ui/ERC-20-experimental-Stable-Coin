@@ -58,7 +58,7 @@ describe('MCP server', () => {
     assert.ok(init.result.capabilities.tools);
     c.notify('notifications/initialized');
     const { result } = await c.request('tools/list');
-    assert.deepEqual(result.tools.map((t) => t.name).sort(), ['x402_fetch', 'x402_wallet']);
+    assert.deepEqual(result.tools.map((t) => t.name).sort(), ['x402_discover', 'x402_fetch', 'x402_fund', 'x402_wallet']);
     for (const t of result.tools) assert.equal(t.inputSchema.type, 'object');
   });
 

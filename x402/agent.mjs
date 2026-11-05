@@ -33,18 +33,30 @@
 //          AGENT_ALLOWED_PAYTO (comma-separated), AGENT_LEDGER (a JSON file that keeps the
 //          amount spent and the open sessions across runs), AGENT_SESSION_DEPOSIT and
 //          AGENT_MAX_SESSION_DEPOSIT (USD), AGENT_SESSION_SECONDS, AGENT_PATH (an X402SessionPaths path
-//          id: the agent then holds no money, and opens every session as a step on its owner's path).
+//          id: the agent then holds no money, and opens every session as a step on its owner's path),
+//          AGENT_TIMEOUT_S (seconds one HTTP request may take, default 30), AGENT_MAX_PER_MINUTE (USD
+//          spent in any minute), AGENT_MAX_UNDELIVERED (paid calls in a row a merchant may fail before
+//          it is paused, default 2), AGENT_BREAKER_SECONDS (how long, default 600) and
+//          AGENT_PATH_MERCHANTS (the path's merchants, comma-separated, for the per-merchant ceiling).
+//
+// Signed is spent, in every mode: a voucher or an EIP-3009 authorization counts against the budget
+// when it is signed, whatever the merchant answers. A one-off authorization that expires unused is
+// released again by reconcile(). A merchant that is paid and does not serve (any status other than
+// 2xx, or no answer before the timeout) is paused after AGENT_MAX_UNDELIVERED such calls in a row.
 
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import {
+  closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync, writeSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { abiEncode, first, keccak, makeChain, signTypedData, signerAddress } from './lib/cast.mjs';
 import { isMain } from './lib/cli.mjs';
+import { calldata } from './lib/evm.mjs';
 import { loadDeployment } from './lib/config.mjs';
 import {
-  X402_VERSION, HEADER, encode, decode, lc, isAddress, isUint, authorizationTypedData, vaultIntentTypedData,
-  permitTypedData, splitSignature, voucherTypedData, pathStepTypedData, isBytes32,
+  X402_VERSION, HEADER, HEADER_V1, V1_NETWORKS, encode, decode, lc, isAddress, isUint, authorizationTypedData,
+  vaultIntentTypedData, permitTypedData, splitSignature, voucherTypedData, pathStepTypedData, isBytes32,
 } from './lib/protocol.mjs';
 import { MAX_DURATION, MIN_DURATION, openNonce, readPath, readSession, sessionIdOf } from './lib/session.mjs';
 
@@ -82,10 +94,72 @@ export function formatUnits(x, decimals) {
 }
 
 const rand32 = () => '0x' + randomBytes(32).toString('hex');
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, policy = {}, ledgerFile, tmpDir, path }) {
-  // A key-file signer needs no Foundry: it signs in JavaScript and reads over JSON-RPC.
-  const chain = makeChain(rpcUrl, { js: signer?.kind === 'key' ? true : undefined });
+// One spending ledger per wallet, shared by every process that pays from it (Claude Desktop and any
+// number of Claude Code or Cursor sessions start one server each). A paid call holds the ledger's
+// lock file from its first check to its last bookkeeping and reads the ledger afresh under it.
+const LOCK_WAIT_MS = 120_000; // longer than one paid call can last (two requests of AGENT_TIMEOUT_S, plus reads)
+const LOCK_STALE_MS = 300_000; // a lock older than this was left by a process that died holding it
+const alive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e?.code === 'EPERM';
+  }
+};
+
+/** The ledger as stored, with every field this agent keeps; an unreadable file stops all payments. */
+function readLedger(file) {
+  let l = { spent: '0', payments: [] };
+  if (file && existsSync(file)) {
+    try {
+      l = JSON.parse(readFileSync(file, 'utf8'));
+    } catch (e) {
+      throw new Error(`the spending ledger ${file} cannot be read (${e.message}); nothing is paid until it is repaired or removed`);
+    }
+  }
+  l.spent ??= '0';
+  l.payments ??= [];
+  l.sessions ??= {}; // open sessions, by escrow:payee:token
+  l.retired ??= []; // sessions replaced by a newer one; what is left in them returns at expiry
+  l.breakers ??= {}; // merchants paused after failing calls they were paid for, by payTo
+  l.recent ??= []; // what was charged in the last 30 days, for the minute, day, week and month caps
+  return l;
+}
+
+/**
+ * The hardening settings, read the same way by the CLI, the MCP server and the service:
+ * AGENT_TIMEOUT_S, AGENT_MAX_PER_MINUTE (USD), AGENT_MAX_UNDELIVERED, AGENT_BREAKER_SECONDS and
+ * AGENT_PATH_MERCHANTS.
+ */
+export function policyFromEnv(env = process.env) {
+  const num = (k, d) => {
+    if (env[k] === undefined || env[k] === '') return d;
+    const n = Number(env[k]);
+    if (!Number.isFinite(n) || n <= 0) throw new Error(`${k} must be a positive number, not ${env[k]}`);
+    return n;
+  };
+  return {
+    timeoutMs: num('AGENT_TIMEOUT_S', 30) * 1000,
+    maxPerMinute: env.AGENT_MAX_PER_MINUTE ? parseUsd(env.AGENT_MAX_PER_MINUTE) : null,
+    maxPerDay: env.AGENT_MAX_PER_DAY ? parseUsd(env.AGENT_MAX_PER_DAY) : null,
+    maxPerWeek: env.AGENT_MAX_PER_WEEK ? parseUsd(env.AGENT_MAX_PER_WEEK) : null,
+    maxPerMonth: env.AGENT_MAX_PER_MONTH ? parseUsd(env.AGENT_MAX_PER_MONTH) : null,
+    approvalMax: env.AGENT_APPROVAL_MAX ? parseUsd(env.AGENT_APPROVAL_MAX) : null,
+    maxUndelivered: num('AGENT_MAX_UNDELIVERED', 2),
+    breakerSeconds: num('AGENT_BREAKER_SECONDS', 600),
+    pathMerchants: env.AGENT_PATH_MERCHANTS ? env.AGENT_PATH_MERCHANTS.split(',').map((x) => x.trim()).filter(Boolean) : null,
+  };
+}
+
+export async function createAgent({
+  rpcUrl, signer, payer, facilitatorUrl, policy = {}, ledgerFile, tmpDir, path, chain: given, userAgent,
+}) {
+  // A key-file signer needs no Foundry: it signs in JavaScript and reads over JSON-RPC. Tests pass
+  // their own `chain`.
+  const chain = given || makeChain(rpcUrl, { js: signer?.kind === 'key' ? true : undefined });
   const dep = await loadDeployment(chain);
   const A = dep.addresses;
   const owner = await signerAddress(signer);
@@ -104,13 +178,134 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
     sessionDeposit: policy.sessionDeposit ?? null, // bigint, USDC units: overrides the merchant's suggestion
     maxSessionDeposit: policy.maxSessionDeposit ?? null, // bigint, USDC units
     sessionSeconds: policy.sessionSeconds ?? 86_400n, // bigint
+    timeoutMs: policy.timeoutMs ?? 30_000, // number: the longest one HTTP request may take
+    maxPerMinute: policy.maxPerMinute ?? null, // bigint, USD with 6 decimals: spent in any 60 s
+    maxPerDay: policy.maxPerDay ?? null, // bigint: signed in any 24 hours
+    maxPerWeek: policy.maxPerWeek ?? null, // bigint: signed in any 7 days
+    maxPerMonth: policy.maxPerMonth ?? null, // bigint: signed in any 30 days
+    approvalMax: policy.approvalMax ?? null, // bigint: the most the owner may approve past a limit, per payment
+    maxUndelivered: policy.maxUndelivered ?? 2, // paid calls in a row a merchant may leave unserved
+    breakerSeconds: policy.breakerSeconds ?? 600, // how long such a merchant is paused
+    pathMerchants: policy.pathMerchants ?? null, // payees to show in pathState(), besides those paid
   };
-  const ledger = ledgerFile && existsSync(ledgerFile) ? JSON.parse(readFileSync(ledgerFile, 'utf8')) : { spent: '0', payments: [] };
-  ledger.sessions ??= {}; // open sessions, by escrow:payee:token
-  ledger.retired ??= []; // sessions replaced by a newer one; what is left in them returns at expiry
+  if (ledgerFile) mkdirSync(dirname(ledgerFile), { recursive: true, mode: 0o700 });
+  const ledger = readLedger(ledgerFile);
   let spent = BigInt(ledger.spent);
+  /** Replace the ledger in memory with the one on disk (under the lock: see withLedger). */
+  const reloadLedger = () => {
+    const fresh = readLedger(ledgerFile);
+    for (const k of Object.keys(ledger)) delete ledger[k];
+    Object.assign(ledger, fresh);
+    spent = BigInt(ledger.spent);
+  };
+  // What was charged in the last minute, for the spend-rate limit. It lives in the ledger, so the
+  // limit holds for the wallet across processes, like the budget.
+  const charge = (usd) => {
+    ledger.recent.push({ at: Date.now(), usd: String(usd) });
+  };
+  const MINUTE = 60_000;
+  const DAY = 86_400_000;
+  // Rolling windows over every instrument signed (released ones included: the caps bound how fast
+  // the agent signs, the budget bounds what it spends).
+  const WINDOWS = [
+    ['minute', MINUTE, () => limits.maxPerMinute, 'in the last minute'],
+    ['day', DAY, () => limits.maxPerDay, 'in the last 24 hours'],
+    ['week', 7 * DAY, () => limits.maxPerWeek, 'in the last 7 days'],
+    ['month', 30 * DAY, () => limits.maxPerMonth, 'in the last 30 days'],
+  ];
+  const spentWithin = (ms) => {
+    const since = Date.now() - ms;
+    return ledger.recent.reduce((a, x) => (x.at >= since ? a + BigInt(x.usd) : a), 0n);
+  };
+  const spentLastMinute = () => spentWithin(MINUTE);
+  /** Spent in each capped window: [{ name, spent, cap, what }]. */
+  const windows = () => WINDOWS.filter(([, , cap]) => cap() != null)
+    .map(([name, ms, cap, what]) => ({ name, spent: spentWithin(ms), cap: cap(), what }));
+  /**
+   * Run `fn` holding the wallet's ledger lock, with the ledger read afresh from disk: every check
+   * and every count in `fn` then sees what all processes paying from this wallet have spent.
+   */
+  async function withLedger(fn) {
+    if (!ledgerFile) return fn();
+    const lock = `${ledgerFile}.lock`;
+    const started = Date.now();
+    for (;;) {
+      try {
+        const fd = openSync(lock, 'wx');
+        try {
+          writeSync(fd, JSON.stringify({ pid: process.pid, at: Date.now() }));
+        } finally {
+          closeSync(fd);
+        }
+        break;
+      } catch (e) {
+        if (e?.code !== 'EEXIST') throw e;
+        let holder = null;
+        let age = 0;
+        try {
+          holder = JSON.parse(readFileSync(lock, 'utf8'));
+          age = Date.now() - statSync(lock).mtimeMs;
+        } catch {
+          // being written or just released: look again
+        }
+        if (age > LOCK_STALE_MS || (Number.isInteger(holder?.pid) && holder.pid !== process.pid && !alive(holder.pid))) {
+          try {
+            unlinkSync(lock);
+          } catch {
+            // another process broke it first
+          }
+          continue;
+        }
+        if (Date.now() - started > LOCK_WAIT_MS) {
+          throw new Error('another process is paying from this wallet and has not finished; nothing was paid, try again shortly');
+        }
+        await pause(25 + Math.floor(Math.random() * 75));
+      }
+    }
+    try {
+      reloadLedger();
+      return await fn();
+    } finally {
+      try {
+        unlinkSync(lock);
+      } catch {
+        // already gone
+      }
+    }
+  }
+  // A paid call is served (2xx) or it is not: any other status, or no answer in time. Unserved
+  // calls in a row pause the merchant; a served one resets the count.
+  const noteOutcome = (payTo, outcome) => {
+    const k = lc(payTo);
+    if (outcome === 'delivered') {
+      if (ledger.breakers[k]) {
+        delete ledger.breakers[k];
+        saveLedger();
+      }
+      return;
+    }
+    const b = (ledger.breakers[k] ??= { failed: 0, until: 0 });
+    b.failed += 1;
+    if (b.failed >= limits.maxUndelivered) b.until = Date.now() + limits.breakerSeconds * 1000;
+    saveLedger();
+  };
+  const outcomeOf = (status) => (status >= 200 && status < 300 ? 'delivered' : 'failed');
+  const timeoutError = (phase) => `no answer within ${limits.timeoutMs / 1000} s ${phase}`;
+  // Never throws: the ledger in memory is the authority, and an error here (a full disk) must not
+  // turn a payment that already left into an exception a caller would retry.
+  // Written whole to a temporary file and renamed over the old one, so a crash mid-write never
+  // leaves a ledger that cannot be read.
   const saveLedger = () => {
-    if (ledgerFile) writeFileSync(ledgerFile, JSON.stringify(ledger, null, 2));
+    if (!ledgerFile) return;
+    try {
+      const keep = Date.now() - 30 * DAY; // the longest window
+      ledger.recent = ledger.recent.filter((x) => x.at >= keep);
+      const tmp = `${ledgerFile}.${process.pid}.tmp`;
+      writeFileSync(tmp, JSON.stringify(ledger, null, 2), { mode: 0o600 });
+      renameSync(tmp, ledgerFile);
+    } catch (e) {
+      console.error(`could not save the ledger: ${e.message}`);
+    }
   };
 
   const usdOf = (mode, cost) => (mode === 'USDC' || mode === 'vault' || mode === 'session' ? cost : (cost + SCALE - 1n) / SCALE);
@@ -199,8 +394,10 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
     return clock.t + BigInt(Math.floor((Date.now() - clock.at) / 1000));
   };
 
-  // Vault payments sent but not settled, by what they pay for (see pay()).
+  // Vault payments sent but not settled, by what they pay for, and the ledger row that counts each
+  // (see pay()).
   const unsettled = new Map();
+  const vaultRows = new Map();
 
   // Calls on one session go out one at a time: vouchers are cumulative, so they must arrive in order.
   const locks = new Map();
@@ -335,6 +532,7 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
     s.cumulative = String(cumulative);
     s.calls += 1;
     spent += price;
+    charge(price);
     ledger.spent = String(spent);
     saveLedger();
     return {
@@ -381,29 +579,54 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
     return out.map((o) => ({ ...o, usd: usdOf(o.mode, o.cost) }));
   }
 
-  function refusal(o) {
-    if (limits.allowedPayTo && !limits.allowedPayTo.has(lc(o.r.payTo))) return `payTo ${o.r.payTo} is not on the allow list`;
+  /**
+   * Why option `o` may not be paid, or null. `kind` says whether the owner may approve it past the
+   * check (a number the owner set: per call, budget, the windows) or not (allow list, paused merchant).
+   */
+  function refusalOf(o) {
+    if (limits.allowedPayTo && !limits.allowedPayTo.has(lc(o.r.payTo))) {
+      return { kind: 'allow', text: `payTo ${o.r.payTo} is not on the allow list` };
+    }
     if (limits.maxPerRequest != null && o.usd > limits.maxPerRequest) {
-      return `price $${formatUnits(o.usd, 6)} is above the per-request limit of $${formatUnits(limits.maxPerRequest, 6)}`;
+      return { kind: 'limit', text: `price $${formatUnits(o.usd, 6)} is above the per-request limit of $${formatUnits(limits.maxPerRequest, 6)}` };
     }
     if (limits.budget != null && spent + o.usd > limits.budget) {
-      return `budget exhausted: $${formatUnits(spent, 6)} of $${formatUnits(limits.budget, 6)} spent`;
+      return { kind: 'limit', text: `budget exhausted: $${formatUnits(spent, 6)} of $${formatUnits(limits.budget, 6)} spent` };
+    }
+    const b = ledger.breakers[lc(o.r.payTo)];
+    if (b?.until > Date.now()) {
+      return { kind: 'paused', text: `merchant ${o.r.payTo} is paused until ${new Date(b.until).toISOString()}: it was paid for calls in a row it did not serve` };
+    }
+    for (const w of windows()) {
+      if (w.spent + o.usd > w.cap) {
+        return {
+          kind: 'limit',
+          text: `${w.name === 'minute' ? 'spend rate limit' : `${w.name} cap`}: $${formatUnits(w.spent, 6)} spent ${w.what}, at most $${formatUnits(w.cap, 6)}`,
+        };
+      }
     }
     return null;
   }
+  const refusal = (o) => refusalOf(o)?.text ?? null;
 
-  /** Pick how to pay: the first mode in preference order that is funded and allowed. */
-  async function choose(accepts, prefer) {
+  /**
+   * Pick how to pay: the first mode in preference order that is funded and allowed. `only`, if
+   * given, is the set of modes the offer's protocol can carry (version 1: a plain token transfer).
+   */
+  async function choose(accepts, prefer, only = null, approve = null) {
     // A session already open with this merchant pays first, and without reading any balance.
-    if (!prefer || prefer === 'session') {
+    if ((!prefer || prefer === 'session') && (!only || only.has('session'))) {
       for (const r of Array.isArray(accepts) ? accepts : []) {
         if (!sessionRequirement(r)) continue;
         const o = { mode: 'session', r, cost: BigInt(r.amount), usd: BigInt(r.amount), live: true, have: true };
         if (!refusal(o) && (await usableSession(r))) return o;
       }
     }
-    const all = await options(accepts);
-    if (!all.length) throw new Error('no payment option this agent understands');
+    const all = (await options(accepts)).filter((o) => !only || only.has(o.mode));
+    if (!all.length) {
+      const offered = (Array.isArray(accepts) ? accepts : []).map((r) => `${r?.scheme} on ${r?.network}`).join(', ');
+      throw new Error(`no payment option this agent can pay: it pays USDC on Base, and the server offered ${offered || 'nothing'}`);
+    }
     const order = prefer ? [prefer, ...MODES.filter((m) => m !== prefer)] : MODES;
     const reasons = [];
     for (const mode of order) {
@@ -413,7 +636,23 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
         else if (o.have) return o;
       }
     }
-    if (reasons.length && all.every((o) => refusal(o))) throw new PolicyError(reasons[0]);
+    if (reasons.length && all.every((o) => refusal(o))) {
+      // The owner may let one payment past a limit they set: asked through `approve` (the MCP
+      // client's own prompt, which the model cannot answer), never above approvalMax, never past
+      // an allow list or a paused merchant, and only for an option the wallet can fund.
+      if (approve) {
+        for (const mode of order) {
+          for (const o of all.filter((x) => x.mode === mode && x.have)) {
+            const why = refusalOf(o);
+            if (why?.kind !== 'limit') continue;
+            if (limits.approvalMax != null && o.usd > limits.approvalMax) continue;
+            if (await approve({ usd: o.usd, payTo: o.r.payTo, reason: why.text, mode: o.mode })) return { ...o, approved: why.text };
+            throw new PolicyError(`${why.text}; the owner did not approve going past it`);
+          }
+        }
+      }
+      throw new PolicyError(reasons[0]);
+    }
     throw new Error('insufficient funds for every payment option');
   }
 
@@ -467,10 +706,111 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
 
   function record(entry) {
     spent += entry.usd;
+    charge(entry.usd);
     ledger.spent = String(spent);
-    ledger.payments.push({ ...entry, usd: formatUnits(entry.usd, 6), at: new Date().toISOString() });
+    const row = { ...entry, usd: formatUnits(entry.usd, 6), at: new Date().toISOString() };
+    ledger.payments.push(row);
     saveLedger();
+    return row;
   }
+
+  /**
+   * One-off EIP-3009 authorizations count against the budget from the moment they are sent, since
+   * the merchant can settle them until validBefore whatever it answered. Once one has expired, the
+   * token says whether it was used: unused ones are released, used ones stay spent.
+   */
+  function reconcile() {
+    return withLock('pay', () => withLedger(reconcileNow));
+  }
+
+  async function reconcileNow() {
+    let now = null;
+    let released = 0n;
+    for (const row of ledger.payments) {
+      const q = row.pending;
+      if (!q) continue;
+      now ??= await chain.timestamp();
+      if (BigInt(q.validBefore) >= now) continue;
+      if (await chain.bool(q.token, 'authorizationState(address,bytes32)(bool)', [q.authorizer, q.nonce])) {
+        row.settled = true;
+      } else {
+        const usd = parseUsd(row.usd);
+        spent -= usd;
+        released += usd;
+        row.released = true;
+      }
+      delete row.pending;
+    }
+    if (now !== null) {
+      ledger.spent = String(spent);
+      saveLedger();
+    }
+    return released;
+  }
+
+  /** The settlement receipt of a paid answer (either protocol version), or null if there is none or it does not parse. */
+  function receiptOf(res) {
+    try {
+      const h = res.headers.get(HEADER.response) ?? res.headers.get(HEADER_V1.response);
+      return h ? decode(h) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * What the offer itself says this request lacks. A v2 offer may carry the x402 bazaar extension:
+   * the JSON schema of the inputs the server accepts. A request missing a required query parameter
+   * or body field, or giving a value outside a listed set, would be paid for and then refused, so it
+   * is not paid for. Returns null when the offer has no schema or the request satisfies it.
+   */
+  function inputProblem(required, url, body) {
+    const input = required?.extensions?.bazaar?.schema?.properties?.input?.properties;
+    if (!input || typeof input !== 'object') return null;
+    const wrong = [];
+    const check = (schema, values, where) => {
+      if (!schema || typeof schema !== 'object') return;
+      for (const k of Array.isArray(schema.required) ? schema.required : []) {
+        if (values[k] === undefined || values[k] === '') wrong.push(`missing ${where} ${k}`);
+      }
+      for (const [k, s] of Object.entries(schema.properties ?? {})) {
+        if (values[k] !== undefined && Array.isArray(s?.enum) && !s.enum.map(String).includes(String(values[k]))) {
+          wrong.push(`${where} ${k}=${values[k]} is not one of ${s.enum.join(', ')}`);
+        }
+      }
+    };
+    try {
+      check(input.queryParams, Object.fromEntries(new URL(url).searchParams), 'query parameter');
+    } catch {
+      return null;
+    }
+    if (input.body && body) {
+      try {
+        const json = JSON.parse(body);
+        if (json && typeof json === 'object') check(input.body, json, 'body field');
+      } catch {
+        // not JSON: nothing to check against
+      }
+    }
+    if (!wrong.length) return null;
+    const example = required?.extensions?.bazaar?.info?.input?.queryParams;
+    const hint = example && typeof example === 'object' && Object.keys(example).length
+      ? `; the server's own example is ?${new URLSearchParams(example)}` : '';
+    return `the server's offer says this request would be refused (${wrong.join('; ')})${hint}`;
+  }
+
+  /**
+   * A version 1 offer in this agent's terms: `exact`, on this chain, priced in `amount`. The
+   * original stays attached (`v1`) for the paid retry, which names the network the v1 way.
+   */
+  function fromV1(r) {
+    if (r?.scheme !== 'exact' || V1_NETWORKS[r.network] !== Number(dep.chainId)) return null;
+    return {
+      scheme: 'exact', network: dep.network, amount: String(r.maxAmountRequired ?? ''), asset: r.asset, payTo: r.payTo,
+      maxTimeoutSeconds: r.maxTimeoutSeconds, extra: r.extra, v1: r,
+    };
+  }
+  const V1_MODES = new Set(['USDC', 'sUSD']);
 
   /** The `error` of a 402 answer to a paid request. */
   async function errorOf(res, body) {
@@ -490,12 +830,29 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
     const payload = await authorize(o);
     const s = ledger.sessions[sessionKey(o.r)];
     const paymentPayload = { x402Version: X402_VERSION, resource: required.resource, accepted: o.r, payload };
-    const res = await fetch(payUrl, { method, body, redirect: 'manual', headers: { ...headers, [HEADER.signature]: encode(paymentPayload) } });
-    const text = await res.text();
-    const receipt = res.headers.get(HEADER.response);
-    const settlement = receipt ? decode(receipt) : null;
+    const charged = BigInt(o.r.amount);
+    let res;
+    let text;
+    try {
+      res = await fetch(payUrl, {
+        method, body, redirect: 'manual', headers: { ...headers, [HEADER.signature]: encode(paymentPayload) },
+        signal: AbortSignal.timeout(limits.timeoutMs),
+      });
+      text = await res.text();
+    } catch (e) {
+      // The voucher may have arrived: it stays spent, and the call counts as failed.
+      noteOutcome(o.r.payTo, 'failed');
+      return {
+        status: 0, paid: false, delivered: false, charged, mode: 'session', requirement: o.r, body: '', paymentPayload,
+        error: e?.name === 'TimeoutError' ? timeoutError('after the voucher was sent') : `no answer after the voucher was sent: ${e.message}`,
+        code: 'timeout', session: { id: s.sessionId, cumulative: s.cumulative, deposit: s.deposit },
+      };
+    }
+    const settlement = receiptOf(res); // never throws: the payment has already gone
     const paid = res.status === 200 && settlement?.success === true;
     const error = !paid && res.status === 402 ? await errorOf(res, text) : undefined;
+    const delivered = res.status >= 200 && res.status < 300;
+    if (!(res.status === 402 && !retried && DEAD_SESSION.has(error))) noteOutcome(o.r.payTo, outcomeOf(res.status));
     if (paid) {
       s.open = null; // the facilitator accepts a voucher only once the session is open on-chain
       s.pathStep = null;
@@ -508,10 +865,27 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
         delete ledger.sessions[key];
         saveLedger();
       }
-      return paySession(url, payUrl, required, o, method, headers, body, true);
+      // The new session signs a new voucher, so it passes the same checks as any payment.
+      const why = refusal(o);
+      if (why) {
+        return {
+          status: res.status, paid: false, delivered: false, charged, mode: 'session', requirement: o.r, settlement, body: text, paymentPayload,
+          error: `${error}; not paid again: ${why}`, session: { id: s.sessionId, cumulative: s.cumulative, deposit: s.deposit },
+        };
+      }
+      try {
+        return await paySession(url, payUrl, required, o, method, headers, body, true);
+      } catch (e) {
+        // The first voucher has left: answer, never throw (a thrown call may be retried).
+        return {
+          status: res.status, paid: false, delivered: false, charged, mode: 'session', requirement: o.r, settlement, body: text, paymentPayload,
+          error: `${error}; a new session could not be opened: ${e.message}`,
+          session: { id: s.sessionId, cumulative: s.cumulative, deposit: s.deposit },
+        };
+      }
     }
     return {
-      status: res.status, paid, mode: 'session', requirement: o.r, settlement, body: text, error, paymentPayload,
+      status: res.status, paid, delivered, charged, mode: 'session', requirement: o.r, settlement, body: text, error, paymentPayload,
       session: { id: s.sessionId, cumulative: s.cumulative, deposit: s.deposit },
     };
   }
@@ -582,14 +956,64 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
    * GET (or `method`, with `body`) `url`, paying if the server answers 402.
    * Resolves { status, paid, mode, requirement, settlement, body, error }.
    */
-  async function pay(url, { prefer, method = 'GET', headers = {}, body } = {}) {
-    const initial = await fetch(url, { method, headers, body });
-    const payUrl = initial.url || url; // after any redirects of the unpaid request
-    if (initial.status !== 402) return { status: initial.status, paid: false, body: await initial.text() };
-    const required = await requiredOf(initial);
-    if (required?.x402Version !== X402_VERSION) throw new Error(`unsupported x402 version ${required?.x402Version}`);
+  /**
+   * One paid call at a time per agent: the budget, rate and merchant checks in choose() and the
+   * counting at signing then never interleave with another call, so concurrent calls cannot pass
+   * the same check twice.
+   */
+  function pay(url, options = {}) {
+    return withLock('pay', () => withLedger(() => payNow(url, options)));
+  }
 
-    const chosen = await choose(required.accepts, prefer);
+  /**
+   * Run a signed USDC authorization against the token itself (eth_call of transferWithAuthorization
+   * at the latest block) before it leaves: a payment the chain would reject (balance, signature,
+   * domain, expiry, a blacklisted address, a paused token) is never sent. Returns the revert reason,
+   * or null when the transfer would succeed or the chain cannot be asked this way.
+   */
+  async function wouldFail(payload) {
+    const a = payload?.authorization;
+    if (!a || typeof chain.rpc !== 'function') return null;
+    const { v, r, s } = splitSignature(payload.signature);
+    const data = calldata('transferWithAuthorization(address,address,uint256,uint256,uint256,bytes32,uint8,bytes32,bytes32)',
+      [a.from, a.to, a.value, a.validAfter, a.validBefore, a.nonce, String(v), r, s]);
+    try {
+      await chain.rpc('eth_call', [{ to: A.usdc, data }, 'latest']);
+      return null;
+    } catch (e) {
+      if (e?.code === 'RPC_UNREACHABLE') throw e; // not knowing is not a verdict: nothing is sent
+      return String(e?.message ?? e).replace(/^eth_call:\s*/, '');
+    }
+  }
+
+  async function payNow(url, { prefer, method = 'GET', headers: given = {}, body, approve } = {}) {
+    const headers = { ...(userAgent && !Object.keys(given).some((k) => lc(k) === 'user-agent') ? { 'user-agent': userAgent } : {}), ...given };
+    // Nothing is signed yet, so a timeout here throws and the call can safely be tried again.
+    const initial = await fetch(url, { method, headers, body, signal: AbortSignal.timeout(limits.timeoutMs) });
+    const payUrl = initial.url || url; // after any redirects of the unpaid request
+    if (initial.status !== 402) {
+      const text = await initial.text();
+      return { status: initial.status, paid: false, delivered: initial.status >= 200 && initial.status < 300, charged: 0n, body: text };
+    }
+    let required;
+    try {
+      required = await requiredOf(initial);
+    } catch {
+      throw new Error('the server answered 402 Payment Required without an x402 offer this agent can read');
+    }
+    const version = required?.x402Version;
+    if (version !== 1 && version !== X402_VERSION) throw new Error(`unsupported x402 version ${version}`);
+    const accepts = version === 1 ? (Array.isArray(required.accepts) ? required.accepts : []).map(fromV1).filter(Boolean) : required.accepts;
+    if (version === 1 && !accepts.length) {
+      const offered = (Array.isArray(required.accepts) ? required.accepts : []).map((r) => `${r?.scheme} on ${r?.network}`).join(', ');
+      throw new Error(`no payment option this agent can pay: it pays USDC on Base, and the server offered ${offered || 'nothing'}`);
+    }
+
+    // Nothing is signed for a request the server's own offer says it will refuse.
+    const problem = version === X402_VERSION ? inputProblem(required, url, body) : null;
+    if (problem) throw new Error(problem);
+
+    const chosen = await choose(accepts, version === 1 ? 'USDC' : prefer, version === 1 ? V1_MODES : null, approve);
     if (chosen.mode === 'session') {
       return withLock(sessionKey(chosen.r), () => paySession(url, payUrl, required, chosen, method, headers, body));
     }
@@ -607,32 +1031,121 @@ export async function createAgent({ rpcUrl, signer, payer, facilitatorUrl, polic
     const payload = prior && BigInt(prior.vaultPay.intent.validBefore) > (await chain.timestamp()) + 15n
       ? prior
       : await authorize(o);
-    const paymentPayload = { x402Version: X402_VERSION, resource: required.resource, accepted: o.r, payload };
-    // The signed payment goes to the URL that asked for it and nowhere else: no redirects.
-    const res = await fetch(payUrl, { method, body, redirect: 'manual', headers: { ...headers, [HEADER.signature]: encode(paymentPayload) } });
-    const text = await res.text();
-    const receipt = res.headers.get(HEADER.response);
-    const settlement = receipt ? decode(receipt) : null;
-    const paid = res.status === 200 && settlement?.success === true;
+    const paymentPayload = version === 1
+      ? { x402Version: 1, scheme: 'exact', network: o.r.v1.network, payload }
+      : { x402Version: X402_VERSION, resource: required.resource, accepted: o.r, payload };
+    const signatureHeader = version === 1 ? HEADER_V1.signature : HEADER.signature;
+    // Simulated before it leaves: nothing has been sent or counted yet, so a failure throws.
+    if (o.mode === 'USDC' && payload !== prior) {
+      const failure = await wouldFail(payload);
+      if (failure) throw new Error(`the payment would fail on-chain, so it was not sent: ${failure}`);
+    }
+    // Signed is spent: every instrument counts against the budget before it leaves, whatever the
+    // merchant answers. An EIP-3009 authorization can be settled until validBefore (for the router:
+    // the authorized sUSD, of which the change comes back); reconcile() releases it if it expires
+    // unused. A vault intent counts when first sent; an unsettled one is re-sent, never re-signed, by
+    // the next call for the same thing, and is not counted twice.
+    const auth = payload.authorization;
+    const resent = payload === prior;
+    const row = resent ? null : record({
+      id: rand32().slice(2, 18), url, mode: chosen.mode, x402Version: version, payTo: o.r.payTo, asset: o.r.asset,
+      amount: o.r.amount, usd: chosen.usd, transaction: '', conversion: conversion?.transaction || undefined, delivered: false,
+      ...(auth && !conversion ? {
+        pending: { token: o.mode === 'USDC' ? A.usdc : A.sUSD, authorizer: auth.from, nonce: auth.nonce, validBefore: auth.validBefore },
+      } : {}),
+    });
+    if (retryKey && row) vaultRows.set(retryKey, row.id);
+    // The ledger is read afresh for every call, so the row is found again by its id.
+    const counted = row ?? (retryKey ? ledger.payments.find((x) => x.id === vaultRows.get(retryKey)) ?? null : null);
+    const charged = row ? chosen.usd : 0n;
+    let res;
+    let text;
+    try {
+      // The signed payment goes to the URL that asked for it and nowhere else: no redirects.
+      res = await fetch(payUrl, {
+        method, body, redirect: 'manual', headers: { ...headers, [signatureHeader]: encode(paymentPayload) },
+        signal: AbortSignal.timeout(limits.timeoutMs),
+      });
+      text = await res.text();
+    } catch (e) {
+      if (retryKey) unsettled.set(retryKey, payload);
+      if (counted) {
+        counted.error = 'no answer';
+        saveLedger();
+      }
+      noteOutcome(o.r.payTo, 'failed');
+      return {
+        status: 0, paid: false, delivered: false, charged, mode: chosen.mode, requirement: o.r, conversion, body: '', paymentPayload, code: 'timeout',
+        error: e?.name === 'TimeoutError' ? timeoutError('after the payment was sent') : `no answer after the payment was sent: ${e.message}`,
+      };
+    }
+    const settlement = receiptOf(res); // never throws: the payment has already gone
+    const delivered = res.status >= 200 && res.status < 300;
+    // Served after the payment went, and not reported as failed: paid. A merchant that sends no
+    // receipt still holds the authorization; reconcile() finds out whether it was used.
+    const paid = delivered && settlement?.success !== false;
     const error = !paid && res.status === 402 ? await errorOf(res, text) : undefined;
     if (retryKey) {
-      if (paid) unsettled.delete(retryKey);
-      else unsettled.set(retryKey, payload);
+      if (settlement?.success === true) {
+        unsettled.delete(retryKey);
+        vaultRows.delete(retryKey);
+      } else unsettled.set(retryKey, payload);
     }
-    if (paid || conversion) {
-      // The budget is charged the most this payment could have cost (for the router: the
-      // authorized sUSD, of which the change came back).
-      record({
-        url, mode: chosen.mode, payTo: o.r.payTo, asset: o.r.asset, amount: o.r.amount, usd: chosen.usd,
-        transaction: settlement?.transaction || '', conversion: conversion?.transaction || undefined, delivered: paid,
-      });
+    if (counted) {
+      counted.status = res.status;
+      counted.delivered = delivered;
+      if (settlement?.success === true) {
+        counted.transaction = settlement.transaction || '';
+        delete counted.pending; // settled: spent for good
+      }
+      if (error) counted.error = error;
+      saveLedger();
     }
-    return { status: res.status, paid, mode: chosen.mode, requirement: o.r, settlement, conversion, body: text, error, paymentPayload };
+    noteOutcome(o.r.payTo, outcomeOf(res.status));
+    return {
+      status: res.status, paid, delivered, charged, mode: chosen.mode, requirement: o.r, settlement, conversion, body: text, error, paymentPayload,
+      x402Version: version, approved: chosen.approved, simulated: o.mode === 'USDC' && typeof chain.rpc === 'function',
+    };
+  }
+
+  /**
+   * The path's numbers, for an agent that pays from one (null otherwise): what it can still pay out
+   * in all, and per merchant the cap left on-chain (capOf - committedTo), never more than the
+   * path still holds. The path keeps its merchants only as a hash, so the merchants shown are
+   * those this agent has paid and those listed in policy.pathMerchants.
+   */
+  async function pathState() {
+    if (!pathId) return null;
+    const p = await readPath(chain, A.sessionPaths, pathId);
+    if (!p) return null;
+    const room = p.bound - p.committed;
+    const canStillPay = p.free < room ? p.free : room;
+    const known = new Set([
+      ...(limits.pathMerchants ?? []), ...Object.values(ledger.sessions).map((x) => x.payee), ...ledger.retired.map((x) => x.payee),
+    ].filter(isAddress).map(lc));
+    const merchants = [];
+    for (const payee of known) {
+      const cap = await chain.uint(A.sessionPaths, 'capOf(bytes32,address)(uint256)', [pathId, payee]);
+      if (cap === 0n) continue; // not on this path
+      const committed = await chain.uint(A.sessionPaths, 'committedTo(bytes32,address)(uint256)', [pathId, payee]);
+      const left = cap - committed;
+      merchants.push({ payee, cap, committed, remaining: left < canStillPay ? left : canStillPay });
+    }
+    return { ...p, canStillPay, merchants };
   }
 
   return {
-    address: from, owner, deployment: dep, balances, pay, convert, sweep, choose, authorize,
+    address: from, owner, deployment: dep, balances, pay, convert, sweep, choose, authorize, reconcile, pathState,
     sessions: () => ledger.sessions,
+    breakers: () => ledger.breakers,
+    resetBreaker(payTo) {
+      if (payTo) delete ledger.breakers[lc(payTo)];
+      else ledger.breakers = {};
+      saveLedger();
+    },
+    spentLastMinute,
+    windows,
+    limits: { ...limits },
     path: pathId,
     get spent() { return spent; }, ledger: () => ledger,
   };
@@ -672,6 +1185,7 @@ async function main(argv) {
       sessionDeposit: env.AGENT_SESSION_DEPOSIT ? parseUsd(env.AGENT_SESSION_DEPOSIT) : null,
       maxSessionDeposit: env.AGENT_MAX_SESSION_DEPOSIT ? parseUsd(env.AGENT_MAX_SESSION_DEPOSIT) : null,
       sessionSeconds: env.AGENT_SESSION_SECONDS ? BigInt(env.AGENT_SESSION_SECONDS) : undefined,
+      ...policyFromEnv(env),
     },
   });
   const show = (o) => console.log(JSON.stringify(o, (_, v) => (typeof v === 'bigint' ? v.toString() : v), 2));
@@ -700,9 +1214,10 @@ async function main(argv) {
     let last;
     const modes = {};
     for (let i = 0; i < n; i++) {
-      // A public RPC drops requests now and then. A call that was not paid is tried again after a
-      // pause: the next voucher covers it (a voucher is cumulative), so a retry can overpay by one
-      // call's price at most, and never pays twice for one call.
+      // A public RPC drops requests now and then. A call that failed before any payment was sent
+      // (pay() threw) is tried again after a pause. A call that got as far as sending a payment is
+      // not: the merchant may hold it, and paying again would only feed a merchant that takes
+      // payment without serving.
       for (let attempt = 0; ; attempt++) {
         try {
           last = await agent.pay(url, { prefer: flag('prefer') });
@@ -710,7 +1225,7 @@ async function main(argv) {
           if (e instanceof PolicyError || attempt >= 4) throw e;
           last = { paid: false, error: e.message };
         }
-        if (last.paid || attempt >= 4) break;
+        if (last.paid || attempt >= 4 || last.status !== undefined) break;
         retries += 1;
         await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
       }
