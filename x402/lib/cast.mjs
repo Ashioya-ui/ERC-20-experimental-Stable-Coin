@@ -1,17 +1,8 @@
-// Thin, dependency-free access to the chain through Foundry's `cast`.
-//
-// Everything that needs Keccak or secp256k1 (ABI encoding, EIP-712 signing, transaction signing)
-// goes through `cast`, so this package carries no cryptography of its own. Swap this module for
-// viem or ethers when a package registry is available; nothing else depends on how it works.
-//
-// Keys never appear in arguments, environment variables or logs: signers are either anvil's
-// unlocked accounts (local chain only) or encrypted keystores with a password file.
-
+// Chain access through Foundry cast, or the pure-JS client.
 import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { addressOfKey, makeJsChain, signTypedDataWithKey } from './evm.mjs';
 
-// Hashing and ABI encoding are pure functions; evm.mjs computes them without starting a process.
 export { abiEncode, keccak } from './evm.mjs';
 
 const CAST = process.env.CAST_BIN || 'cast';
@@ -24,17 +15,9 @@ export class CastError extends Error {
   }
 }
 
-// cast's own log lines (e.g. a provider's "failed to fetch block") can land on stdout and break
-// JSON output, so they are off unless RUST_LOG asks for them.
 const BASE_ENV = { ...process.env, RUST_LOG: process.env.RUST_LOG ?? 'off' };
-// A public endpoint's rate limit is transient too: the same read a moment later succeeds.
 const TRANSIENT = /error sending request|connection (reset|closed|refused)|timed out|operation timed out|429|too many requests|rate limit/i;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-// No cast invocation may hang for ever. A `cast` whose RPC connection stops answering never
-// returns on its own, and the facilitator sends transactions one at a time through a promise
-// chain, so one hung subprocess would park every later settlement permanently. Killing it turns
-// the hang into an ordinary transient failure, which the callers above already know how to
-// handle (a read retries, a send becomes UnconfirmedError and is looked up again).
 const DEFAULT_TIMEOUT_MS = Number(process.env.CAST_TIMEOUT_MS || 120_000);
 
 function run(args, env, timeoutMs) {
@@ -47,8 +30,6 @@ function run(args, env, timeoutMs) {
     };
     execFile(CAST, args.map(String), opts, (err, stdout, stderr) => {
       if (err) {
-        // `killed` means the timeout fired. Say so in the message: TRANSIENT matches it, so a
-        // read retries and a send does not (sends are never given retries).
         const line = err.killed
           ? `cast ${args[0]} timed out after ${timeoutMs} ms`
           : String(stderr || '').split('\n').find((l) => /error/i.test(l)) || err.message;
@@ -60,28 +41,17 @@ function run(args, env, timeoutMs) {
   });
 }
 
-/**
- * Run `cast` with `args`; resolve with trimmed stdout, reject with a CastError carrying stderr.
- * `env` adds variables for this one process (e.g. CAST_PASSWORD when creating a keystore).
- * `retries` re-runs a command that failed on a transient connection error: only for reads,
- * never for anything that broadcasts.
- */
 export async function cast(args, { env, retries = 0, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   for (let attempt = 0; ; attempt++) {
     try {
       return await run(args, env, timeoutMs);
     } catch (e) {
       if (attempt >= retries || !TRANSIENT.test(`${e.message}\n${e.stderr}`)) throw e;
-      await sleep(300 * 2 ** attempt); // back off: a rate limit needs room, not a quick retry
+      await sleep(300 * 2 ** attempt);
     }
   }
 }
 
-/**
- * The first JSON object in `out` (tolerates stray log lines around it).
- * `accept` narrows that to the first object the caller recognises: a provider's log line can
- * itself be JSON, and then "the first JSON object" is not the answer that was asked for.
- */
 export function parseJsonOutput(out, accept) {
   const text = String(out).trim();
   const usable = (v) => v !== null && typeof v === 'object' && (!accept || accept(v));
@@ -89,7 +59,6 @@ export function parseJsonOutput(out, accept) {
     const whole = JSON.parse(text);
     if (usable(whole)) return whole;
   } catch {
-    /* not one object: look line by line */
   }
   for (const line of text.split('\n')) {
     const l = line.trim();
@@ -98,22 +67,13 @@ export function parseJsonOutput(out, accept) {
       const v = JSON.parse(l);
       if (usable(v)) return v;
     } catch {
-      /* next line */
     }
   }
   throw new CastError('no JSON object in cast output', text.slice(0, 500));
 }
 
-/** First token of a `cast call` result line ("1000 [1e3]" -> "1000"). */
 export const first = (out) => String(out).trim().split(/\s+/)[0];
 
-/**
- * A signer description:
- *   { kind: 'unlocked', address }                    anvil's unlocked accounts (local chain only)
- *   { kind: 'keystore', path, passwordFile }         an encrypted JSON keystore
- *   { kind: 'key', path }                            a file holding a 0x-hex private key, signed
- *                                                    with in JavaScript (no cast needed)
- */
 export function signerArgs(signer) {
   if (!signer) throw new Error('no signer configured');
   if (signer.kind === 'unlocked') return ['--unlocked', '--from', signer.address];
@@ -122,7 +82,6 @@ export function signerArgs(signer) {
   throw new Error(`unknown signer kind ${signer.kind}`);
 }
 
-/** Parse "unlocked:0x...", "keystore:<path>" (password file from a second argument) or "key:<path>". */
 export function parseSigner(spec, passwordFile) {
   if (!spec) return null;
   const [kind, value] = [spec.slice(0, spec.indexOf(':')), spec.slice(spec.indexOf(':') + 1)];
@@ -137,10 +96,6 @@ export function parseSigner(spec, passwordFile) {
 
 const keyOf = (signer) => readFileSync(signer.path, 'utf8').trim();
 
-/**
- * Create the encrypted keystore `<dir>/<name>`, encrypted with the password in `passwordFile`.
- * Resolves its signer. The key itself is generated and stored by cast and never seen here.
- */
 export async function newKeystore(dir, name, passwordFile) {
   const { readFileSync, chmodSync } = await import('node:fs');
   const { join } = await import('node:path');
@@ -151,17 +106,14 @@ export async function newKeystore(dir, name, passwordFile) {
   return { kind: 'keystore', path, passwordFile, address: String(out[0].address).toLowerCase() };
 }
 
-/** The address of a signer. */
 export async function signerAddress(signer) {
   if (signer.kind === 'unlocked') return signer.address.toLowerCase();
   if (signer.kind === 'key') return addressOfKey(keyOf(signer));
   return (await cast(['wallet', 'address', ...signerArgs(signer)])).toLowerCase();
 }
 
-// The statuses a receipt may carry, across cast versions and RPC providers.
 const STATUS = new Set(['0x1', '1', 'true', '0x0', '0', 'false']);
 
-/** Raised when a transaction was broadcast but its receipt could not be read. */
 export class UnconfirmedError extends Error {
   constructor(hash, cause) {
     super(hash
@@ -172,17 +124,12 @@ export class UnconfirmedError extends Error {
   }
 }
 
-/**
- * Chain access over one RPC endpoint, through cast; or, with `js` (or X402_EVM=js), through
- * evm.mjs's JSON-RPC client, which reads and never sends.
- */
 export function makeChain(rpcUrl, { js } = {}) {
   if (js ?? process.env.X402_EVM === 'js') return makeJsChain(rpcUrl);
   const rpc = ['--rpc-url', rpcUrl];
   const READ = { retries: 3 };
   return {
     rpcUrl,
-    /** eth_call of `sig` (with return types, e.g. "balanceOf(address)(uint256)"). */
     call(to, sig, args = [], { from } = {}) {
       return cast(['call', ...rpc, ...(from ? ['--from', from] : []), to, sig, ...args], READ);
     },
@@ -192,23 +139,13 @@ export function makeChain(rpcUrl, { js } = {}) {
     async bool(to, sig, args = []) {
       return first(await this.call(to, sig, args)) === 'true';
     },
-    /**
-     * Send a transaction and wait for its receipt. Resolves { hash, ok }.
-     * Two steps, so a lost receipt never hides a transaction that was sent: broadcast and get
-     * the hash (a failure here means nothing was sent), then wait for the receipt (a failure
-     * here raises UnconfirmedError carrying the hash).
-     */
     async send(to, sig, args, signer) {
-      // The sender's nonce before broadcasting. If the broadcast call fails we cannot tell from
-      // the error whether the node accepted the transaction first, and guessing "unsent" is the
-      // dangerous guess: the caller would retry and broadcast it a second time. The nonce is the
-      // chain's own answer to that question.
       const sender = await signerAddress(signer);
       let nonceBefore;
       try {
         nonceBefore = await this.nonce(sender);
       } catch {
-        nonceBefore = null; // could not read it; fall back to treating a failure as ambiguous
+        nonceBefore = null;
       }
       let out;
       try {
@@ -219,12 +156,9 @@ export function makeChain(rpcUrl, { js } = {}) {
           try {
             advanced = (await this.nonce(sender)) > nonceBefore;
           } catch {
-            advanced = true; // cannot tell: assume something went out
+            advanced = true;
           }
         }
-        // Something was broadcast, or we cannot rule it out. UnconfirmedError with no hash, so
-        // the facilitator records it and answers settlement_unconfirmed rather than letting a
-        // retry send the same authorization again. Only a definite "nothing left" is a failure.
         if (advanced) throw new UnconfirmedError('', e);
         throw e;
       }
@@ -239,15 +173,6 @@ export function makeChain(rpcUrl, { js } = {}) {
       const status = String(receipt.status);
       return { hash: hash.toLowerCase(), ok: status === '0x1' || status === '1' || status === 'true', receipt };
     },
-    /**
-     * The receipt of `hash`, waiting for it to be mined.
-     *
-     * The answer is checked to be the receipt that was asked for and to carry a status the
-     * chain actually reported. `cast` can print provider log lines next to the JSON, and a log
-     * line in JSON form parses into an object with no `status`; reading that as "no status, so
-     * the transaction failed" would report a payment that went through as failed and throw away
-     * the record that it was ever broadcast. Not knowing is an error, not a verdict.
-     */
     async receipt(hash) {
       const want = String(hash).toLowerCase();
       const out = await cast(['receipt', ...rpc, '--json', hash], { retries: 5 });
@@ -257,7 +182,6 @@ export function makeChain(rpcUrl, { js } = {}) {
       }
       return r;
     },
-    /** The sender's next transaction nonce. */
     async nonce(address) {
       return BigInt(first(await cast(['nonce', ...rpc, address], READ)));
     },
@@ -270,7 +194,6 @@ export function makeChain(rpcUrl, { js } = {}) {
   };
 }
 
-/** EIP-712 signature of `typedData` by `signer` (keystore only: an unlocked account cannot sign here). */
 export async function signTypedData(typedData, signer, tmpDir) {
   if (signer.kind === 'key') return signTypedDataWithKey(typedData, keyOf(signer));
   const { mkdtemp, writeFile, rm } = await import('node:fs/promises');

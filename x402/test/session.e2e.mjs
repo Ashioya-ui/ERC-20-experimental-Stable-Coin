@@ -1,11 +1,3 @@
-// End to end: x402 sessions. An agent that never holds ETH makes SESSION_CALLS paid calls (default
-// 1,000) to a merchant at 0.0001 USDC each. The chain sees one open, submitted by the facilitator,
-// and one redemption; the payee then closes the session and the rest of the deposit goes home.
-//
-// Run by script/rehearsal/x402-session.sh, on a fresh anvil with Circle's FiatToken v2.2 bytecode or
-// on a fork of Base mainnet with Circle's live USDC. Skipped anywhere else.
-//
-// Env: RPC_URL, SESSION_E2E=1, SESSION_CALLS.
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -23,9 +15,8 @@ import { createAgent } from '../agent.mjs';
 
 const RPC = process.env.RPC_URL || 'http://127.0.0.1:8545';
 const CALLS = Number(process.env.SESSION_CALLS || 1000);
-const PRICE = 100n; // 0.0001 USDC
-const DEPOSIT = 200_000n; // 0.20 USDC
-// anvil's default account 4: unlocked on anvil only, never used anywhere else
+const PRICE = 100n;
+const DEPOSIT = 200_000n;
 const FACILITATOR = '0x15d34aaf54267db7d7c367839aaf71a00a2c6a65';
 
 const chain = makeChain(RPC);
@@ -39,7 +30,6 @@ const eth = async (who) => BigInt(first(await cast(['balance', '--rpc-url', RPC,
 const rpc = (method, ...params) => cast(['rpc', '--rpc-url', RPC, method, ...params.map(String)]);
 const reasonOf = (res) => decode(res.headers.get(HEADER.required)).error;
 
-/** Give `who` `amount` USDC by writing its balance slot, found by probing rather than assumed. */
 async function dealUSDC(who, amount) {
   const probe = '0x' + randomBytes(20).toString('hex');
   for (let slot = 0; slot < 32; slot++) {
@@ -80,7 +70,6 @@ before(async () => {
   });
   const merchantUrl = await listen(merchant.server);
 
-  // The agent: a fresh key, 1 USDC, no ETH, ever.
   const agentKey = await newKeystore(dir, 'agent', passwordFile);
   await dealUSDC(agentKey.address, 1_000_000n);
   const agent = await createAgent({
@@ -145,7 +134,6 @@ test(`${CALLS} paid calls cost one open and one redemption, and the agent never 
   assert.equal(s0.deposited, DEPOSIT);
   assert.equal(s0.claimed, 0n);
 
-  // Restarted from its file, a facilitator still holds every voucher it accepted.
   const restarted = await createFacilitator({
     rpcUrl: RPC, signer: { kind: 'unlocked', address: FACILITATOR }, sessionsFile: world.sessionsFile, redeemEveryMs: 0,
   });
@@ -170,7 +158,6 @@ test('an old voucher is refused, and so is one above the deposit or signed by an
   const payee = merchantKey.address;
   const before = await bal(payee);
 
-  // the very same payment again
   let res = await fetch(`${merchantUrl}/api/v1/tick`, { headers: { [HEADER.signature]: encode(r.paymentPayload) } });
   assert.equal(res.status, 402);
   assert.equal(reasonOf(res), 'session_voucher_stale');
@@ -192,7 +179,6 @@ test('an old voucher is refused, and so is one above the deposit or signed by an
   assert.equal(res.status, 402);
   assert.equal(reasonOf(res), 'invalid_session_voucher');
 
-  // A voucher for less than one more call.
   res = await forged(BigInt(r.session.cumulative) + PRICE - 1n);
   assert.equal(res.status, 402);
   assert.equal(reasonOf(res), 'session_voucher_stale');
@@ -206,13 +192,12 @@ test('the payee closes the session: its last calls are paid and the rest of the 
   const owed = BigInt(agent.sessions()[Object.keys(agent.sessions())[0]].cumulative);
   assert.ok(owed > s.claimed, 'a call is still unredeemed');
   const accepted = facilitator.sessions().find((x) => x.id === sessionId);
-  await rpc('anvil_setBalance', merchantKey.address, '0xde0b6b3a7640000'); // gas for the payee's own close
+  await rpc('anvil_setBalance', merchantKey.address, '0xde0b6b3a7640000');
   const agentBefore = await bal(agent.address);
   const escrowBefore = await bal(A.sessionEscrow);
 
   const listed = (await (await fetch(`${world.facilitatorUrl}/sessions`)).json()).find((x) => x.id === sessionId);
   assert.equal(listed.accepted, accepted.accepted);
-  // The payee settles the last voucher the facilitator accepted and releases the rest in one call.
   const saved = JSON.parse(readFileSync(world.sessionsFile, 'utf8')).sessions[sessionId];
   const sent = await chain.send(A.sessionEscrow, 'closeByPayee(bytes32,uint256,bytes)', [sessionId, saved.accepted, saved.voucher], merchantKey);
   assert.ok(sent.ok, 'closed');
@@ -251,16 +236,11 @@ test("the owner takes the agent's free USDC home, gaslessly", async (t) => {
   assert.deepEqual(await agent.sweep(home), [], 'nothing left');
 });
 
-// The self-approaching condition, end to end. The owner (home) declares a path for a fresh agent:
-// one named merchant, a cap of 0.05 USDC. The agent holds nothing and opens its session as a signed
-// step on the path. Then the agent's own key turns attacker, the way a compromised machine would:
-// a step off the path, a step past the end, and a replay of a step already taken. All three are
-// refused by the path itself, and the rest of the money goes home.
 test("a path: the agent holds nothing, and its key can only walk the owner's path", async (t) => {
   if (skip) return t.skip(skip);
   if (!A.sessionPaths) return t.skip('X402SessionPaths is not deployed on this chain');
   const { dir, facilitator, facilitatorUrl, merchantUrl, merchantKey } = world;
-  const HOME = '0x70997970c51812dc3a010c7d01b50e0d17dc79c8'; // anvil's default account 1: unlocked on anvil only
+  const HOME = '0x70997970c51812dc3a010c7d01b50e0d17dc79c8';
   const home = { kind: 'unlocked', address: HOME };
   const merchant = merchantKey.address;
   const agentKey = await newKeystore(dir, 'path-agent', join(dir, 'password'));
@@ -303,7 +283,6 @@ test("a path: the agent holds nothing, and its key can only walk the owner's pat
   assert.equal(opened.funder, A.sessionPaths, 'the path funded the session');
   assert.equal(opened.deposited, 50_000n, 'the whole cap: everything the owner allowed this merchant');
 
-  // The agent's key turns attacker. Each step is simulated exactly as a facilitator would submit it.
   const STEP = 'stepWithSig(bytes32,address,address,uint64,bytes32,uint256,uint256,uint256,bytes)';
   const now = await chain.timestamp();
   const sign = (step) => signTypedData(pathStepTypedData({ chainId: agent.deployment.chainId, paths: A.sessionPaths, step }), agentKey, dir);
@@ -326,8 +305,6 @@ test("a path: the agent holds nothing, and its key can only walk the owner's pat
   const replay = { ...firstStep, payee: merchant };
   await refusedWith(replay, firstStep.signature, 'StaleStep(uint256,uint256)');
 
-  // Settle: one redemption pays the twenty calls; the payee closes; the refund returns to the path,
-  // and from the path only home can take it.
   await facilitator.redeemDue({ force: true });
   assert.equal((await readSession(chain, A.sessionEscrow, sessionId)).claimed, 20n * PRICE);
   assert.ok((await chain.send(A.sessionEscrow, 'closeByPayee(bytes32,uint256,bytes)', [sessionId, '0', '0x'], merchantKey)).ok);

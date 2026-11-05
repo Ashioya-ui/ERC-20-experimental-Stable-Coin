@@ -1,6 +1,3 @@
-// The pure-JavaScript EVM module (lib/evm.mjs): against published vectors everywhere; against
-// Foundry's cast where cast is installed; and, on a live rail, an agent whose key is a plain file
-// (no cast anywhere in its path) pays a merchant end to end.
 
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,7 +17,6 @@ const run = promisify(execFile);
 const castVersion = await run('cast', ['--version']).then(() => true, () => false);
 const rand = (n) => `0x${[...Array(n)].map(() => Math.floor(Math.random() * 256).toString(16).padStart(2, '0')).join('')}`;
 
-// The EIP-712 specification's own example, with its published digest and signature.
 const MAIL = {
   types: {
     EIP712Domain: [
@@ -39,7 +35,6 @@ const MAIL = {
   },
 };
 
-// The typed data this client signs for real: EIP-3009 authorizations, vouchers and path steps.
 function samples() {
   const chainId = 8453;
   const usdc = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
@@ -101,7 +96,6 @@ describe('evm.mjs against published vectors', () => {
 
 describe('evm.mjs against cast', { skip: castVersion ? false : 'Foundry cast is not installed' }, () => {
   const cast = async (...args) => (await run('cast', args.map(String))).stdout.trim();
-  // anvil's first account: a publicly known test key that never holds real money
   const KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
 
   test('the signatures this client makes are byte for byte the ones cast makes', async () => {

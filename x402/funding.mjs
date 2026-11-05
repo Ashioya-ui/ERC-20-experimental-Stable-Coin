@@ -1,19 +1,5 @@
 #!/usr/bin/env node
-// The funding endpoint: M-Pesa or a card in, USDC on Base straight into an agent's wallet, through a
-// licensed on-ramp partner (Kotani Pay). It holds the partner's API key, which must never ship in
-// the npm package, and nothing else: no wallet, no key of any agent, no money.
-//
-//   POST /fund   { method: "mpesa" | "card", phone, name, amount (KES), address (the agent's wallet) }
-//                -> { ok, message, redirectUrl?, referenceId }
-//   GET  /fund/<referenceId>   the last status the partner reported for that order
-//   POST /webhook/kotani       the partner's status callback
-//   GET  /health
-//
-// Env: KOTANI_API_KEY (required), KOTANI_API_URL (default: the sandbox), PUBLIC_URL (this service's
-// own https URL, for the partner's callback), PORT (8080), FUNDING_MIN_KES (100), FUNDING_MAX_KES (20000).
-//
-// Abuse: an M-Pesa order sends a payment prompt to a phone, so one phone gets at most one order every
-// two minutes and one caller at most ten an hour; amounts stay between the minimum and the maximum.
+// Funding endpoint: M-Pesa or card to USDC on Base via Kotani Pay. Holds the partner key only.
 
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
@@ -25,14 +11,12 @@ const MIN = Number(env.FUNDING_MIN_KES || 100);
 const MAX = Number(env.FUNDING_MAX_KES || 20000);
 const isAddress = (a) => /^0x[0-9a-fA-F]{40}$/.test(String(a ?? ''));
 
-/** A Kenyan mobile number as +2547XXXXXXXX or +2541XXXXXXXX, or null. */
 export function kenyanPhone(p) {
   const d = String(p ?? '').replace(/[\s()-]/g, '');
   const m = /^(?:\+?254|0)([17]\d{8})$/.exec(d);
   return m ? `+254${m[1]}` : null;
 }
 
-/** The partner request for one order (exported so it can be checked without a network). */
 export function kotaniOrder({ method, phone, name, amount, address, referenceId, callbackUrl }) {
   return {
     ...(method === 'mpesa'

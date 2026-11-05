@@ -1,9 +1,3 @@
-// What the facilitator's shared state does when the chain misbehaves.
-//
-// The facilitator is one long-lived process holding `settled`, `inflight`, `unconfirmed` and a
-// send queue across every request from untrusted merchants and payers. These tests drive the
-// error paths with a chain stub (test/stub.mjs) and ask the question that matters for a
-// long-lived worker: after a request has gone wrong, what does the NEXT request see?
 
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,7 +21,6 @@ describe('facilitator state across requests', { skip }, () => {
     for (const w of made) await w.close();
   });
 
-  // ------------------------------------------------------------------ 1. a read that throws
 
   test('a chain read that throws leaves nothing behind, and answers in the protocol, not a 500', async () => {
     let broken = true;
@@ -46,8 +39,6 @@ describe('facilitator state across requests', { skip }, () => {
     assert.equal(s.errorReason, 'unexpected_settle_error');
     assert.equal(s.transaction, '', 'nothing was sent');
 
-    // Nothing of the dead request may outlive it: the key must be forgotten, so the very same
-    // authorization still settles once the chain comes back.
     assert.equal(await w.holds(payer, nonce), false, 'the key was left in a shared map');
     broken = false;
     const again = await w.f.settle(b);
@@ -67,7 +58,6 @@ describe('facilitator state across requests', { skip }, () => {
     }
   });
 
-  // ------------------------------------------------------------------ 2. inflight promises
 
   test('a request joining one in flight never inherits a rejection', async () => {
     let release;
@@ -78,8 +68,8 @@ describe('facilitator state across requests', { skip }, () => {
     const b = w.payment({ payer, nonce });
 
     const first = w.f.settle(b);
-    await new Promise((r) => setImmediate(r)); // let it reach the chain read and park in `inflight`
-    const second = w.f.settle(b); // joins the same promise
+    await new Promise((r) => setImmediate(r));
+    const second = w.f.settle(b);
     release();
     for (const [name, p] of [['first', first], ['second', second]]) {
       const out = await p.then((v) => v, (e) => ({ threw: e.message }));
@@ -97,7 +87,6 @@ describe('facilitator state across requests', { skip }, () => {
     assert.equal(out.success, false);
   });
 
-  // ------------------------------------------------------------------ 3. unbounded growth
 
   test('`unconfirmed` is bounded: many lost receipts cannot grow it for ever', async () => {
     let n = 0;
@@ -116,7 +105,6 @@ describe('facilitator state across requests', { skip }, () => {
     );
   });
 
-  // ------------------------------------------------------------------ 4. the send queue
 
   test('one stuck send does not park every later settlement for ever', async () => {
     let stuck = true;
@@ -124,7 +112,7 @@ describe('facilitator state across requests', { skip }, () => {
       { send: () => (stuck ? new Promise(() => {}) : { hash: '0x' + 'cd'.repeat(32), ok: true }) },
       { queueWaitMs: 250 },
     );
-    w.f.settle(w.payment()).catch(() => {}); // never comes back
+    w.f.settle(w.payment()).catch(() => {});
     await new Promise((r) => setTimeout(r, 30));
     stuck = false;
 
@@ -139,12 +127,8 @@ describe('facilitator state across requests', { skip }, () => {
     assert.equal(w.chain.sends.length, 1, 'the abandoned settlement must not be sent later');
   });
 
-  // ------------------------------------------------------------------ 5. published before commit
 
   test('an unreadable receipt never drops the record that a transaction was broadcast', async () => {
-    // A JSON log line parses into an object with no `status`. Reading that as "the transaction
-    // failed" used to delete the `unconfirmed` entry, and the next retry then went through
-    // check() and broadcast the same authorization a second time.
     const hash = '0x' + 'ab'.repeat(32);
     let readable = false;
     const w = await world({
@@ -190,11 +174,8 @@ describe('facilitator state across requests', { skip }, () => {
     assert.equal(await w.holds(payer, nonce), false, 'a failed send left a cached answer behind');
   });
 
-  // ------------------------------------------------------------------ 6. staying alive
 
   test('awkward requests do not take the process down (no handler to hide them)', async () => {
-    // In a child, so Node 22's own answer to an unhandled rejection -- ending the process --
-    // is what decides this, rather than the test runner's listener.
     const src = `
       import net from 'node:net';
       import { stubFacilitator } from ${JSON.stringify(join(import.meta.dirname, 'stub.mjs'))};
@@ -207,9 +188,7 @@ describe('facilitator state across requests', { skip }, () => {
         setTimeout(() => { try { s.resetAndDestroy(); } catch {} resolve(); }, 40);
         s.on('error', () => resolve());
       });
-      // a client that vanishes mid-request
       await raw(\`POST /settle HTTP/1.1\\r\\nHost: x\\r\\ncontent-length: \${Buffer.byteLength(body)}\\r\\n\\r\\n\${body}\`);
-      // a body over the limit, then one that stops halfway, then odd request targets
       await raw('POST /settle HTTP/1.1\\r\\nHost: x\\r\\ncontent-length: 200000\\r\\n\\r\\n', 'x'.repeat(200000));
       await raw('POST /settle HTTP/1.1\\r\\nHost: x\\r\\ncontent-length: 500\\r\\n\\r\\n{"a":');
       for (const t of ['/settle?a=%zz', '//evil.example/settle', '/%', '*']) {
@@ -239,18 +218,14 @@ describe('facilitator state across requests', { skip }, () => {
       });
       s.on('close', resolve);
       s.on('error', () => resolve());
-      setTimeout(() => { try { s.resetAndDestroy(); } catch { /* gone */ } resolve(); }, 500);
+      setTimeout(() => { try { s.resetAndDestroy(); } catch { } resolve(); }, 500);
     });
     assert.equal((await (await fetch(`${url}/health`)).json()).ok, true);
     assert.equal((await w.f.settle(w.payment())).success, true);
   });
 
-  // ------------------------------------------------- audit observation 1: oversized body
 
   test('an oversized body gets a 413, not a reset connection', async () => {
-    // readJson used to req.destroy() in the same tick as the rejection, so the handler wrote
-    // 413 to a dead socket and the caller saw ECONNRESET -- indistinguishable from the server
-    // falling over. The answer must arrive first; the connection closes after it.
     const w = await world();
     const url = await w.listen();
     const port = Number(url.split(':').pop());
@@ -264,19 +239,15 @@ describe('facilitator state across requests', { skip }, () => {
       s.on('data', (d) => { got += d.toString(); });
       s.on('close', () => resolve(got));
       s.on('error', () => resolve(got));
-      setTimeout(() => { try { s.destroy(); } catch { /* gone */ } resolve(got); }, 3000);
+      setTimeout(() => { try { s.destroy(); } catch { } resolve(got); }, 3000);
     });
     assert.match(reply, /^HTTP\/1\.1 413 /, `expected a 413 status line, got: ${JSON.stringify(reply.slice(0, 120))}`);
     assert.match(reply, /body too large/);
     assert.equal((await (await fetch(`${url}/health`)).json()).ok, true, 'and the server is still up');
   });
 
-  // --------------------------------------------- audit observation 2: ambiguous broadcast
 
   test('a broadcast whose hash we never learned is never reported as unsent, and never retried', async () => {
-    // makeChain raises UnconfirmedError with an empty hash when the node may have accepted the
-    // transaction before the send call failed. The facilitator must record it and refuse to
-    // send again: re-broadcasting the same authorization is the one unacceptable outcome.
     const w = await world({ send: () => { throw new UnconfirmedError('', new Error('connection reset')); } });
     const b = w.payment();
     const first = await w.f.settle(b);
@@ -290,7 +261,6 @@ describe('facilitator state across requests', { skip }, () => {
   });
 });
 
-// --------------------------------------- audit observation 2, at the makeChain level
 
 describe('makeChain.send decides sent-or-not from the nonce, not the error', () => {
   const fakeCast = async (script) => {
@@ -302,7 +272,6 @@ describe('makeChain.send decides sent-or-not from the nonce, not the error', () 
     await chmod(bin, 0o755);
     return bin;
   };
-  // cast.mjs reads CAST_BIN once at module load, so each case imports a fresh copy.
   const freshChain = async (bin) => {
     process.env.CAST_BIN = bin;
     const mod = await import(`../lib/cast.mjs?fake=${encodeURIComponent(bin)}`);

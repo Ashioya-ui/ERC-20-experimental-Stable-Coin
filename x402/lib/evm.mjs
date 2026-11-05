@@ -1,18 +1,10 @@
-// Pure-JavaScript access to an EVM chain: Keccak-256, secp256k1 signatures, EIP-712, the ABI the
-// client reads, and JSON-RPC over fetch. With it an agent runs on Node.js alone. The facilitator,
-// which sends transactions, still goes through Foundry's cast.
-//
-// The curve arithmetic is plain BigInt and not constant-time. It signs on the agent's own machine,
-// where anyone placed to time it could read the key file instead.
-
+// secp256k1, keccak, ABI, EIP-712 and a JSON-RPC client, in plain Node.
 import { createHmac, randomBytes } from 'node:crypto';
 
 const hex = (buf) => `0x${Buffer.from(buf).toString('hex')}`;
 const isHexString = (s) => typeof s === 'string' && /^0x([0-9a-fA-F]{2})*$/.test(s);
 export const toBytes = (v) => (Buffer.isBuffer(v) || v instanceof Uint8Array ? Buffer.from(v) : Buffer.from(String(v).slice(2), 'hex'));
 const be32 = (n) => Buffer.from(n.toString(16).padStart(64, '0'), 'hex');
-
-// ---------------------------------------------------------------------------------- Keccak-256
 
 const MASK64 = (1n << 64n) - 1n;
 const RC = [
@@ -23,7 +15,6 @@ const RC = [
   0x8000000000008002n, 0x8000000000000080n, 0x000000000000800an, 0x800000008000000an,
   0x8000000080008081n, 0x8000000000008080n, 0x0000000080000001n, 0x8000000080008008n,
 ];
-// Rotation of lane (x, y), at index x + 5y.
 const ROT = [0, 1, 62, 28, 27, 36, 44, 6, 55, 20, 3, 10, 43, 25, 39, 41, 45, 15, 21, 8, 18, 2, 61, 56, 14].map(BigInt);
 const rotl = (v, n) => (n === 0n ? v : ((v << n) | (v >> (64n - n))) & MASK64);
 
@@ -46,7 +37,6 @@ function keccakF(s) {
   }
 }
 
-/** Keccak-256 (Ethereum's, not NIST SHA3-256) of bytes. */
 export function keccak256(data) {
   const input = Buffer.from(data);
   const rate = 136;
@@ -64,10 +54,7 @@ export function keccak256(data) {
   return out;
 }
 
-/** As `cast keccak`: 0x-hex input is hashed as bytes, anything else as UTF-8 text. */
 export const keccak = (input) => hex(keccak256(isHexString(input) ? toBytes(input) : Buffer.from(String(input), 'utf8')));
-
-// ----------------------------------------------------------------------------------- secp256k1
 
 const P = (1n << 256n) - (1n << 32n) - 977n;
 const N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
@@ -90,8 +77,6 @@ function inv(a, m) {
   }
   return mod(lm, m);
 }
-// Jacobian coordinates; a point with y = 0 is the point at infinity (secp256k1 has no point of
-// order two, so no finite point has y = 0).
 function dbl([x, y, z]) {
   if (y === 0n) return [0n, 0n, 0n];
   const ysq = mod(y * y, P);
@@ -144,7 +129,6 @@ function scalarOf(key) {
   return d;
 }
 
-/** A fresh random private key, 0x-hex. */
 export function newKey() {
   for (;;) {
     const b = randomBytes(32);
@@ -153,12 +137,10 @@ export function newKey() {
   }
 }
 
-/** The Ethereum address of a private key, lowercase. */
 export function addressOfKey(key) {
   return addressOfPoint(mulG(scalarOf(key)));
 }
 
-/** The address that signed `digest`, from a 65-byte r || s || v signature (ecrecover). */
 export function recoverAddress(digest, signature) {
   const b = toBytes(signature);
   if (b.length !== 65) throw new Error('a signature is 65 bytes');
@@ -177,7 +159,6 @@ export function recoverAddress(digest, signature) {
   return addressOfPoint(affine(q));
 }
 
-// Deterministic nonces (RFC 6979, HMAC-SHA256), so a signature never depends on a random source.
 function* nonces(d, digest) {
   const x = be32(d);
   const h = be32(mod(BigInt(hex(digest)), N));
@@ -197,7 +178,6 @@ function* nonces(d, digest) {
   }
 }
 
-/** The 65-byte signature r || s || v (v = 27 or 28, s in the lower half) of a 32-byte digest. */
 export function signDigest(digest, key) {
   const d = scalarOf(key);
   const z = BigInt(hex(digest));
@@ -208,7 +188,7 @@ export function signDigest(digest, key) {
     let s = mod(inv(k, N) * (z + r * d), N);
     if (s === 0n) continue;
     let recovery = Number(ry & 1n);
-    if (rx >= N) continue; // recovery id 2 or 3: astronomically rare, and Ethereum cannot express it
+    if (rx >= N) continue;
     if (s > N >> 1n) {
       s = N - s;
       recovery ^= 1;
@@ -217,8 +197,6 @@ export function signDigest(digest, key) {
   }
   throw new Error('unreachable');
 }
-
-// --------------------------------------------------------------------------------------- ABI
 
 const isDynamic = (t) => t === 'string' || t === 'bytes' || t.endsWith('[]');
 
@@ -257,7 +235,6 @@ function encodeTail(t, v) {
   return Buffer.concat([be32(BigInt(v.length)), encodeTypes(v.map(() => inner), v)]);
 }
 
-/** ABI encoding of `values` as `types` (static types, string, bytes and T[]). */
 export function encodeTypes(types, values) {
   if (types.length !== values.length) throw new Error(`${types.length} types, ${values.length} values`);
   const heads = [];
@@ -291,7 +268,6 @@ function decodeWord(t, w) {
   throw new Error(`unsupported ABI type ${t}`);
 }
 
-/** Decode `data` as `types`. */
 export function decodeTypes(types, data, base = 0) {
   const b = Buffer.from(data);
   const word = (at) => {
@@ -311,7 +287,6 @@ export function decodeTypes(types, data, base = 0) {
   });
 }
 
-/** "name(t1,t2)(r1,r2)" -> { name, inputs, outputs }. */
 export function parseSignature(sig) {
   const m = String(sig).replace(/\s+/g, '').match(/^([A-Za-z_$][\w$]*)\(([^()]*)\)(?:\(([^()]*)\))?$/);
   if (!m) throw new Error(`unsupported function signature ${sig}`);
@@ -319,26 +294,21 @@ export function parseSignature(sig) {
   return { name: m[1], inputs: list(m[2]), outputs: list(m[3]) };
 }
 
-/** As `cast abi-encode "f(types)" args...`: the 0x-hex encoding of the arguments. */
 export function abiEncode(sig, args) {
   return hex(encodeTypes(parseSignature(sig).inputs, args));
 }
 
-/** Calldata for `sig` with `args`. */
 export function calldata(sig, args) {
   const { name, inputs } = parseSignature(sig);
   return hex(Buffer.concat([keccak256(Buffer.from(`${name}(${inputs.join(',')})`)).subarray(0, 4), encodeTypes(inputs, args)]));
 }
 
-// A value as `cast call` prints it, so callers that parse cast's output read this the same way.
 function castFormat(t, v) {
   if (t.endsWith('[]')) return `[${v.map((x) => castFormat(t.slice(0, -2), x)).join(', ')}]`;
   if (t === 'string') return JSON.stringify(v);
   if (t === 'bool') return v ? 'true' : 'false';
   return String(v);
 }
-
-// ------------------------------------------------------------------------------------- EIP-712
 
 function encodeType(primary, types) {
   const deps = new Set();
@@ -367,7 +337,6 @@ function hashStruct(type, data, types) {
   return keccak256(Buffer.concat([keccak256(Buffer.from(encodeType(type, types), 'utf8')), ...fields]));
 }
 
-/** The EIP-712 digest of typed data in the eth_signTypedData_v4 shape. */
 export function hashTypedData({ types, primaryType, domain, message }) {
   if (!types.EIP712Domain) throw new Error('typed data must list its EIP712Domain type');
   const parts = [Buffer.from([0x19, 0x01]), hashStruct('EIP712Domain', domain, types)];
@@ -375,35 +344,23 @@ export function hashTypedData({ types, primaryType, domain, message }) {
   return keccak256(Buffer.concat(parts));
 }
 
-/** The 65-byte EIP-712 signature of `typed` by `key`, as `cast wallet sign --data` prints it. */
 export function signTypedDataWithKey(typed, key) {
   const digest = hashTypedData(typed);
   const signature = signDigest(digest, key);
-  // Every signature is checked before it leaves: an arithmetic fault can only stop a payment.
   if (recoverAddress(digest, signature) !== addressOfKey(key)) throw new Error('signature self-check failed');
   return signature;
 }
-
-// ------------------------------------------------------------------------------------ JSON-RPC
 
 class Transient extends Error {}
 const TRANSIENT = /limit|rate|too many|timeout|timed out|temporar|unavailable|busy|overload|header not found|ECONNRESET|fetch failed/i;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const first = (out) => String(out).trim().split(/\s+/)[0];
 
-/**
- * Chain access over JSON-RPC, with the read side of cast.mjs's makeChain: call, uint, bool, nonce,
- * timestamp and chainId. `rpcUrl` may list several endpoints, comma-separated; a rate-limited or
- * failing one hands the request to the next. It never sends a transaction.
- */
 export function makeJsChain(rpcUrl) {
   const urls = String(rpcUrl).split(',').map((u) => u.trim()).filter(Boolean);
   if (!urls.length) throw new Error('no RPC URL');
   let at = 0;
   let id = 0;
-  // A request that never reached a node (DNS, refused, reset, TLS, no answer in time) is the next
-  // endpoint's to answer. fetch reports all of these as a TypeError or a timeout; a node's own
-  // JSON-RPC error is not one of them and is final unless it names a transient condition.
   const unreached = (e) => e instanceof TypeError || e?.name === 'TimeoutError' || e?.name === 'AbortError';
   const why = (e) => `${e?.message}${e?.cause?.code ? ` (${e.cause.code})` : e?.cause?.message ? ` (${e.cause.message})` : ''}`;
   async function rpc(method, params) {

@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
-# Lays out the npm package in $1 (default: npm-package) from this repository:
-#   package.json            x402/npm/package.json, repository links pointed at $GITHUB_REPOSITORY
-#   x402/                   the MCP server, agent, facilitator and merchant, and their lib/
-#   deployments/, config/   the Base mainnet session contracts and USDC, read by x402/lib/config.mjs
-#   README.md, LICENSE      the quick start, with its relative links made absolute
-# The layout mirrors the repository, so config.mjs finds deployments/ and config/ unchanged.
+# Stages the npm package in $1 (default: npm-package), mirroring the repository layout.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 OUT=${1:-npm-package}

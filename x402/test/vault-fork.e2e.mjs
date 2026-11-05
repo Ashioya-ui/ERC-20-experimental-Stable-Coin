@@ -1,11 +1,3 @@
-// End to end: an agent pays an x402 merchant out of an Aave position, through VaultPayRouter, on
-// an anvil fork of Base mainnet -- Circle's real USDC, Aave's real waBasUSDC, the router deployed
-// onto the fork. This is the Base mainnet rail exactly, minus the real chain.
-//
-// Run by script/rehearsal/x402-vault-fork.sh, which starts the fork and deploys the router. Kept
-// out of the *.test.mjs glob, and skipped anywhere that is not such a fork.
-//
-// Env: RPC_URL (the fork), VAULT_FORK=1.
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,7 +13,6 @@ import { createMerchant } from '../merchant.mjs';
 import { createAgent } from '../agent.mjs';
 
 const RPC = process.env.RPC_URL || 'http://127.0.0.1:8545';
-// anvil's default accounts 0 and 4: unlocked on anvil only, never used anywhere else
 const FUNDER = '0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266';
 const FACILITATOR = '0x15d34aaf54267db7d7c367839aaf71a00a2c6a65';
 
@@ -35,7 +26,6 @@ const bal = (token, who) => chain.uint(token, 'balanceOf(address)(uint256)', [wh
 const rpc = (method, ...params) => cast(['rpc', '--rpc-url', RPC, method, ...params.map(String)]);
 const send = (to, sig, args) => chain.send(to, sig, args.map(String), { kind: 'unlocked', address: FUNDER });
 
-/** Give `who` `amount` USDC by writing its balance slot, found by probing rather than assumed. */
 async function dealUSDC(who, amount) {
   const probe = '0x' + randomBytes(20).toString('hex');
   for (let slot = 0; slot < 32; slot++) {
@@ -75,8 +65,6 @@ before(async () => {
   const merchant = await createMerchant({ rpcUrl: RPC, facilitatorUrl, payTo: merchantAddress });
   const merchantUrl = await listen(merchant.server);
 
-  // The agent: a fresh key, no ETH ever, and a treasury of 25 USDC parked in Aave. The deposit is
-  // made for it by someone else, as an agent's owner would fund it.
   const agentKey = await newKeystore(dir, 'agent', passwordFile);
   await dealUSDC(FUNDER, 25_000_000n);
   await send(A.usdc, 'approve(address,uint256)', [vault, 25_000_000n]);
@@ -130,8 +118,6 @@ test('a second payment works too, signing a fresh permit at the next nonce', asy
   if (skip) return t.skip(skip);
   const { agent, merchantUrl, merchantAddress } = world;
   const before = await bal(A.usdc, merchantAddress);
-  // usdc-only advertises no router, and the agent holds no USDC: no way to pay it, and it says so
-  // before signing anything.
   await assert.rejects(agent.pay(`${merchantUrl}/api/v1/usdc-only`), /insufficient funds/);
   const r = await agent.pay(`${merchantUrl}/api/v1/premium`);
   assert.equal(r.paid, true, r.error);
@@ -162,14 +148,12 @@ test('a tampered intent is refused: checked fields locally, signed fields by sim
   const wrap = (p) => encode({ x402Version: 2, resource: required.resource, accepted: option.r, payload: p });
   const before = await bal(A.usdc, merchantAddress);
 
-  // A different recipient: refused by the facilitator's own check against the requirement.
   const redirected = structuredClone(payload);
   redirected.vaultPay.intent.payTo = '0x000000000000000000000000000000000000a77a';
   let res = await fetch(`${merchantUrl}/api/v1/premium`, { headers: { [HEADER.signature]: wrap(redirected) } });
   assert.equal(res.status, 402);
   assert.equal(decode(res.headers.get(HEADER.required)).error, 'invalid_exact_evm_payload_recipient_mismatch');
 
-  // A larger share ceiling: every local check passes, the router's signature check does not.
   const loosened = structuredClone(payload);
   loosened.vaultPay.intent.maxShares = String(BigInt(loosened.vaultPay.intent.maxShares) * 2n);
   res = await fetch(`${merchantUrl}/api/v1/premium`, { headers: { [HEADER.signature]: wrap(loosened) } });

@@ -1,18 +1,5 @@
 #!/usr/bin/env node
 // Demo of the x402 rail on the local chain, and the helpers of the agent-economy run.
-// Needs the environment from `script/rehearsal/x402.sh --serve` (source x402/.tmp/current/env.sh).
-//
-//   demo.mjs                          the client agent pays all three kinds of x402 bill from
-//                                     one sUSD balance, then earns while idle
-//   demo.mjs balances                 sUSD and USDC of every wallet of the run
-//   demo.mjs list <id> <price> <asset> <wallet> <file> <title...>
-//                                     put a deliverable on the marketplace (/work/<id>),
-//                                     payable to <wallet> (a wallet name of the run)
-//   demo.mjs idle <days> [apy]        let <days> pass: hourly vault interest at <apy> (default
-//                                     0.05) and hourly keeper rebases
-//   demo.mjs drain                    hourly rebases until no surplus is waiting
-//
-// Test money on a local chain only.
 
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -60,7 +47,6 @@ async function table() {
   return rows;
 }
 
-/** Hourly keeper rebases until the surplus already waiting (fees, earlier interest) is paid out. */
 async function drain(maxHours = 72) {
   const waiting = await chain.uint(A.lens, 'distributable()(uint256)');
   let rebases = 0;
@@ -77,11 +63,6 @@ async function drain(maxHours = 72) {
   return { waiting, rebases };
 }
 
-/**
- * Let `days` pass the way they would on mainnet: every hour the lending vault earns an hour of
- * interest at `apy` (simulated by crediting it USDC) and a keeper calls the permissionless
- * rebase. Returns what was credited and how far the index rose.
- */
 async function idle(days, apy = 0.05) {
   const vault = first(await chain.call(A.treasury, 'vault()(address)'));
   const apyE6 = BigInt(Math.round(apy * 1e6));
@@ -96,7 +77,7 @@ async function idle(days, apy = 0.05) {
     await rpc('evm_increaseTime', 3600);
     await rpc('evm_mine');
     const assets = await chain.uint(vault, 'totalAssets()(uint256)');
-    const interest = (assets * apyE6) / (8760n * 1_000_000n); // one hour at `apy`
+    const interest = (assets * apyE6) / (8760n * 1_000_000n);
     if (interest > 0n) {
       await send(A.usdc, 'mint(address,uint256)', [vault, interest]);
       credited += interest;
@@ -105,7 +86,6 @@ async function idle(days, apy = 0.05) {
       await send(A.stabilizer, 'rebase()');
       rebases++;
     } catch {
-      /* nothing to distribute this hour */
     }
   }
   const i1 = await chain.uint(A.sUSD, 'index()(uint256)');

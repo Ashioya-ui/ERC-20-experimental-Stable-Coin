@@ -1,5 +1,3 @@
-// The MCP server (mcp.mjs) as an MCP client sees it: the handshake and tool list everywhere, and on
-// a live rail a wallet it made itself, funded, paying a merchant through x402_fetch.
 
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -71,7 +69,7 @@ describe('MCP server', () => {
   });
 
   test('makes its wallet key on first use, readable by its owner only', async () => {
-    await c.call('x402_wallet'); // the RPC is unreachable here, so this fails after the key exists
+    await c.call('x402_wallet');
     assert.equal(statSync(join(home, 'agent.key')).mode & 0o777, 0o600);
     assert.equal(statSync(home).mode & 0o777, 0o700);
   });
@@ -99,7 +97,7 @@ describe('MCP server on the rail', { skip: ready === true ? false : `no rail at 
     const m0 = await w.bal.usdc(w.merchantAddress);
     const r = await c.call('x402_fetch', { url: `${w.merchantUrl}/api/v1/usdc-only`, prefer: 'USDC' });
     assert.equal(r.isError, false, r.content[0].text);
-    assert.match(r.content[0].text, /^HTTP 200, paid \$0\.02 by a USDC transfer, spent \$0\.02 of \$0\.5/);
+    assert.match(r.content[0].text, /^HTTP 200, paid \$0\.02 by a USDC transfer, simulated against the USDC contract before it was sent, transaction 0x[0-9a-f]{64}, spent \$0\.02 of \$0\.5\n/);
     assert.equal((await w.bal.usdc(w.merchantAddress)) - m0, 20_000n);
     assert.match((await c.call('x402_wallet')).content[0].text, /USDC: 0\.98/);
   });

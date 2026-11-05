@@ -1,26 +1,5 @@
 #!/usr/bin/env node
-// An x402-protected API (resource server), x402 version 2.
-//
-// Order for a paid request: decode PAYMENT-SIGNATURE -> facilitator /verify -> run the handler ->
-// facilitator /settle -> 200 with PAYMENT-RESPONSE. If settlement fails, answer 402 and discard
-// the handler's result (PROMPTS.md, Phase 2).
-//
-// Routes:
-//   GET /api/v1/compute     0.005 sUSD, paid in sUSD
-//   GET /api/v1/premium     0.05 USDC, paid in USDC or, by an sUSD holder, through the router
-//   GET /api/v1/usdc-only   0.02 USDC, plain x402 USDC (what any public facilitator offers)
-//   GET /api/v1/tick        0.0001 USDC a call, paid through an x402 session (X402SessionEscrow):
-//                           a price per-payment settlement could never carry, since settling one
-//                           payment on Base costs more than ten of these calls
-//   GET /work/<id>          an item of the agent marketplace (MARKET_FILE), priced and paid to
-//                           the agent that made it
-//   GET /api/v1/race        test only (MERCHANT_TEST_ROUTES=1): the handler empties the payer's
-//                           balance before settlement, so settlement fails and the result is
-//                           discarded
-//
-// Env: RPC_URL, FACILITATOR_URL, MERCHANT_PORT (4021), MERCHANT_PAYTO, MARKET_FILE (optional),
-//      MERCHANT_TICK_PRICE (USDC units, default 100), MERCHANT_SESSION_MIN_REMAINING (seconds, 900),
-//      MERCHANT_SESSION_DEPOSIT (suggested deposit in USDC units, default 1000000).
+// Example x402 merchant: exact and session offers.
 
 import http from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
@@ -49,13 +28,10 @@ export async function createMerchant({
     extra: {
       ...dep.domains.usdc,
       ...(router && A.router ? { spectrumRouter: A.router, payWith: A.sUSD } : {}),
-      // An agent holding shares of one of these vaults can pay through VaultPayRouter instead.
       ...(router && A.vaultRouter && A.vaults.length ? { vaultRouter: A.vaultRouter, vaults: A.vaults } : {}),
     },
   });
 
-  // A per-call price paid through a session: the agent deposits once into the escrow, then sends a
-  // voucher with each call; the facilitator redeems them in batches.
   const session = (amount, to = payTo) => ({
     scheme: 'session', network: dep.network, amount: String(amount), asset: A.usdc, payTo: to, maxTimeoutSeconds: 60,
     extra: {
@@ -67,7 +43,6 @@ export async function createMerchant({
   const json = (body) => ({ type: 'application/json', body: JSON.stringify(body) });
   let ticks = 0;
   const routes = [
-    // Priced in sUSD, so only where Spectrum is deployed.
     ...(A.sUSD
       ? [{
           path: '/api/v1/compute', description: 'Compute job, priced in sUSD', mimeType: 'application/json',
@@ -99,7 +74,6 @@ export async function createMerchant({
       path: '/api/v1/race', description: 'Test: the payer spends its balance before settlement', mimeType: 'application/json',
       accepts: () => [sUSD('5000000000000000')],
       handler: async (payload) => {
-        // anvil only: move the payer's whole balance away while the work is being done
         const payer = payload.payload.authorization.from;
         const bal = first(await chain.call(A.sUSD, 'balanceOf(address)(uint256)', [payer]));
         await cast(['rpc', '--rpc-url', rpcUrl, 'anvil_setBalance', payer, '0xde0b6b3a7640000']);
@@ -164,9 +138,8 @@ export async function createMerchant({
       const verified = await post('/verify', body);
       if (!verified.isValid) return paymentRequired(res, resource, accepts, verified.invalidReason || 'payment invalid');
 
-      const result = await route.handler(payload, requirement); // do the work, deliver only if paid
+      const result = await route.handler(payload, requirement);
       let settled = await post('/settle', body);
-      // Sent but the receipt was lost: /settle is idempotent, so ask again before giving up.
       for (let i = 0; i < 3 && settled.errorReason === 'settlement_unconfirmed'; i++) {
         await new Promise((r) => setTimeout(r, 1000));
         settled = await post('/settle', body);
@@ -180,13 +153,10 @@ export async function createMerchant({
       });
       return res.end(result.body);
     } catch (e) {
-      // Answering must not throw in turn: an exception escaping this handler is an unhandled
-      // rejection, which Node 22 turns into a dead process.
       try {
         if (!res.headersSent) sendJson(res, 500, { error: 'internal error' });
         else if (!res.writableEnded) res.end();
       } catch {
-        /* the connection is already gone */
       }
     }
   });

@@ -1,6 +1,3 @@
-// Attack class: malformed / oversized / type-confused input to the facilitator.
-// Goal: structured errors, never a 500 / crash / hang. We probe fields that reach code paths
-// that are NOT behind the isUint/isAddress validators.
 import { FAC, MER, post, makeRedteamAgent } from './lib.mjs';
 import { makeChain } from '../lib/cast.mjs';
 
@@ -9,7 +6,6 @@ const now = await chain.timestamp();
 const SUSD = (process.env.SUSD || '').toLowerCase();
 const MERCHANT = (process.env.MERCHANT || '').toLowerCase();
 
-// A body that passes every validator up to the maxTimeoutSeconds handling.
 function wellFormed(overrides = {}) {
   const auth = {
     from: '0x9c98c320f674f0b380a15e189b06b790ed6267dc',
@@ -61,7 +57,6 @@ for (const ep of ['/verify', '/settle']) {
   }
 }
 
-// /convert odd bodies
 for (const [name, body] of [
   ['convert amount=abc', { amount: 'abc', payload: { authorization: { from: '0x9c98c320f674f0b380a15e189b06b790ed6267dc' } } }],
   ['convert maxTimeoutSeconds=abc', { amount: '10000', maxTimeoutSeconds: 'abc', payload: { authorization: { from: '0x9c98c320f674f0b380a15e189b06b790ed6267dc', to: process.env.ROUTER, value: '1', validAfter: '0', validBefore: String(now + 1000n), nonce: '0x' + '22'.repeat(32) }, signature: '0x00' }, spectrum: { salt: '0x' + '00'.repeat(32) } }],
@@ -76,19 +71,16 @@ for (const [name, body] of [
   }
 }
 
-// Oversized body (> 64KiB limit in readJson)
 {
   const big = 'x'.repeat(70 * 1024);
   const r = await post(FAC, '/verify', null, { raw: JSON.stringify({ pad: big, x402Version: 2 }) });
   console.log(`/verify | oversized 70KiB body -> ${r.status} ${JSON.stringify(r.json ?? r.text).slice(0, 120)}`);
 }
-// Invalid JSON
 {
   const r = await post(FAC, '/verify', null, { raw: '{not json' });
   console.log(`/verify | invalid JSON -> ${r.status} ${JSON.stringify(r.json ?? r.text).slice(0, 120)}`);
 }
 
-// Health after the barrage
 const h = await fetch(`${FAC}/health`).then((x) => x.json()).catch((e) => ({ err: e.message }));
 console.log('facilitator /health after barrage:', JSON.stringify(h));
 const hm = await fetch(`${MER}/health`).then((x) => x.json()).catch((e) => ({ err: e.message }));

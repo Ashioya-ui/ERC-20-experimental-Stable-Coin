@@ -1,34 +1,5 @@
 #!/usr/bin/env node
-// Spectrum x402 facilitator (x402 version 2, "exact" scheme on EVM).
-//
-// Three ways to pay, all gasless for the payer (the facilitator submits and pays the gas):
-//   sUSD    the requirement's asset is sUSD: an EIP-3009 transferWithAuthorization to payTo.
-//   USDC    the requirement's asset is USDC: a standard EIP-3009 USDC authorization (pass-through,
-//           so a merchant that switches to this facilitator still takes plain USDC).
-//   router  the requirement's asset is USDC but the payer holds sUSD: a receiveWithAuthorization
-//           of sUSD to the SpectrumPayRouter whose nonce commits to (payTo, amount, salt). The router
-//           redeems, pays the merchant exactly `amount` USDC and returns the change.
-//   vault   the requirement's asset is USDC and the payer holds shares of an ERC-4626 vault over
-//           it (on Base: Aave's waBasUSDC): a PayIntent signed for VaultPayRouter, plus an optional
-//           EIP-2612 permit on the shares. The router withdraws exactly `amount`, pays the merchant
-//           and returns the rest. Nothing is issued; this mode needs no Spectrum deployment at all.
-//   session the requirement's scheme is "session": a voucher on an X402SessionEscrow session, the
-//           cumulative amount owed so far, signed by the session's key. The first call also carries a
-//           gasless open (an EIP-3009 receive authorization whose nonce binds every term of the
-//           session), which is the only transaction it costs. Every later call is checked with one
-//           simulated redemption and answered at once; nothing is sent per call. Accepted vouchers
-//           are kept on disk and redeemed in batches (redeemMany), always before expiry.
-// Plus POST /convert (a Spectrum extension): the same router call with payTo = the payer, so an
-// agent holding sUSD can get USDC for any merchant on any facilitator.
-//
-// Every check runs before anything is sent, and the exact transaction is simulated with eth_call
-// first. Settlement is idempotent per (payer, nonce), with in-flight locking.
-//
-// Env: RPC_URL, FACILITATOR_PORT (4020), FACILITATOR_SIGNER (unlocked:<address> on anvil, or
-// keystore:<path> with FACILITATOR_PASSWORD_FILE), DEPLOYMENT / ROUTER_DEPLOYMENT (optional),
-// FACILITATOR_SESSIONS_FILE (accepted vouchers; default x402-sessions.json), FACILITATOR_REDEEM_EVERY_MS
-// (30000), FACILITATOR_REDEEM_THRESHOLD (100000 = 0.10 USDC), FACILITATOR_REDEEM_MAX_AGE_MS (3600000),
-// FACILITATOR_SESSION_MARGIN (900 s), FACILITATOR_ADMIN=1 (enables GET /sessions, POST /sessions/redeem).
+// x402 facilitator: /verify, /settle, /supported, session redemption.
 
 import http from 'node:http';
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
@@ -41,16 +12,11 @@ import {
 } from './lib/protocol.mjs';
 import { MAX_DURATION, MIN_DURATION, UINT128_MAX, list, readPath, readSession, sessionIdOf, wellFormed } from './lib/session.mjs';
 
-const SKEW = 6n; // seconds of clock slack allowed beyond maxTimeoutSeconds
-// A requirement comes from the resource server, which is not trusted: its maxTimeoutSeconds is
-// validated like any other input, and capped, so a hostile or careless merchant cannot talk the
-// facilitator into accepting an authorization that stays spendable for days (A-02).
+const SKEW = 6n;
 const MAX_TIMEOUT = 3600n;
-// VaultPayRouter's ABI tuples, as cast takes them.
 const INTENT_TYPE = `(${PAY_INTENT_FIELDS.map((f) => f.type).join(',')})`;
 const PERMIT_TYPE = '(uint256,uint256,uint8,bytes32,bytes32)';
 
-/** Raised when a settlement waited for its turn in the send queue and never got one. */
 class QueueTimeout extends Error {
   constructor(message) {
     super(message);
@@ -61,14 +27,12 @@ class QueueTimeout extends Error {
 export async function createFacilitator({
   rpcUrl, signer, chain: chainOverride, queueWaitMs, sessionsFile = null, redeemEveryMs, admin = false, clockTtlMs = 15_000,
 }) {
-  const chain = chainOverride || makeChain(rpcUrl); // tests may pass a wrapped chain
-  // How long a settlement may wait for its turn in the send queue before giving up (see serial).
+  const chain = chainOverride || makeChain(rpcUrl);
   const QUEUE_WAIT = Number(queueWaitMs ?? process.env.FACILITATOR_QUEUE_WAIT_MS ?? 120_000);
   const dep = await loadDeployment(chain);
   const A = dep.addresses;
   const from = await signerAddress(signer);
 
-  // Custom-error selectors of the contracts the facilitator calls, mapped to x402 reasons.
   const errors = {};
   const map = {
     'InvalidSignature()': 'invalid_exact_evm_payload_signature',
@@ -81,7 +45,6 @@ export async function createFacilitator({
     'InvalidPayTo(address)': 'invalid_pay_to',
     'AmountTooSmall()': 'spectrum_amount_too_small',
     'ReserveFloorBreached(uint256,uint256)': 'spectrum_reserve_floor',
-    // VaultPayRouter, and the OpenZeppelin ERC-20 errors its vault raises
     'IntentAlreadyUsed(bytes32)': 'invalid_exact_evm_payload_authorization_nonce_used',
     'NotYetValid(uint256)': 'invalid_exact_evm_payload_authorization_valid_after',
     'Expired(uint256)': 'invalid_exact_evm_payload_authorization_valid_before',
@@ -93,7 +56,6 @@ export async function createFacilitator({
     'PermitExpiresBeforeIntent(uint256,uint256)': 'vault_permit_expires_first',
     'ERC20InsufficientAllowance(address,uint256,uint256)': 'vault_insufficient_allowance',
     'ERC20InsufficientBalance(address,uint256,uint256)': 'insufficient_funds',
-    // X402SessionEscrow
     'BadExpiry(uint64)': 'invalid_session_expiry',
     'SessionExists(bytes32)': 'session_exists',
     'UnknownSession(bytes32)': 'unknown_session',
@@ -106,7 +68,6 @@ export async function createFacilitator({
     'AmountOverflow()': 'invalid_payload',
     'ZeroAddress()': 'invalid_payload',
     'EscrowAsPayee()': 'invalid_pay_to',
-    // X402SessionPaths: the self-approaching condition, refusing a step that does not approach the end
     'NotOnPath(address)': 'path_payee_not_on_path',
     'BeyondEnd(address,uint256,uint256)': 'path_beyond_end',
     'StaleStep(uint256,uint256)': 'path_step_stale',
@@ -141,18 +102,14 @@ export async function createFacilitator({
     [A.sUSD, A.stabilizer, A.treasury, A.router, A.usdc, A.vaultRouter, A.sessionEscrow, A.sessionPaths, ...A.vaults, '0x' + '0'.repeat(40)]
       .filter(Boolean),
   );
-  // Sessions. `sessions` holds every session this facilitator has accepted a voucher on (so each
-  // exists on-chain): the highest voucher it accepted, and what it knows was claimed. That record is
-  // money the merchant has already served against, so it is written to disk before any call is
-  // answered as paid.
-  const SESSION_MARGIN = BigInt(process.env.FACILITATOR_SESSION_MARGIN ?? 900); // life a session must have left
-  const REDEEM_THRESHOLD = BigInt(process.env.FACILITATOR_REDEEM_THRESHOLD ?? 100_000); // 0.10 USDC
+  const SESSION_MARGIN = BigInt(process.env.FACILITATOR_SESSION_MARGIN ?? 900);
+  const REDEEM_THRESHOLD = BigInt(process.env.FACILITATOR_REDEEM_THRESHOLD ?? 100_000);
   const REDEEM_MAX_AGE_MS = Number(process.env.FACILITATOR_REDEEM_MAX_AGE_MS ?? 3_600_000);
   const REDEEM_EVERY_MS = Number(redeemEveryMs ?? process.env.FACILITATOR_REDEEM_EVERY_MS ?? 30_000);
   const MAX_BATCH = 50;
   const BIG = ['deposited', 'claimed', 'expiry', 'accepted'];
-  const sessions = new Map(); // sessionId -> { funder, payee, token, signer, deposited, claimed, expiry, closed, accepted, voucher, pendingSince, openTx }
-  const opening = new Map(); // sessionId -> { hash, payer, validBefore }: an open sent whose receipt was not read
+  const sessions = new Map();
+  const opening = new Map();
   if (sessionsFile && existsSync(sessionsFile)) {
     const saved = JSON.parse(readFileSync(sessionsFile, 'utf8'));
     if (A.sessionEscrow && lc(saved.escrow) !== A.sessionEscrow) {
@@ -172,18 +129,13 @@ export async function createFacilitator({
     }
     const tmp = `${sessionsFile}.tmp`;
     writeFileSync(tmp, JSON.stringify({ version: 1, escrow: A.sessionEscrow, sessions: out }), { mode: 0o600 });
-    renameSync(tmp, sessionsFile); // atomic: a crash leaves the old file or the new one, never half of one
+    renameSync(tmp, sessionsFile);
   }
-  // Chain time for voucher checks, read at most every clockTtlMs and carried forward by the local
-  // clock in between: a voucher costs one RPC (its simulated redemption), not two. Opens and
-  // redemptions read the chain's clock directly.
   let clock = null;
   const chainNow = async () => {
     if (!clock || Date.now() - clock.at > clockTtlMs) clock = { t: await chain.timestamp(), at: Date.now() };
     return clock.t + BigInt(Math.floor((Date.now() - clock.at) / 1000));
   };
-  // The merchant's minimum remaining life for a session, never below the facilitator's own margin
-  // for getting a redemption included before expiry. Its requirement is untrusted input.
   const minRemainingOf = (r) => {
     const raw = r?.extra?.minRemainingSeconds;
     const asked = isUint(raw) ? BigInt(raw) : 0n;
@@ -191,47 +143,30 @@ export async function createFacilitator({
     return capped > SESSION_MARGIN ? capped : SESSION_MARGIN;
   };
 
-  // Idempotency per (payer, nonce). Each entry keeps a fingerprint of the whole request, so a
-  // cached success is returned only for the identical request, never for the same
-  // authorization presented with other requirements.
-  const settled = new Map(); // key -> { fp, result }
-  const inflight = new Map(); // key -> { fp, result: Promise }
-  const unconfirmed = new Map(); // key -> { fp, hash, payer, at }: sent, receipt not yet read
+  const settled = new Map();
+  const inflight = new Map();
+  const unconfirmed = new Map();
   const MAX_SETTLED = 10_000;
-  // `unconfirmed` grows on an error path, so it needs a bound of its own: an error an untrusted
-  // caller can provoke must not be a way to exhaust memory. An entry is only useful while the
-  // authorization it covers could still be settled, and check() refuses any validBefore more
-  // than MAX_TIMEOUT + SKEW past chain time, so one older than that can no longer let a retry
-  // broadcast anything and is safe to forget. The count cap is the backstop for a burst.
   const MAX_UNCONFIRMED = 1_000;
   const UNCONFIRMED_TTL_MS = Number(MAX_TIMEOUT) * 2 * 1000;
 
-  /** Record that `key` was broadcast, dropping entries too old or too many to be worth keeping. */
   const rememberUnconfirmed = (key, entry) => {
-    unconfirmed.delete(key); // re-insert, so the map stays in age order
+    unconfirmed.delete(key);
     unconfirmed.set(key, { ...entry, at: Date.now() });
     const cutoff = Date.now() - UNCONFIRMED_TTL_MS;
     for (const [old, v] of unconfirmed) {
-      if (old === key) break; // never evict the one just recorded
-      if (unconfirmed.size <= MAX_UNCONFIRMED && v.at >= cutoff) break; // Map iterates oldest first
+      if (old === key) break;
+      if (unconfirmed.size <= MAX_UNCONFIRMED && v.at >= cutoff) break;
       unconfirmed.delete(old);
     }
   };
 
-  // One transaction at a time from the facilitator's account: no nonce races, and each
-  // settlement is simulated again against the state its predecessor left.
-  //
-  // The queue is shared by every caller, so a send that never comes back would park all of
-  // them for ever. A settlement that has waited QUEUE_WAIT for its turn gives up instead --
-  // but only while it is still waiting. Once fn has started, a transaction may be in flight
-  // and the only honest answer is the one fn produces, however long it takes; cast's own
-  // timeout is what bounds that half.
   let queue = Promise.resolve();
   const serial = (fn) => {
     let started = false;
     let abandoned = false;
     const start = () => {
-      if (abandoned) return undefined; // its caller is gone: send nothing, let the queue move on
+      if (abandoned) return undefined;
       started = true;
       return fn();
     };
@@ -251,12 +186,9 @@ export async function createFacilitator({
   };
 
   const bad = (invalidReason, payer) => ({ isValid: false, invalidReason, ...(payer ? { payer } : {}) });
-  // A payment that simulates cleanly and then reverts once included costs this facilitator its gas
-  // and the payer nothing. Each such revert is charged to the payer whose signature was verified,
-  // and a payer with FAILURE_BUDGET of them inside FAILURE_WINDOW_MS is refused until they age out.
   const FAILURE_BUDGET = 3;
   const FAILURE_WINDOW_MS = 3_600_000;
-  const failures = new Map(); // payer -> timestamps of reverted settlements
+  const failures = new Map();
   const recentFailures = (payer) => {
     const xs = (failures.get(payer) || []).filter((t) => Date.now() - t < FAILURE_WINDOW_MS);
     if (xs.length) failures.set(payer, xs);
@@ -268,7 +200,6 @@ export async function createFacilitator({
     failures.set(payer, [...(failures.get(payer) || []), Date.now()]);
     if (failures.size > 10_000) failures.delete(failures.keys().next().value);
   };
-  // The payer named by a request, for answers produced before check() got far enough to find it.
   const payerOf = (body) => {
     const pl = body?.paymentPayload?.payload;
     let from;
@@ -278,10 +209,6 @@ export async function createFacilitator({
     } else from = pl?.vaultPay !== undefined ? pl.vaultPay?.intent?.payer : pl?.authorization?.from;
     return isAddress(from) ? lc(from) : undefined;
   };
-  // The idempotency key, taken from the same field check() dispatches on, so that the key and the
-  // path that was checked can never describe two different payments. For a vault intent it is
-  // (payer, router, salt): a payer's salts are its nonces, and the router's own replay guard is the
-  // backstop on-chain.
   const keyOf = (body) => {
     const pl = body?.paymentPayload?.payload;
     if (pl?.vaultPay !== undefined) {
@@ -313,11 +240,6 @@ export async function createFacilitator({
     ]);
   };
 
-  /**
-   * The validity window, against chain time (the clock the contracts check): validBefore must
-   * leave SKEW seconds for the transaction to land, and may not reach further than the
-   * requirement's (capped) maxTimeoutSeconds. null when the window is acceptable.
-   */
   async function windowError(validAfter, validBefore, r, payer, at) {
     const now = at ?? (await chain.timestamp());
     if (BigInt(validAfter) > now) return bad('invalid_exact_evm_payload_authorization_valid_after', payer);
@@ -329,7 +251,6 @@ export async function createFacilitator({
     return null;
   }
 
-  /** The vault path of check(): a PayIntent for VaultPayRouter and an optional share permit. */
   async function checkVault(vp, r) {
     const it = vp?.intent;
     const pm = vp?.permit ?? null;
@@ -344,8 +265,6 @@ export async function createFacilitator({
     const payer = lc(it.payer);
     const payTo = lc(r.payTo);
     const vault = lc(it.vault);
-    // Only the router this facilitator knows, and only vaults it has chosen: it pays the gas for
-    // every attempt, so it does not take a contract a payer picked.
     if (!A.vaultRouter || lc(vp.router) !== A.vaultRouter) return bad('unsupported_vault_router', payer);
     if (!A.vaults.includes(vault)) return bad('unsupported_vault', payer);
     if (forbiddenPayTo.has(payTo)) return bad('invalid_pay_to', payer);
@@ -353,8 +272,6 @@ export async function createFacilitator({
     if (lc(it.payTo) !== payTo) return bad('invalid_exact_evm_payload_recipient_mismatch', payer);
     if (lc(it.asset) !== lc(r.asset)) return bad('unsupported_asset', payer);
     if (BigInt(it.assets) !== BigInt(r.amount)) return bad('invalid_exact_evm_payload_authorization_value', payer);
-    // A permit that lapses before the intent would simulate cleanly and revert once included; the
-    // router refuses it too, but here it costs nothing to say so.
     if (pm !== null && BigInt(pm.deadline) + 1n < BigInt(it.validBefore)) return bad('vault_permit_expires_first', payer);
     const late = await windowError(it.validAfter, it.validBefore, r, payer);
     if (late) return late;
@@ -371,20 +288,13 @@ export async function createFacilitator({
 
     const tx = { to: A.vaultRouter, sig: `pay(${INTENT_TYPE},bytes,${PERMIT_TYPE})`, args: [intent, vp.signature, permitTuple(pm)] };
     try {
-      await chain.call(tx.to, tx.sig, tx.args, { from }); // exactly what /settle would send
+      await chain.call(tx.to, tx.sig, tx.args, { from });
     } catch (e) {
       return bad(reasonOf(e) || 'unexpected_verify_error', payer);
     }
     return { isValid: true, payer, mode: 'vault', tx, digest };
   }
 
-  /**
-   * The session path of check(). A voucher on a session that exists is checked by simulating its
-   * redemption, which is exactly what will pay the merchant later: signature, deposit, expiry and
-   * the token's own transfer to the payee. A voucher on a session that does not exist yet must come
-   * with the open, which is simulated instead, and the voucher is checked against the key the open
-   * names.
-   */
   async function checkSession(sp, r) {
     if (!wellFormed(sp) || !isAddress(r.payTo) || !isUint(r.amount)) return bad('invalid_payload');
     const id = lc(sp.sessionId);
@@ -408,14 +318,13 @@ export async function createFacilitator({
       if (s.token !== A.usdc) return bad('invalid_session_asset', payer);
       if (s.closed) return bad('session_closed', payer);
       if (s.expiry < (await chainNow()) + minRemaining) return bad('session_expiring', payer);
-      // Each call must add at least the price to everything already accepted or claimed.
       const floor = (s.accepted ?? 0n) > s.claimed ? s.accepted : s.claimed;
       if (cumulative < floor + price) return bad('session_voucher_stale', payer);
       try {
         await chain.call(A.sessionEscrow, 'redeem(bytes32,uint256,bytes)', [id, String(cumulative), voucher], { from });
       } catch (e) {
         const reason = reasonOf(e) || 'invalid_session_voucher';
-        if (known && reason === 'session_closed') known.closed = true; // the payee closed it: never redeem it again
+        if (known && reason === 'session_closed') known.closed = true;
         return bad(reason, payer);
       }
       return { isValid: true, payer, mode: 'session', id, cumulative, voucher, snapshot: s };
@@ -438,8 +347,6 @@ export async function createFacilitator({
     const now = await chain.timestamp();
     const late = await windowError(o.validAfter, o.validBefore, r, payer, now);
     if (late) return late;
-    // Useful to the merchant once open, and within the escrow's bounds whenever the authorization
-    // lands (as late as validBefore).
     if (expiry < now + minRemaining || expiry < BigInt(o.validBefore) + MIN_DURATION || expiry > now + MAX_DURATION) {
       return bad('invalid_session_expiry', payer);
     }
@@ -456,7 +363,7 @@ export async function createFacilitator({
       ],
     };
     try {
-      await chain.call(tx.to, tx.sig, tx.args, { from }); // exactly what /settle sends
+      await chain.call(tx.to, tx.sig, tx.args, { from });
     } catch (e) {
       return bad(reasonOf(e) || 'unexpected_verify_error', payer);
     }
@@ -468,11 +375,6 @@ export async function createFacilitator({
     };
   }
 
-  /**
-   * A session opened from the agent's X402SessionPaths path: a step the agent signed, bound to the
-   * path's state for this payee. The path refuses any step that does not approach the end its owner
-   * declared, and that is simulated here exactly as /settle will send it.
-   */
   async function checkPathStep(sp, r, c) {
     const ps = sp.pathStep;
     if (!A.sessionPaths) return bad('unsupported_session_paths', c.hint);
@@ -509,7 +411,7 @@ export async function createFacilitator({
       ],
     };
     try {
-      await chain.call(tx.to, tx.sig, tx.args, { from }); // exactly what /settle sends
+      await chain.call(tx.to, tx.sig, tx.args, { from });
     } catch (e) {
       return bad(reasonOf(e) || 'unexpected_verify_error', payer);
     }
@@ -523,8 +425,6 @@ export async function createFacilitator({
     };
   }
 
-  // One settlement at a time per session, so two calls carrying vouchers on the same session are
-  // compared against each other, never both against the same old state.
   const sessionLocks = new Map();
   const withSessionLock = (id, fn) => {
     const run = (sessionLocks.get(id) || Promise.resolve()).then(fn, fn);
@@ -536,7 +436,6 @@ export async function createFacilitator({
     return run;
   };
 
-  /** What became of an open whose receipt was not read: 'ok', 'reverted' or 'unknown'. */
   async function openOutcome(pending) {
     if (!pending.hash) return 'unknown';
     try {
@@ -544,24 +443,16 @@ export async function createFacilitator({
       if (['0x1', '1', 'true'].includes(status)) return 'ok';
       if (['0x0', '0', 'false'].includes(status)) return 'reverted';
     } catch {
-      /* not known yet */
     }
     return 'unknown';
   }
 
-  /**
-   * /settle for a session voucher. Opens the session if this call carries the open (the only
-   * transaction a session costs before redemption), then records the voucher. Answers paid only
-   * once the voucher is on disk.
-   */
   async function settleSession(body) {
     const fail = (errorReason, payer, transaction = '') => ({ success: false, errorReason, payer: payer ?? '', transaction, network: dep.network });
     const sp = body?.paymentPayload?.payload?.session;
     if (!isBytes32(sp?.sessionId)) return fail('invalid_payload', payerOf(body));
     const id = lc(sp.sessionId);
     return withSessionLock(id, async () => {
-      // An open broadcast earlier whose outcome was never read: resolve it before anything else, and
-      // never broadcast the same authorization again while it might still be included.
       const pending = opening.get(id);
       if (pending) {
         if ((await openOutcome(pending)) === 'unknown') {
@@ -586,7 +477,7 @@ export async function createFacilitator({
       if (v.tx) {
         try {
           const sent = await serial(async () => {
-            await chain.call(v.tx.to, v.tx.sig, v.tx.args, { from }); // again, against the latest state
+            await chain.call(v.tx.to, v.tx.sig, v.tx.args, { from });
             return chain.send(v.tx.to, v.tx.sig, v.tx.args, signer);
           });
           if (!sent.ok) {
@@ -614,19 +505,13 @@ export async function createFacilitator({
       try {
         persist();
       } catch (e) {
-        Object.assign(s, before); // not on disk, so not accepted: the merchant must not serve it
+        Object.assign(s, before);
         return fail('unexpected_settle_error', v.payer, transaction);
       }
       return { success: true, payer: v.payer, transaction, network: dep.network, session: { id, cumulative: String(v.cumulative) } };
     });
   }
 
-  /**
-   * Redeem what is due: every session whose unredeemed vouchers reach REDEEM_THRESHOLD, have waited
-   * REDEEM_MAX_AGE_MS, or whose expiry is near; everything when `force`. Each voucher is simulated on
-   * its own first, so one session that can no longer pay never sinks a batch. One transaction per
-   * MAX_BATCH sessions. Passes run one at a time.
-   */
   let redeeming = Promise.resolve();
   function redeemDue({ force = false } = {}) {
     const run = redeeming.then(() => redeemPass(force));
@@ -648,8 +533,6 @@ export async function createFacilitator({
         await chain.call(A.sessionEscrow, 'redeem(bytes32,uint256,bytes)', [id, String(item.cumulative), item.voucher], { from });
         ready.push(item);
       } catch (e) {
-        // Claimed by someone else already, closed by the payee, or refused by the token: take the
-        // chain's word for the session's state, and try again on a later pass if it is still due.
         const fresh = await readSession(chain, A.sessionEscrow, id).catch(() => null);
         if (fresh) {
           if (fresh.claimed > s.claimed) s.claimed = fresh.claimed;
@@ -676,8 +559,6 @@ export async function createFacilitator({
           return chain.send(A.sessionEscrow, tx.sig, tx.args, signer);
         });
       } catch (e) {
-        // Unconfirmed: the next pass simulates again, and a voucher the chain already paid fails
-        // that simulation instead of being sent twice. Anything else: nothing was sent.
         if (e instanceof UnconfirmedError) transactions.push({ hash: e.hash, ok: null, sessions: batch.length });
         continue;
       }
@@ -685,8 +566,6 @@ export async function createFacilitator({
         transactions.push({ hash: sent.hash, ok: false, sessions: batch.length, paid: 0 });
         continue;
       }
-      // redeemMany is best effort: an entry that could not pay in the block is skipped, not
-      // reverted, so what was claimed is read back from the chain, never assumed.
       let paid = 0;
       for (const b of batch) {
         const s = sessions.get(b.id);
@@ -714,7 +593,6 @@ export async function createFacilitator({
     }));
   }
 
-  /** Everything /verify checks; on success also returns the exact transaction /settle sends. */
   async function check(body) {
     const { x402Version, paymentPayload: p, paymentRequirements: r } = body ?? {};
     if (x402Version !== X402_VERSION || p?.x402Version !== X402_VERSION) return bad('invalid_x402_version');
@@ -730,8 +608,6 @@ export async function createFacilitator({
     }
     if (p.payload?.session !== undefined) return bad('invalid_payload');
     if (p.payload?.vaultPay !== undefined) {
-      // One payment per payload: a payload that is both an authorization and an intent could be
-      // keyed as one and checked as the other.
       if (p.payload?.authorization !== undefined) return bad('invalid_payload');
       return checkVault(p.payload.vaultPay, r);
     }
@@ -791,7 +667,6 @@ export async function createFacilitator({
       };
     }
 
-    // Simulate exactly what /settle would send, from the facilitator's address.
     try {
       await chain.call(tx.to, tx.sig, tx.args, { from });
     } catch (e) {
@@ -807,9 +682,6 @@ export async function createFacilitator({
     try {
       v = await check(body);
     } catch (e) {
-      // A chain read that threw is not a verdict on the payment. Answering in the protocol's
-      // own shape keeps a flaky RPC from looking like a broken facilitator, and -- because
-      // settle() shares check() -- keeps a rejected promise out of the in-flight map.
       return bad(reasonOf(e) || 'unexpected_verify_error', payerOf(body));
     }
     return v.isValid ? { isValid: true, payer: v.payer } : v;
@@ -826,10 +698,9 @@ export async function createFacilitator({
     const fail = (errorReason, payer, transaction = '') => ({ success: false, errorReason, payer: payer ?? '', transaction, network: dep.network });
     const prior = key && (settled.get(key) || inflight.get(key) || unconfirmed.get(key));
     if (prior && prior.fp !== fp) {
-      // Anything other than the identical request that reuses the authorization is a replay.
       return fail('invalid_exact_evm_payload_authorization_nonce_used', payerOf(body));
     }
-    if (prior && prior.result) return prior.result; // a retry gets the same answer
+    if (prior && prior.result) return prior.result;
     const succeed = (payer, transaction) => {
       const response = { success: true, payer, transaction, network: dep.network };
       settled.set(key, { fp, result: response });
@@ -838,12 +709,6 @@ export async function createFacilitator({
     };
     const work = prior
       ? (async () => {
-          // A transaction was sent for this request but its receipt was lost: look again.
-          // Unless we never learned its hash -- an ambiguous broadcast, where the node may have
-          // accepted the transaction before the send call failed. There is nothing to look up,
-          // and the one thing that must not happen is a retry broadcasting it again, so the
-          // record is kept and the answer stays unconfirmed until an operator reconciles it
-          // against the facilitator's account nonce.
           if (!prior.hash) return fail('settlement_unconfirmed', prior.payer);
           let receipt;
           try {
@@ -855,9 +720,6 @@ export async function createFacilitator({
           const ok = ['0x1', '1', 'true'].includes(status);
           const reverted = ['0x0', '0', 'false'].includes(status);
           if (!ok && !reverted) {
-            // The chain did not say either way. Keep the record of the broadcast: it is the only
-            // thing stopping the next retry from running check() and sending the same
-            // authorization a second time.
             return fail('settlement_unconfirmed', prior.payer, prior.hash);
           }
           unconfirmed.delete(key);
@@ -868,16 +730,13 @@ export async function createFacilitator({
           try {
             v = await check(body);
           } catch (e) {
-            // As in verify(): a read that threw decided nothing, and settle() must not reject,
-            // or the promise parked in `inflight` would hand the rejection to every later
-            // request that joins it.
             return fail(reasonOf(e) || 'unexpected_settle_error', payerOf(body));
           }
           if (!v.isValid) return fail(v.invalidReason, v.payer);
           try {
             return await serial(async () => {
               try {
-                await chain.call(v.tx.to, v.tx.sig, v.tx.args, { from }); // again, against the latest state
+                await chain.call(v.tx.to, v.tx.sig, v.tx.args, { from });
               } catch (e) {
                 return fail(reasonOf(e) || 'unexpected_settle_error', v.payer);
               }
@@ -890,8 +749,6 @@ export async function createFacilitator({
                 return succeed(v.payer, sent.hash);
               } catch (e) {
                 if (e instanceof UnconfirmedError) {
-                  // Sent, outcome unknown: never report it as failed-and-unsent. A retry of the
-                  // same request looks the receipt up again.
                   rememberUnconfirmed(key, { fp, hash: e.hash, payer: v.payer });
                   return fail('settlement_unconfirmed', v.payer, e.hash);
                 }
@@ -899,8 +756,6 @@ export async function createFacilitator({
               }
             });
           } catch (e) {
-            // Its turn never came, so nothing was broadcast for it: a plain failure the payer
-            // can retry with the same authorization.
             if (e instanceof QueueTimeout) return fail('settlement_queue_timeout', v.payer);
             throw e;
           }
@@ -913,7 +768,6 @@ export async function createFacilitator({
     }
   }
 
-  /** Spectrum extension: convert the payer's own sUSD to USDC through the router (payTo = payer). */
   async function convert(body) {
     if (!A.router) return { success: false, errorReason: 'unsupported', transaction: '', network: dep.network };
     const auth = body?.payload?.authorization;
@@ -963,27 +817,21 @@ export async function createFacilitator({
       if (req.method === 'POST' && url.pathname === '/verify') return sendJson(res, 200, await verify(await readJson(req)));
       if (req.method === 'POST' && url.pathname === '/settle') return sendJson(res, 200, await settle(await readJson(req)));
       if (req.method === 'POST' && url.pathname === '/convert') return sendJson(res, 200, await convert(await readJson(req)));
-      // Operator only, and off by default: the server listens on 127.0.0.1, and redemption spends gas.
       if (admin && req.method === 'GET' && url.pathname === '/sessions') return sendJson(res, 200, sessionList());
       if (admin && req.method === 'POST' && url.pathname === '/sessions/redeem') {
         return sendJson(res, 200, await redeemDue({ force: true }));
       }
       return sendJson(res, 404, { error: 'not found' });
     } catch (e) {
-      // Answering must not throw in turn: an exception escaping this handler is an unhandled
-      // rejection, and Node 22 ends the process on one, so a single awkward request would take
-      // the facilitator down for everybody.
       try {
-        if (e.status === 413) closeAfter(req, res); // answer first, then close the connection
+        if (e.status === 413) closeAfter(req, res);
         if (!res.headersSent) sendJson(res, e.status || 500, { error: e.status ? e.message : 'internal error' });
         else if (!res.writableEnded) res.end();
       } catch {
-        /* the connection is already gone */
       }
     }
   });
 
-  // Redemption runs on its own clock, so vouchers are settled whether or not calls keep coming.
   let timer = null;
   if (A.sessionEscrow && REDEEM_EVERY_MS > 0) {
     timer = setInterval(() => {
