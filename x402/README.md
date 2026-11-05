@@ -24,7 +24,9 @@ nothing else.
      ```
 2. **Ask your agent for its wallet:** "Show my x402 wallet." The first time, it makes a wallet on
    Base and shows the address.
-3. **Fund it.** The wallet answer includes a one-tap MetaMask link: on a phone it opens MetaMask with
+3. **Fund it.** Ask your agent to add money and pick how: an **M-Pesa** prompt on your phone, a **card**
+   checkout, **Yellow Card**, or **MetaMask** (`x402_fund`). M-Pesa and card go through Kotani Pay
+   and land straight in the agent's wallet as USDC on Base. The wallet answer also includes a one-tap MetaMask link: on a phone it opens MetaMask with
    the USDC send on Base already filled in (address, amount, network), so funding is one Confirm;
    any other wallet can scan the `ethereum:` payment request next to it. From M-Pesa or a bank:
    buy USDC on Base in your wallet app (MetaMask: Buy) or on an exchange, then use the link. A few
@@ -41,6 +43,22 @@ nothing else.
 Without settings, the budget is $1, the limit is $0.10 a call and $0.50 a minute. The wallet key lives in
 `~/.x402-sessions/agent.key` on your computer, so keep only what the agent should spend in it.
 For money the agent should never hold at all, see [paths](#give-an-agent-a-budget-owners).
+
+## The funding service (M-Pesa and card)
+
+M-Pesa and card funding use a licensed on-ramp partner, Kotani Pay, whose API key cannot ship in a
+public package. `x402/funding.mjs` is the one small service that holds it: it creates the order
+(USDC on Base to the agent's address), sends the M-Pesa prompt or returns the card checkout, and
+holds no wallet or money. It limits each phone to one order every two minutes and each caller to
+ten an hour.
+
+```bash
+KOTANI_API_KEY=... KOTANI_API_URL=https://<production api>/api/v3 PUBLIC_URL=https://<this service> \
+  npx -y -p @pyzratio/x402-sessions x402-funding
+```
+
+Point agents at it with `X402_FUNDING_URL` (Claude Desktop: "Funding service"). Yellow Card's
+checkout needs only its public widget key: `X402_YELLOWCARD_KEY`.
 
 ## Limits that hold when the agent misbehaves
 
