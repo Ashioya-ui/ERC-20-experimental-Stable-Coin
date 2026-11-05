@@ -11,7 +11,9 @@ nothing else.
 1. **Add it to your agent.**
    - **Claude Desktop:** download
      [`x402-sessions.mcpb`](https://github.com/Ashioya-ui/ERC-20-experimental-Stable-Coin/releases/latest/download/x402-sessions.mcpb)
-     and open it. Claude Desktop installs it and asks for your budget and your limit per call.
+     and open it. Claude Desktop installs it and asks for your budget and your limit per call. If
+     opening the file does nothing (Windows often has no app set for `.mcpb`): Settings → Desktop
+     app → Extensions → Manage → Advanced settings → Install extension, and pick the file.
    - **Claude Code:** `claude mcp add --scope user x402 -- npx -y @pyzratio/x402-sessions`
      (`--scope user` makes it available in every folder, not only the one you ran it in). On Windows
      outside WSL: `claude mcp add --scope user x402 -- cmd /c npx -y @pyzratio/x402-sessions`.
@@ -22,10 +24,15 @@ nothing else.
      ```
 2. **Ask your agent for its wallet:** "Show my x402 wallet." The first time, it makes a wallet on
    Base and shows the address.
-3. **Fund it.** Send USDC on Base to that address from Coinbase, MetaMask or any wallet that holds
-   USDC on Base. A few dollars covers thousands of small calls. It needs no ETH.
-4. **Use paid APIs.** Ask your agent to fetch any x402 URL. It pays when the server asks, never more
-   than your limit per call, and stops at your budget.
+3. **Fund it.** The wallet answer includes a one-tap MetaMask link: on a phone it opens MetaMask with
+   the USDC send on Base already filled in (address, amount, network), so funding is one Confirm;
+   any other wallet can scan the `ethereum:` payment request next to it. From M-Pesa or a bank:
+   buy USDC on Base in your wallet app (MetaMask: Buy) or on an exchange, then use the link. A few
+   dollars covers thousands of small calls. It needs no ETH.
+4. **Use paid APIs.** Ask your agent to fetch any x402 URL, for example
+   "Fetch https://2s.io/api/crypto/gas-oracle?chain=base with x402_fetch". It pays when the server
+   asks, never more than your limit per call, and stops at your budget. When the server publishes
+   its inputs with its price, a request missing a required one is refused before anything is paid.
 
 Without settings, the budget is $1, the limit is $0.10 a call and $0.50 a minute. The wallet key lives in
 `~/.x402-sessions/agent.key` on your computer, so keep only what the agent should spend in it.

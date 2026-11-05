@@ -104,8 +104,8 @@ const TOOLS = [
     name: 'x402_wallet',
     title: 'Show the x402 wallet',
     description:
-      "Show this agent's x402 wallet: its address on Base, its USDC balance, its spending limits, what it has spent, and its open " +
-      'sessions. To fund it, send USDC on Base to the address.',
+      "Show this agent's x402 wallet: its address on Base, its USDC balance, its spending limits, what it has spent, its open " +
+      'sessions, and one-tap links to fund it. Balances change: call it again for a fresh reading, never answer from an earlier one.',
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, openWorldHint: true },
   },
@@ -161,11 +161,28 @@ function agent() {
 /** "could not reach Base" for an RPC failure, the message itself otherwise. */
 const reason = (e) => (e?.code === 'RPC_UNREACHABLE' ? `could not reach Base right now (${e.message})` : e?.message ?? String(e));
 
-function fundingLine(a) {
-  return a.path
-    ? `Payments come from path ${a.path}, which its owner funds and can recall at any time.`
-    : `To fund it, send USDC on Base to ${a.address}. It needs no ETH: a payment is a signature, and the seller pays the gas.`;
+/**
+ * How to fund the wallet, shortest first. `want` is what to suggest sending (USDC units): a
+ * filled-in MetaMask send (one tap on a phone; a QR code from a desktop browser), and the same
+ * payment request as an EIP-681 link any wallet can scan.
+ */
+function fundingLines(a, want) {
+  if (a.path) return [`Payments come from path ${a.path}, which its owner funds and can recall at any time.`];
+  const lines = [`To fund it, send USDC on Base to ${a.address}. It needs no ETH: a payment is a signature, and the seller pays the gas.`];
+  const usdc = a.deployment?.addresses?.usdc;
+  const chainId = Number(a.deployment?.chainId);
+  if (usdc && chainId && want > 0n) {
+    lines.push(
+      `One tap with MetaMask (a filled-in send of ${usd(want)} USDC on Base, to confirm in the app): `
+        + `https://link.metamask.io/send/${usdc}@${chainId}/transfer?address=${a.address}&uint256=${want}`,
+      `Any other wallet can scan this payment request: ethereum:${usdc}@${chainId}/transfer?address=${a.address}&uint256=${want}`,
+    );
+  }
+  return lines;
 }
+const fundingLine = (a, want = 0n) => fundingLines(a, want).join('\n');
+const stamp = () => `Checked ${new Date().toISOString().slice(0, 19).replace('T', ' ')} UTC.`;
+const hhmm = (unixSeconds) => `${new Date(Number(unixSeconds) * 1000).toISOString().slice(11, 16)} UTC`;
 
 async function walletText() {
   // The address comes from the key file alone, so it is always shown, even when Base cannot be read.
@@ -192,10 +209,20 @@ async function walletText() {
   }
   const sessions = Object.values(a.sessions());
   const paused = Object.entries(a.breakers()).filter(([, x]) => x.until > Date.now());
+  // Signed payments the server has not collected: they count until they expire unused.
+  const held = a.ledger().payments.filter((p) => p.pending);
+  const heldUsd = held.reduce((s, p) => s + parseUsd(p.usd), 0n);
+  const releases = held.reduce((m, p) => (BigInt(p.pending.validBefore) > m ? BigInt(p.pending.validBefore) : m), 0n);
+  // Suggest topping the wallet up to what the budget still allows.
+  const room = policy.budget - a.spent;
+  const want = room > b.usdc ? room - b.usdc : 0n;
   return [
     `Address: ${a.address} (${a.deployment.network === 'eip155:8453' ? 'Base' : a.deployment.network})`,
     `USDC: ${formatUnits(b.usdc, 6)}`,
     `Spent: ${usd(a.spent)} of a ${usd(policy.budget)} budget; at most ${usd(policy.maxPerRequest)} a call.`,
+    ...(heldUsd > 0n
+      ? [`Of that, ${usd(heldUsd)} is signed but not collected by the server (the balance above still holds it); it is released by ${hhmm(releases)} if never used.`]
+      : []),
     ...settingsNote(),
     ...(path ? [
       `Path: it can still pay out at most ${usd(path.canStillPay)}; ${usd(path.committed)} committed of ${usd(path.bound)}.`,
@@ -207,8 +234,9 @@ async function walletText() {
     sessions.length
       ? `Open sessions: ${sessions.map((s) => `${s.payee} (${usd(BigInt(s.cumulative))} used of ${usd(BigInt(s.deposit))})`).join('; ')}`
       : 'Open sessions: none.',
-    fundingLine(a),
+    ...fundingLines(a, want),
     `The key is in ${join(HOME, 'agent.key')}.`,
+    stamp(),
   ].join('\n');
 }
 
@@ -227,10 +255,18 @@ async function fetchText({ url, method = 'GET', headers = {}, body, prefer = 'se
     if (r.settlement?.transaction) head.push(`transaction ${r.settlement.transaction}`);
   }
   const undelivered = !r.delivered && r.charged > 0n;
-  if (undelivered) head.push(`charged ${usd(r.charged)}, not delivered`);
+  // A one-off payment the server did not settle has not left the wallet: it is held until it expires.
+  const auth = r.paymentPayload?.payload?.authorization;
+  const collected = r.settlement?.success === true;
+  if (undelivered && auth && !collected) {
+    head.push(`not served, and the ${usd(r.charged)} payment was signed but not collected: the server did not settle it, `
+      + `so it stays counted until ${hhmm(auth.validBefore)} and is released then if unused`);
+  } else if (undelivered) head.push(`charged ${usd(r.charged)}, not delivered`);
   if (r.paid || r.mode) head.push(`spent ${usd(a.spent)} of ${usd(policy.budget)}`);
   if (r.error) head.push(`${r.status === 402 ? 'payment refused' : 'error'}: ${r.error}`);
-  if (undelivered) head.push('do not retry this URL now: the merchant was paid and did not serve the call');
+  if (undelivered && r.status >= 400 && r.status < 500 && r.status !== 402) {
+    head.push('the server rejected the request itself: fix the request (see its answer below) before paying again');
+  } else if (undelivered) head.push('do not retry this URL now: the merchant was paid and did not serve the call');
   const text = String(r.body ?? '');
   const shown = text.length > MAX_BODY ? `${text.slice(0, MAX_BODY)}\n[... ${text.length - MAX_BODY} more characters]` : text;
   return { text: `${head.join(', ')}\n\n${shown}`, isError: (r.status === 402 && !r.paid) || undelivered };
@@ -252,7 +288,8 @@ async function callTool(name, args) {
     if (problems.length) text += `\n${settingsNote()[0]}`;
     if (/insufficient|balance|exceeds/i.test(e.message) && agentPromise) {
       try {
-        text += `\n${fundingLine(await agentPromise)}`;
+        const ag = await agentPromise;
+        text += `\n${fundingLine(ag, policy.budget > ag.spent ? policy.budget - ag.spent : 0n)}`;
       } catch {
         // the funding hint is best effort
       }

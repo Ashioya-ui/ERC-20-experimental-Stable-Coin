@@ -708,6 +708,47 @@ export async function createAgent({
   }
 
   /**
+   * What the offer itself says this request lacks. A v2 offer may carry the x402 bazaar extension:
+   * the JSON schema of the inputs the server accepts. A request missing a required query parameter
+   * or body field, or giving a value outside a listed set, would be paid for and then refused, so it
+   * is not paid for. Returns null when the offer has no schema or the request satisfies it.
+   */
+  function inputProblem(required, url, body) {
+    const input = required?.extensions?.bazaar?.schema?.properties?.input?.properties;
+    if (!input || typeof input !== 'object') return null;
+    const wrong = [];
+    const check = (schema, values, where) => {
+      if (!schema || typeof schema !== 'object') return;
+      for (const k of Array.isArray(schema.required) ? schema.required : []) {
+        if (values[k] === undefined || values[k] === '') wrong.push(`missing ${where} ${k}`);
+      }
+      for (const [k, s] of Object.entries(schema.properties ?? {})) {
+        if (values[k] !== undefined && Array.isArray(s?.enum) && !s.enum.map(String).includes(String(values[k]))) {
+          wrong.push(`${where} ${k}=${values[k]} is not one of ${s.enum.join(', ')}`);
+        }
+      }
+    };
+    try {
+      check(input.queryParams, Object.fromEntries(new URL(url).searchParams), 'query parameter');
+    } catch {
+      return null;
+    }
+    if (input.body && body) {
+      try {
+        const json = JSON.parse(body);
+        if (json && typeof json === 'object') check(input.body, json, 'body field');
+      } catch {
+        // not JSON: nothing to check against
+      }
+    }
+    if (!wrong.length) return null;
+    const example = required?.extensions?.bazaar?.info?.input?.queryParams;
+    const hint = example && typeof example === 'object' && Object.keys(example).length
+      ? `; the server's own example is ?${new URLSearchParams(example)}` : '';
+    return `the server's offer says this request would be refused (${wrong.join('; ')})${hint}`;
+  }
+
+  /**
    * A version 1 offer in this agent's terms: `exact`, on this chain, priced in `amount`. The
    * original stays attached (`v1`) for the paid retry, which names the network the v1 way.
    */
@@ -895,6 +936,10 @@ export async function createAgent({
       const offered = (Array.isArray(required.accepts) ? required.accepts : []).map((r) => `${r?.scheme} on ${r?.network}`).join(', ');
       throw new Error(`no payment option this agent can pay: it pays USDC on Base, and the server offered ${offered || 'nothing'}`);
     }
+
+    // Nothing is signed for a request the server's own offer says it will refuse.
+    const problem = version === X402_VERSION ? inputProblem(required, url, body) : null;
+    if (problem) throw new Error(problem);
 
     const chosen = await choose(accepts, version === 1 ? 'USDC' : prefer, version === 1 ? V1_MODES : null);
     if (chosen.mode === 'session') {
