@@ -1,6 +1,6 @@
 {
   "name": "@pyzratio/x402-sessions",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "x402 payments for any AI agent: an MCP server that lets Claude, Cursor and other agents pay x402 APIs in USDC on Base within limits their owner sets, plus escrow-backed session vouchers with owner-capped budgets. Node.js only, no dependencies.",
   "type": "module",
   "license": "MIT",
@@ -12,14 +12,16 @@
     "x402-session-agent": "x402/agent.mjs",
     "x402-session-facilitator": "x402/facilitator.mjs",
     "x402-session-merchant": "x402/merchant.mjs",
-    "x402-funding": "x402/funding.mjs"
+    "x402-funding": "x402/funding.mjs",
+    "x402-mpesa": "x402/mpesa.mjs"
   },
   "exports": {
     ".": "./x402/agent.mjs",
     "./agent": "./x402/agent.mjs",
     "./facilitator": "./x402/facilitator.mjs",
     "./merchant": "./x402/merchant.mjs",
-    "./mcp": "./x402/mcp.mjs"
+    "./mcp": "./x402/mcp.mjs",
+    "./mpesa": "./x402/mpesa.mjs"
   },
   "files": [
     "x402/",

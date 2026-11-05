@@ -9,11 +9,12 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { abiEncode, first, keccak, makeChain, signTypedData, signerAddress } from './lib/cast.mjs';
 import { isMain } from './lib/cli.mjs';
-import { calldata } from './lib/evm.mjs';
+import { calldata, hashTypedData, recoverAddress } from './lib/evm.mjs';
 import { loadDeployment } from './lib/config.mjs';
 import {
   X402_VERSION, HEADER, HEADER_V1, V1_NETWORKS, encode, decode, lc, isAddress, isUint, authorizationTypedData,
   vaultIntentTypedData, permitTypedData, splitSignature, voucherTypedData, pathStepTypedData, isBytes32,
+  creditTypedData, mpesaRequirement, KES_UNIT,
 } from './lib/protocol.mjs';
 import { MAX_DURATION, MIN_DURATION, openNonce, readPath, readSession, sessionIdOf } from './lib/session.mjs';
 
@@ -25,7 +26,7 @@ export class PolicyError extends Error {
 }
 
 const SCALE = 10n ** 12n;
-const MODES = ['sUSD', 'USDC', 'vault', 'router', 'convert', 'session'];
+const MODES = ['sUSD', 'USDC', 'vault', 'router', 'convert', 'session', 'mpesa'];
 
 export function parseUsd(s) {
   const m = /^(\d+)(?:\.(\d{1,6}))?$/.exec(String(s).trim());
@@ -70,6 +71,7 @@ function readLedger(file) {
   l.retired ??= [];
   l.breakers ??= {};
   l.recent ??= [];
+  l.mpesa ??= {};
   return l;
 }
 
@@ -88,6 +90,7 @@ export function policyFromEnv(env = process.env) {
     maxPerMonth: env.AGENT_MAX_PER_MONTH ? parseUsd(env.AGENT_MAX_PER_MONTH) : null,
     approvalMax: env.AGENT_APPROVAL_MAX ? parseUsd(env.AGENT_APPROVAL_MAX) : null,
     maxUndelivered: num('AGENT_MAX_UNDELIVERED', 2),
+    kesPerUsd: num('AGENT_KES_PER_USD', 129),
     breakerSeconds: num('AGENT_BREAKER_SECONDS', 600),
     pathMerchants: env.AGENT_PATH_MERCHANTS ? env.AGENT_PATH_MERCHANTS.split(',').map((x) => x.trim()).filter(Boolean) : null,
   };
@@ -122,6 +125,7 @@ export async function createAgent({
     maxUndelivered: policy.maxUndelivered ?? 2,
     breakerSeconds: policy.breakerSeconds ?? 600,
     pathMerchants: policy.pathMerchants ?? null,
+    kesPerUsd: BigInt(Math.round((policy.kesPerUsd ?? 129) * 1e6)),
   };
   if (ledgerFile) mkdirSync(dirname(ledgerFile), { recursive: true, mode: 0o700 });
   const ledger = readLedger(ledgerFile);
@@ -315,7 +319,7 @@ export async function createAgent({
     const s = ledger.sessions[sessionKey(r)];
     if (!s) return null;
     const now = await chainNow();
-    if (BigInt(s.deposit) - BigInt(s.cumulative) < BigInt(r.amount)) return null;
+    if (BigInt(s.deposit) - BigInt(s.received ?? s.cumulative) < BigInt(r.amount)) return null;
     if (BigInt(s.expiry) < now + minRemainingOf(r)) return null;
     const pending = s.open ?? s.pathStep ?? null;
     if (pending && BigInt(s.open ? s.open.validBefore : s.pathStep.deadline) <= now + 15n) {
@@ -416,7 +420,9 @@ export async function createAgent({
   async function authorizeSession(o) {
     const price = BigInt(o.r.amount);
     const s = (await usableSession(o.r)) ?? (await newSession(o.r));
-    const cumulative = BigInt(s.cumulative) + price;
+    const pod = o.r.extra?.payOnDelivery === true;
+    if (pod) s.received ??= s.cumulative;
+    const cumulative = pod ? BigInt(s.received) : BigInt(s.cumulative) + price;
     const voucher = await signTypedData(
       voucherTypedData({ chainId: dep.chainId, escrow: s.escrow, sessionId: s.sessionId, cumulative }), signer, work,
     );
@@ -434,10 +440,40 @@ export async function createAgent({
     };
   }
 
+  const signedByMe = (shortcode, v) => {
+    try {
+      return lc(recoverAddress(hashTypedData(creditTypedData({ shortcode, account: from, cumulative: v.cumulative })), v.signature)) === from;
+    } catch {
+      return false;
+    }
+  };
+  async function mpesaOption(r) {
+    const key = `${r.payTo}@${new URL(r.extra.credit).origin}`;
+    let c = null;
+    try {
+      const res = await fetch(`${r.extra.credit}/${from}`, { signal: AbortSignal.timeout(limits.timeoutMs) });
+      if (res.ok) c = await res.json();
+    } catch {
+    }
+    let cumulative = BigInt(ledger.mpesa[key]?.cumulative ?? 0);
+    if (c?.voucher && isUint(c.voucher.cumulative) && BigInt(c.voucher.cumulative) > cumulative && signedByMe(r.payTo, c.voucher)) {
+      cumulative = BigInt(c.voucher.cumulative);
+    }
+    const cost = BigInt(r.amount);
+    const credited = isUint(c?.credited) ? BigInt(c.credited) : 0n;
+    return {
+      mode: 'mpesa', r, cost, key, cumulative, credited, reachable: !!c,
+      usd: (cost * 1_000_000n + limits.kesPerUsd - 1n) / limits.kesPerUsd, have: !!c && credited - cumulative >= cost,
+    };
+  }
+
   async function options(accepts) {
-    const bal = await balances();
+    const list = Array.isArray(accepts) ? accepts : [];
     const out = [];
-    for (const r of Array.isArray(accepts) ? accepts : []) {
+    for (const r of list) if (mpesaRequirement(r)) out.push(await mpesaOption(r));
+    if (list.every((r) => mpesaRequirement(r))) return out;
+    const bal = await balances();
+    for (const r of list) {
       if (sessionRequirement(r)) {
         const live = !!(await usableSession(r));
         out.push({ mode: 'session', r, cost: BigInt(r.amount), live, have: live || !!pathId || bal.usdc >= BigInt(r.amount) });
@@ -464,7 +500,7 @@ export async function createAgent({
         }
       }
     }
-    return out.map((o) => ({ ...o, usd: usdOf(o.mode, o.cost) }));
+    return out.map((o) => (o.mode === 'mpesa' ? o : { ...o, usd: usdOf(o.mode, o.cost) }));
   }
 
   function refusalOf(o) {
@@ -528,6 +564,14 @@ export async function createAgent({
         }
       }
       throw new PolicyError(reasons[0]);
+    }
+    const m = all.find((o) => o.mode === 'mpesa');
+    if (m) {
+      const kesOf = (x) => `KES ${x / KES_UNIT}.${String(x % KES_UNIT).padStart(6, '0').slice(0, 2)}`;
+      const left = m.credited > m.cumulative ? m.credited - m.cumulative : 0n;
+      throw new Error(m.reachable
+        ? `not enough M-Pesa credit at ${m.r.payTo}: ${kesOf(left)} left, a call costs ${kesOf(m.cost)}; top it up by M-Pesa (x402_fund with method "mpesa" and for set to this URL)`
+        : `the M-Pesa credit service at ${new URL(m.r.extra.credit).origin} did not answer`);
     }
     throw new Error('insufficient funds for every payment option');
   }
@@ -676,7 +720,17 @@ export async function createAgent({
     const payload = await authorize(o);
     const s = ledger.sessions[sessionKey(o.r)];
     const paymentPayload = { x402Version: X402_VERSION, resource: required.resource, accepted: o.r, payload };
-    const charged = BigInt(o.r.amount);
+    const pod = o.r.extra?.payOnDelivery === true;
+    let charged = BigInt(o.r.amount);
+    const uncharge = () => {
+      if (!pod || charged === 0n) return;
+      spent -= charged;
+      ledger.spent = String(spent);
+      const i = ledger.recent.findLastIndex((x) => x.usd === String(charged));
+      if (i >= 0) ledger.recent.splice(i, 1);
+      charged = 0n;
+      saveLedger();
+    };
     let res;
     let text;
     try {
@@ -687,6 +741,7 @@ export async function createAgent({
       text = await res.text();
     } catch (e) {
       noteOutcome(o.r.payTo, 'failed');
+      uncharge();
       return {
         status: 0, paid: false, delivered: false, charged, mode: 'session', requirement: o.r, body: '', paymentPayload,
         error: e?.name === 'TimeoutError' ? timeoutError('after the voucher was sent') : `no answer after the voucher was sent: ${e.message}`,
@@ -702,8 +757,10 @@ export async function createAgent({
       s.open = null;
       s.pathStep = null;
       s.served += 1;
+      if (pod) s.received = String(BigInt(s.received ?? s.cumulative) + charged);
       saveLedger();
-    } else if (!retried && DEAD_SESSION.has(error)) {
+    } else if (pod && !delivered) uncharge();
+    if (!paid && !retried && DEAD_SESSION.has(error)) {
       const key = sessionKey(o.r);
       if (ledger.sessions[key] === s) {
         ledger.retired.push({ ...s, retiredBecause: error });
@@ -832,6 +889,7 @@ export async function createAgent({
     if (problem) throw new Error(problem);
 
     const chosen = await choose(accepts, version === 1 ? 'USDC' : prefer, version === 1 ? V1_MODES : null, approve);
+    if (chosen.mode === 'mpesa') return payMpesa(url, payUrl, required, chosen, method, headers, body);
     if (chosen.mode === 'session') {
       return withLock(sessionKey(chosen.r), () => paySession(url, payUrl, required, chosen, method, headers, body));
     }
@@ -913,6 +971,54 @@ export async function createAgent({
     };
   }
 
+  async function payMpesa(url, payUrl, required, o, method, headers, body) {
+    const next = o.cumulative + o.cost;
+    const signature = await signTypedData(creditTypedData({ shortcode: o.r.payTo, account: from, cumulative: next }), signer, work);
+    const paymentPayload = { x402Version: X402_VERSION, resource: required.resource, accepted: o.r, payload: { account: from, cumulative: String(next), signature } };
+    ledger.mpesa[o.key] = { cumulative: String(next), credit: o.r.extra.credit, shortcode: o.r.payTo };
+    const row = record({
+      id: rand32().slice(2, 18), url, mode: 'mpesa', x402Version: X402_VERSION, payTo: o.r.payTo, asset: 'KES', amount: o.r.amount,
+      usd: o.usd, transaction: '', delivered: false,
+    });
+    const base = { mode: 'mpesa', requirement: o.r, paymentPayload, x402Version: X402_VERSION, approved: o.approved, charged: o.usd, kes: o.cost };
+    let res;
+    let text;
+    try {
+      res = await fetch(payUrl, {
+        method, body, redirect: 'manual', headers: { ...headers, [HEADER.signature]: encode(paymentPayload) }, signal: AbortSignal.timeout(limits.timeoutMs),
+      });
+      text = await res.text();
+    } catch (e) {
+      row.error = 'no answer';
+      saveLedger();
+      noteOutcome(o.r.payTo, 'failed');
+      return {
+        ...base, status: 0, paid: false, delivered: false, body: '', code: 'timeout',
+        error: e?.name === 'TimeoutError' ? timeoutError('after the voucher was sent') : `no answer after the voucher was sent: ${e.message}`,
+      };
+    }
+    const settlement = receiptOf(res);
+    const delivered = res.status >= 200 && res.status < 300;
+    const paid = delivered && settlement?.success === true;
+    const error = !paid && res.status === 402 ? await errorOf(res, text) : undefined;
+    if (!delivered) ledger.mpesa[o.key].cumulative = String(o.cumulative);
+    if (res.status === 402) {
+      spent -= o.usd;
+      ledger.spent = String(spent);
+      const i = ledger.recent.findLastIndex((x) => x.usd === String(o.usd));
+      if (i >= 0) ledger.recent.splice(i, 1);
+      row.usd = '0';
+      base.charged = 0n;
+    }
+    row.status = res.status;
+    row.delivered = delivered;
+    if (paid) row.transaction = settlement.transaction || '';
+    if (error) row.error = error;
+    saveLedger();
+    noteOutcome(o.r.payTo, outcomeOf(res.status));
+    return { ...base, status: res.status, paid, delivered, settlement, body: text, error, kesLeft: isUint(settlement?.remaining) ? BigInt(settlement.remaining) : null };
+  }
+
   async function pathState() {
     if (!pathId) return null;
     const p = await readPath(chain, A.sessionPaths, pathId);
@@ -936,6 +1042,7 @@ export async function createAgent({
   return {
     address: from, owner, deployment: dep, balances, pay, convert, sweep, choose, authorize, reconcile, pathState,
     sessions: () => ledger.sessions,
+    mpesa: () => ledger.mpesa,
     breakers: () => ledger.breakers,
     resetBreaker(payTo) {
       if (payTo) delete ledger.breakers[lc(payTo)];

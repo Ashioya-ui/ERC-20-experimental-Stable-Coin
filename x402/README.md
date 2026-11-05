@@ -55,6 +55,7 @@ The key is in `~/.x402-sessions/agent.key`. Hold only what the agent may spend.
 4. Every USDC payment is simulated against the USDC contract first. One that would fail is not sent.
 5. A request missing an input the server requires is refused before paying.
 6. A timeout after payment is reported as charged, not delivered.
+7. On a pay-on-delivery session, each voucher covers only the calls already received.
 
 ## Funding service
 
@@ -69,6 +70,26 @@ KOTANI_API_KEY=... KOTANI_API_URL=https://<api>/api/v3 PUBLIC_URL=https://<this 
 
 Agents: `X402_FUNDING_URL` (Claude Desktop: "Funding service"). Yellow Card: `X402_YELLOWCARD_KEY`,
 its public widget key.
+
+## M-Pesa (Daraja)
+
+An API in Kenya can take M-Pesa directly: the owner tops up once by M-Pesa Express, or approves a Ratiba
+standing order, and the agent pays each call from that credit with a signed running total.
+
+```sh
+DARAJA_KEY=... DARAJA_SECRET=... npx -y -p @pyzratio/x402-sessions x402-mpesa
+```
+
+Without `DARAJA_URL` it uses the Daraja sandbox (shortcode 174379). For your own Paybill or Till:
+`DARAJA_URL=https://api.safaricom.co.ke DARAJA_SHORTCODE=... DARAJA_PASSKEY=...` (and `DARAJA_TILL=...` for
+Buy Goods). It serves a paid route at `http://127.0.0.1:4022/api/v1/tick` (`MPESA_PRICE_KES`, default 0.5).
+
+1. "Add KES 10 by M-Pesa for http://127.0.0.1:4022/api/v1/tick, my number is 07XX XXX XXX." Approve the prompt.
+2. "Fetch http://127.0.0.1:4022/api/v1/tick with x402_fetch."
+
+Payments are confirmed by Daraja's STK query, so it runs without a public URL. Set `MPESA_PUBLIC_URL`
+(https, without the words M-Pesa or Safaricom) for callbacks and Ratiba credits (`MPESA_REGISTER_C2B=1`),
+and `MPESA_B2C_INITIATOR` and `MPESA_B2C_CREDENTIAL` for refunds.
 
 ## Sessions
 
@@ -138,6 +159,8 @@ same programs. Library: `import { createAgent } from '@pyzratio/x402-sessions'`,
    FACILITATOR_URL=http://127.0.0.1:4020 MERCHANT_PAYTO=0xYourAddress MERCHANT_TICK_PRICE=100 \
    x402-session-merchant                                # :4021; 100 = $0.0001 a call
    ```
+   `MERCHANT_PAY_ON_DELIVERY=1` serves each call before it is paid: the voucher with a call pays for the calls
+   before it, so a buyer never pays for a call it did not get, and the merchant's credit is one call.
 
 ### Agents
 

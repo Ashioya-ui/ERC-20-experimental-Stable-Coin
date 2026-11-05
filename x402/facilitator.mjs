@@ -107,7 +107,7 @@ export async function createFacilitator({
   const REDEEM_MAX_AGE_MS = Number(process.env.FACILITATOR_REDEEM_MAX_AGE_MS ?? 3_600_000);
   const REDEEM_EVERY_MS = Number(redeemEveryMs ?? process.env.FACILITATOR_REDEEM_EVERY_MS ?? 30_000);
   const MAX_BATCH = 50;
-  const BIG = ['deposited', 'claimed', 'expiry', 'accepted'];
+  const BIG = ['deposited', 'claimed', 'expiry', 'accepted', 'served'];
   const sessions = new Map();
   const opening = new Map();
   if (sessionsFile && existsSync(sessionsFile)) {
@@ -117,7 +117,7 @@ export async function createFacilitator({
     }
     for (const [id, rec] of Object.entries(saved.sessions || {})) {
       const r = { ...rec };
-      for (const k of BIG) r[k] = BigInt(rec[k]);
+      for (const k of BIG) if (rec[k] !== undefined) r[k] = BigInt(rec[k]);
       sessions.set(id, r);
     }
   }
@@ -310,6 +310,7 @@ export async function createFacilitator({
     if (cumulative > UINT128_MAX) return bad('session_above_deposit', hint);
     const minRemaining = minRemainingOf(r);
     const voucher = lc(sp.voucher);
+    const pod = r.extra?.payOnDelivery === true;
 
     const s = known ?? (await readSession(chain, A.sessionEscrow, id));
     if (s) {
@@ -319,7 +320,12 @@ export async function createFacilitator({
       if (s.closed) return bad('session_closed', payer);
       if (s.expiry < (await chainNow()) + minRemaining) return bad('session_expiring', payer);
       const floor = (s.accepted ?? 0n) > s.claimed ? s.accepted : s.claimed;
-      if (cumulative < floor + price) return bad('session_voucher_stale', payer);
+      if (pod) {
+        const served = known?.served ?? 0n;
+        if (cumulative < served || cumulative < floor) return bad('session_voucher_stale', payer);
+        if (served + price > s.deposited) return bad('session_above_deposit', payer);
+        if (cumulative === floor) return { isValid: true, payer, mode: 'session', id, cumulative, voucher: known?.voucher ?? null, snapshot: s };
+      } else if (cumulative < floor + price) return bad('session_voucher_stale', payer);
       try {
         await chain.call(A.sessionEscrow, 'redeem(bytes32,uint256,bytes)', [id, String(cumulative), voucher], { from });
       } catch (e) {
@@ -342,8 +348,8 @@ export async function createFacilitator({
       funder: payer, payee: payTo, token: A.usdc, signer: signerAddress, expiry, salt: lc(o.salt),
     });
     if (expected !== id) return bad('invalid_session_id', payer);
-    if (cumulative < price) return bad('session_voucher_stale', payer);
-    if (cumulative > deposit) return bad('session_above_deposit', payer);
+    if (!pod && cumulative < price) return bad('session_voucher_stale', payer);
+    if (cumulative > deposit || (pod && deposit < price)) return bad('session_above_deposit', payer);
     const now = await chain.timestamp();
     const late = await windowError(o.validAfter, o.validBefore, r, payer, now);
     if (late) return late;
@@ -390,8 +396,9 @@ export async function createFacilitator({
       funder: A.sessionPaths, payee: c.payTo, token: A.usdc, signer: signerAddress, expiry, salt: lc(ps.salt),
     });
     if (expected !== c.id) return bad('invalid_session_id', payer);
-    if (c.cumulative < c.price) return bad('session_voucher_stale', payer);
-    if (c.cumulative > deposit) return bad('session_above_deposit', payer);
+    const pod = r.extra?.payOnDelivery === true;
+    if (!pod && c.cumulative < c.price) return bad('session_voucher_stale', payer);
+    if (c.cumulative > deposit || (pod && deposit < c.price)) return bad('session_above_deposit', payer);
     const now = await chain.timestamp();
     const late = await windowError('0', ps.deadline, r, payer, now);
     if (late) return late;
@@ -497,9 +504,10 @@ export async function createFacilitator({
       } else if (!s) {
         s = { ...v.snapshot, accepted: 0n, voucher: null, pendingSince: null, openTx: '' };
       }
-      const before = { accepted: s.accepted, voucher: s.voucher, pendingSince: s.pendingSince };
+      const before = { accepted: s.accepted, voucher: s.voucher, pendingSince: s.pendingSince, served: s.served };
       s.accepted = v.cumulative;
       s.voucher = v.voucher;
+      if (body.paymentRequirements?.extra?.payOnDelivery === true) s.served = (s.served ?? 0n) + BigInt(body.paymentRequirements.amount);
       s.pendingSince ??= Date.now();
       sessions.set(id, s);
       try {

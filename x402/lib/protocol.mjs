@@ -194,3 +194,34 @@ export function sendJson(res, status, body, headers = {}) {
   res.writeHead(status, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(text), ...headers });
   res.end(text);
 }
+
+export const MPESA_NETWORK = 'mpesa:KE';
+export const KES_UNIT = 1_000_000n;
+const CREDIT_DOMAIN = { name: 'X402MpesaCredit', version: '1' };
+const CREDIT_DOMAIN_FIELDS = [{ name: 'name', type: 'string' }, { name: 'version', type: 'string' }];
+
+export const mpesaRequirement = (r) =>
+  r?.scheme === 'mpesa' && r.network === MPESA_NETWORK && r.asset === 'KES' && /^\d{5,7}$/.test(String(r.payTo ?? '')) &&
+  isUint(r.amount) && BigInt(r.amount) > 0n && /^https?:\/\//.test(String(r.extra?.credit ?? ''));
+
+export function creditTypedData({ shortcode, account, cumulative }) {
+  return {
+    types: {
+      EIP712Domain: CREDIT_DOMAIN_FIELDS,
+      Credit: [{ name: 'shortcode', type: 'string' }, { name: 'account', type: 'address' }, { name: 'cumulative', type: 'uint256' }],
+    },
+    primaryType: 'Credit', domain: CREDIT_DOMAIN,
+    message: { shortcode: String(shortcode), account, cumulative: String(cumulative) },
+  };
+}
+
+export function refundTypedData({ shortcode, account, phone, credited }) {
+  return {
+    types: {
+      EIP712Domain: CREDIT_DOMAIN_FIELDS,
+      Refund: [{ name: 'shortcode', type: 'string' }, { name: 'account', type: 'address' }, { name: 'phone', type: 'string' }, { name: 'credited', type: 'uint256' }],
+    },
+    primaryType: 'Refund', domain: CREDIT_DOMAIN,
+    message: { shortcode: String(shortcode), account, phone: String(phone), credited: String(credited) },
+  };
+}
