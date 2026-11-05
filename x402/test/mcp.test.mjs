@@ -97,7 +97,7 @@ describe('MCP server on the rail', { skip: ready === true ? false : `no rail at 
     const m0 = await w.bal.usdc(w.merchantAddress);
     const r = await c.call('x402_fetch', { url: `${w.merchantUrl}/api/v1/usdc-only`, prefer: 'USDC' });
     assert.equal(r.isError, false, r.content[0].text);
-    assert.match(r.content[0].text, /^HTTP 200, paid \$0\.02 by a USDC transfer, spent \$0\.02 of \$0\.5/);
+    assert.match(r.content[0].text, /^HTTP 200, paid \$0\.02 by a USDC transfer, simulated against the USDC contract before it was sent, transaction 0x[0-9a-f]{64}, spent \$0\.02 of \$0\.5\n/);
     assert.equal((await w.bal.usdc(w.merchantAddress)) - m0, 20_000n);
     assert.match((await c.call('x402_wallet')).content[0].text, /USDC: 0\.98/);
   });
