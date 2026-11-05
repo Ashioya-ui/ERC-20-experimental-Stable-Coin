@@ -1,6 +1,6 @@
 {
   "name": "@pyzratio/x402-sessions",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "x402 payments for any AI agent: an MCP server that lets Claude, Cursor and other agents pay x402 APIs in USDC on Base within limits their owner sets, plus escrow-backed session vouchers with owner-capped budgets. Node.js only, no dependencies.",
   "type": "module",
   "license": "MIT",

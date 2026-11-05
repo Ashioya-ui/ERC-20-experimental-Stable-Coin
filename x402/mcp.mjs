@@ -17,6 +17,9 @@
 //   AGENT_MAX_PER_MINUTE   the most the agent may spend in any minute, in dollars (default: 5 calls'
 //                          worth, five times AGENT_MAX_PER_REQUEST)
 //   AGENT_MAX_UNDELIVERED  paid calls in a row a merchant may leave unserved before it is paused (2)
+//   AGENT_MAX_PER_DAY, AGENT_MAX_PER_WEEK, AGENT_MAX_PER_MONTH  the most signed in any 24 hours, 7 days
+//                          or 30 days, in dollars (no cap unless set)
+//   X402_DISCOVERY_URL     the x402 Bazaar search x402_discover uses (default: Coinbase's public one)
 //   AGENT_PATH_MERCHANTS   the path's merchants, comma-separated, to show what each can still receive
 
 // stdout carries the protocol and nothing else; anything printed goes to stderr.
@@ -101,6 +104,24 @@ const TOOLS = [
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
   {
+    name: 'x402_discover',
+    title: 'Find paid APIs',
+    description:
+      'Search the x402 Bazaar, the public directory of APIs that agents can pay per call, for services matching a need ' +
+      '(for example "flight prices", "web search", "weather"). Returns each API\'s URL, price per call in USDC on Base, how ' +
+      'much it is used, and, when the server publishes it, an example of the inputs it needs. Free: nothing is paid.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'What the API should do, in a few words.' },
+        max_price_usd: { type: 'number', description: "Highest price per call to show. Default: the owner's per-call limit." },
+        limit: { type: 'number', description: 'How many results, 1 to 20. Default 8.' },
+      },
+      required: ['query'],
+    },
+    annotations: { readOnlyHint: true, openWorldHint: true },
+  },
+  {
     name: 'x402_wallet',
     title: 'Show the x402 wallet',
     description:
@@ -134,9 +155,12 @@ for (const k of ['AGENT_TIMEOUT_S', 'AGENT_MAX_UNDELIVERED', 'AGENT_BREAKER_SECO
     delete hardening[k];
   }
 }
-delete hardening.AGENT_MAX_PER_MINUTE; // a dollar setting, read below
+for (const k of ['AGENT_MAX_PER_MINUTE', 'AGENT_MAX_PER_DAY', 'AGENT_MAX_PER_WEEK', 'AGENT_MAX_PER_MONTH']) delete hardening[k]; // dollar settings, read below
 Object.assign(policy, policyFromEnv(hardening));
 if (env.AGENT_MAX_PER_MINUTE) policy.maxPerMinute = dollars('AGENT_MAX_PER_MINUTE', '0');
+if (env.AGENT_MAX_PER_DAY) policy.maxPerDay = dollars('AGENT_MAX_PER_DAY', '0');
+if (env.AGENT_MAX_PER_WEEK) policy.maxPerWeek = dollars('AGENT_MAX_PER_WEEK', '0');
+if (env.AGENT_MAX_PER_MONTH) policy.maxPerMonth = dollars('AGENT_MAX_PER_MONTH', '0');
 policy.maxPerMinute ??= policy.maxPerRequest * 5n; // a loop of failing calls cannot drain the budget in seconds
 const pathId = env.AGENT_PATH && /^0x[0-9a-fA-F]{64}$/.test(env.AGENT_PATH) ? env.AGENT_PATH : undefined;
 if (env.AGENT_PATH && !pathId) problems.push(`AGENT_PATH is "${env.AGENT_PATH}", which is not a path id (0x and 64 hex digits), so it is ignored`);
@@ -220,6 +244,7 @@ async function walletText() {
     `Address: ${a.address} (${a.deployment.network === 'eip155:8453' ? 'Base' : a.deployment.network})`,
     `USDC: ${formatUnits(b.usdc, 6)}`,
     `Spent: ${usd(a.spent)} of a ${usd(policy.budget)} budget; at most ${usd(policy.maxPerRequest)} a call.`,
+    ...a.windows().filter((w) => w.name !== 'minute').map((w) => `Signed ${w.what}: ${usd(w.spent)} of a ${usd(w.cap)} ${w.name} cap.`),
     ...(heldUsd > 0n
       ? [`Of that, ${usd(heldUsd)} is signed but not collected by the server (the balance above still holds it); it is released by ${hhmm(releases)} if never used.`]
       : []),
@@ -272,8 +297,45 @@ async function fetchText({ url, method = 'GET', headers = {}, body, prefer = 'se
   return { text: `${head.join(', ')}\n\n${shown}`, isError: (r.status === 402 && !r.paid) || undelivered };
 }
 
+const DISCOVERY = env.X402_DISCOVERY_URL || 'https://api.cdp.coinbase.com/platform/v2/x402/discovery/search';
+
+/** Paid APIs from the x402 Bazaar that this wallet can pay: USDC on Base, within the per-call limit. */
+async function discoverText({ query, max_price_usd: maxPrice, limit = 8 }) {
+  const q = String(query ?? '').trim().slice(0, 400);
+  if (!q) throw new Error('query is required: say what the API should do');
+  const cap = maxPrice !== undefined && Number.isFinite(Number(maxPrice)) && Number(maxPrice) >= 0
+    ? Number(maxPrice).toFixed(6) : formatUnits(policy.maxPerRequest, 6);
+  const n = Math.max(1, Math.min(20, Math.floor(Number(limit) || 8)));
+  const url = `${DISCOVERY}?${new URLSearchParams({ query: q, network: 'eip155:8453', maxUsdPrice: cap, limit: String(n) })}`;
+  const res = await fetch(url, {
+    headers: { accept: 'application/json', 'user-agent': `x402-sessions/${VERSION}` }, signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) throw new Error(`the x402 Bazaar answered HTTP ${res.status}; try again shortly`);
+  const body = await res.json();
+  const items = Array.isArray(body?.resources) ? body.resources : Array.isArray(body?.items) ? body.items : [];
+  const usdcBase = (r) => (r?.network === 'eip155:8453' || r?.network === 'base')
+    && String(r?.asset ?? '').toLowerCase() === '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
+  const rows = [];
+  for (const it of items) {
+    const offer = (Array.isArray(it?.accepts) ? it.accepts : []).find(usdcBase);
+    if (!offer || !/^https?:\/\//i.test(String(it.resource ?? ''))) continue;
+    const price = BigInt(String(offer.amount ?? offer.maxAmountRequired ?? '0').replace(/\D/g, '') || '0');
+    const example = it.extensions?.bazaar?.info?.input?.queryParams;
+    const callAs = example && typeof example === 'object' && Object.keys(example).length
+      ? `${it.resource}${it.resource.includes('?') ? '&' : '?'}${new URLSearchParams(example)}` : it.resource;
+    const used = it.quality?.l30DaysTotalCalls !== undefined
+      ? `; ${it.quality.l30DaysTotalCalls} paid calls from ${it.quality.l30DaysUniquePayers ?? '?'} payers in 30 days` : '';
+    rows.push(`${rows.length + 1}. ${it.serviceName || new URL(it.resource).hostname}: ${usd(price)} a call${used}\n`
+      + `   ${String(it.description ?? '').replace(/\s+/g, ' ').slice(0, 200)}\n   Call: ${callAs}`);
+  }
+  if (!rows.length) return `No paid API on the x402 Bazaar matched "${q}" at or under $${cap} a call in USDC on Base.`;
+  return [`Paid APIs for "${q}" (x402 Bazaar, USDC on Base, at most $${cap} a call). Nothing was paid to search.`, '', ...rows,
+    '', 'To use one, call x402_fetch with its URL; fill in the inputs it needs first.'].join('\n');
+}
+
 async function callTool(name, args) {
   try {
+    if (name === 'x402_discover') return { content: [{ type: 'text', text: await discoverText(args ?? {}) }] };
     if (name === 'x402_wallet') return { content: [{ type: 'text', text: await walletText() }] };
     if (name === 'x402_fetch') {
       const { text, isError } = await fetchText(args ?? {});
@@ -282,7 +344,7 @@ async function callTool(name, args) {
     return { content: [{ type: 'text', text: `unknown tool ${name}` }], isError: true };
   } catch (e) {
     let text = e instanceof PolicyError
-      ? `Not paid: ${e.message}. The owner sets the limits (AGENT_BUDGET, AGENT_MAX_PER_REQUEST, AGENT_MAX_PER_MINUTE).`
+      ? `Not paid: ${e.message}. The owner sets the limits (budget, per call, per minute, day, week and month caps).`
       : e?.name === 'TimeoutError' ? 'Error: the server did not answer in time. Nothing was paid; the call may be tried again.'
         : `Error: ${reason(e)}.${name === 'x402_fetch' ? ' Nothing was paid.' : ''}`;
     if (problems.length) text += `\n${settingsNote()[0]}`;

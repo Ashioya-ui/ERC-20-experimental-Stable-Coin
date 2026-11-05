@@ -4,7 +4,7 @@
   "display_name": "x402 payments",
   "version": "0.0.0",
   "description": "Lets your agent pay x402 APIs in USDC on Base, within a budget you set.",
-  "long_description": "Gives the agent a wallet on Base the first time it is used, and two tools: x402_fetch fetches a URL and pays when the server answers 402 Payment Required, and x402_wallet shows the address to fund, the balance and what has been spent. Every payment stays inside the total budget and the per-call limit set here. Where a server offers sessions, the agent deposits once and pays each call with a signed voucher, settled on-chain later in one transaction. The wallet needs USDC only, never ETH.",
+  "long_description": "Gives the agent a wallet on Base the first time it is used, and three tools: x402_discover finds paid APIs on the x402 Bazaar, x402_fetch fetches a URL and pays when the server answers 402 Payment Required, and x402_wallet shows the address to fund, the balance and what has been spent. Every payment stays inside the total budget and the per-call limit set here. Where a server offers sessions, the agent deposits once and pays each call with a signed voucher, settled on-chain later in one transaction. The wallet needs USDC only, never ETH.",
   "author": {
     "name": "Ashioya-ui",
     "url": "https://github.com/Ashioya-ui"
@@ -35,11 +35,18 @@
         "AGENT_MAX_PER_REQUEST": "${user_config.max_per_call}",
         "AGENT_PATH": "${user_config.path_id}",
         "RPC_URL": "${user_config.rpc_url}",
-        "AGENT_PATH_MERCHANTS": "${user_config.path_merchants}"
+        "AGENT_PATH_MERCHANTS": "${user_config.path_merchants}",
+        "AGENT_MAX_PER_DAY": "${user_config.max_per_day}",
+        "AGENT_MAX_PER_WEEK": "${user_config.max_per_week}",
+        "AGENT_MAX_PER_MONTH": "${user_config.max_per_month}"
       }
     }
   },
   "tools": [
+    {
+      "name": "x402_discover",
+      "description": "Find paid APIs on the x402 Bazaar that this wallet can pay, with their price, usage and an example of the inputs they need. Free."
+    },
     {
       "name": "x402_fetch",
       "description": "Fetch a URL, paying with x402 in USDC on Base when the server asks, within your limits."
@@ -63,6 +70,27 @@
       "title": "Most per call (USD)",
       "description": "The most one call may cost.",
       "default": 0.1,
+      "min": 0,
+      "required": false
+    },
+    "max_per_day": {
+      "type": "number",
+      "title": "Most per day (USD, optional)",
+      "description": "The most the agent may sign for in any 24 hours. Leave empty for no daily cap.",
+      "min": 0,
+      "required": false
+    },
+    "max_per_week": {
+      "type": "number",
+      "title": "Most per week (USD, optional)",
+      "description": "The most in any 7 days. Leave empty for no weekly cap.",
+      "min": 0,
+      "required": false
+    },
+    "max_per_month": {
+      "type": "number",
+      "title": "Most per month (USD, optional)",
+      "description": "The most in any 30 days. Leave empty for no monthly cap.",
       "min": 0,
       "required": false
     },

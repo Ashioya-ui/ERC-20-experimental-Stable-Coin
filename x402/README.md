@@ -29,7 +29,9 @@ nothing else.
    any other wallet can scan the `ethereum:` payment request next to it. From M-Pesa or a bank:
    buy USDC on Base in your wallet app (MetaMask: Buy) or on an exchange, then use the link. A few
    dollars covers thousands of small calls. It needs no ETH.
-4. **Use paid APIs.** Ask your agent to fetch any x402 URL, for example
+4. **Find and use paid APIs.** Ask your agent to find one ("find a paid API for flight prices"):
+   `x402_discover` searches the x402 Bazaar, the public directory of pay-per-call APIs, and lists
+   those your wallet can pay with their price, usage and the inputs they need. Then ask it to fetch any x402 URL, for example
    "Fetch https://2s.io/api/crypto/gas-oracle?chain=base with x402_fetch". It pays when the server
    asks, never more than your limit per call, and stops at your budget. When the server publishes
    its inputs with its price, a request missing a required one is refused before anything is paid.
@@ -51,7 +53,9 @@ proves the ceiling on-chain, and `x402_wallet` reads it:
 - **Merchants that take payment without serving are paused.** After `AGENT_MAX_UNDELIVERED` (2) paid
   calls in a row that were not served, the merchant is paused for `AGENT_BREAKER_SECONDS` (600).
 - **Spending speed.** `AGENT_MAX_PER_MINUTE` caps what can be spent in any minute (default: five calls'
-  worth), so a retry loop cannot drain the budget in seconds.
+  worth), so a retry loop cannot drain the budget in seconds. `AGENT_MAX_PER_DAY`, `AGENT_MAX_PER_WEEK`
+  and `AGENT_MAX_PER_MONTH` cap any rolling 24 hours, 7 days and 30 days (Claude Desktop asks for them
+  at install); the wallet shows each against its cap.
 - **One paid call at a time, per wallet.** Calls that arrive together are paid in turn, so no two can
   pass the same check, and that holds across processes: Claude Desktop and every Claude Code or
   Cursor session paying from the same wallet share one ledger, read afresh under a lock for each

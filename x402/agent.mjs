@@ -124,7 +124,7 @@ function readLedger(file) {
   l.sessions ??= {}; // open sessions, by escrow:payee:token
   l.retired ??= []; // sessions replaced by a newer one; what is left in them returns at expiry
   l.breakers ??= {}; // merchants paused after failing calls they were paid for, by payTo
-  l.recent ??= []; // what was charged in the last minute, for the spend-rate limit
+  l.recent ??= []; // what was charged in the last 30 days, for the minute, day, week and month caps
   return l;
 }
 
@@ -143,6 +143,9 @@ export function policyFromEnv(env = process.env) {
   return {
     timeoutMs: num('AGENT_TIMEOUT_S', 30) * 1000,
     maxPerMinute: env.AGENT_MAX_PER_MINUTE ? parseUsd(env.AGENT_MAX_PER_MINUTE) : null,
+    maxPerDay: env.AGENT_MAX_PER_DAY ? parseUsd(env.AGENT_MAX_PER_DAY) : null,
+    maxPerWeek: env.AGENT_MAX_PER_WEEK ? parseUsd(env.AGENT_MAX_PER_WEEK) : null,
+    maxPerMonth: env.AGENT_MAX_PER_MONTH ? parseUsd(env.AGENT_MAX_PER_MONTH) : null,
     maxUndelivered: num('AGENT_MAX_UNDELIVERED', 2),
     breakerSeconds: num('AGENT_BREAKER_SECONDS', 600),
     pathMerchants: env.AGENT_PATH_MERCHANTS ? env.AGENT_PATH_MERCHANTS.split(',').map((x) => x.trim()).filter(Boolean) : null,
@@ -175,6 +178,9 @@ export async function createAgent({
     sessionSeconds: policy.sessionSeconds ?? 86_400n, // bigint
     timeoutMs: policy.timeoutMs ?? 30_000, // number: the longest one HTTP request may take
     maxPerMinute: policy.maxPerMinute ?? null, // bigint, USD with 6 decimals: spent in any 60 s
+    maxPerDay: policy.maxPerDay ?? null, // bigint: signed in any 24 hours
+    maxPerWeek: policy.maxPerWeek ?? null, // bigint: signed in any 7 days
+    maxPerMonth: policy.maxPerMonth ?? null, // bigint: signed in any 30 days
     maxUndelivered: policy.maxUndelivered ?? 2, // paid calls in a row a merchant may leave unserved
     breakerSeconds: policy.breakerSeconds ?? 600, // how long such a merchant is paused
     pathMerchants: policy.pathMerchants ?? null, // payees to show in pathState(), besides those paid
@@ -194,11 +200,24 @@ export async function createAgent({
   const charge = (usd) => {
     ledger.recent.push({ at: Date.now(), usd: String(usd) });
   };
-  const spentLastMinute = () => {
-    const since = Date.now() - 60_000;
-    ledger.recent = ledger.recent.filter((x) => x.at >= since);
-    return ledger.recent.reduce((a, x) => a + BigInt(x.usd), 0n);
+  const MINUTE = 60_000;
+  const DAY = 86_400_000;
+  // Rolling windows over every instrument signed (released ones included: the caps bound how fast
+  // the agent signs, the budget bounds what it spends).
+  const WINDOWS = [
+    ['minute', MINUTE, () => limits.maxPerMinute, 'in the last minute'],
+    ['day', DAY, () => limits.maxPerDay, 'in the last 24 hours'],
+    ['week', 7 * DAY, () => limits.maxPerWeek, 'in the last 7 days'],
+    ['month', 30 * DAY, () => limits.maxPerMonth, 'in the last 30 days'],
+  ];
+  const spentWithin = (ms) => {
+    const since = Date.now() - ms;
+    return ledger.recent.reduce((a, x) => (x.at >= since ? a + BigInt(x.usd) : a), 0n);
   };
+  const spentLastMinute = () => spentWithin(MINUTE);
+  /** Spent in each capped window: [{ name, spent, cap, what }]. */
+  const windows = () => WINDOWS.filter(([, , cap]) => cap() != null)
+    .map(([name, ms, cap, what]) => ({ name, spent: spentWithin(ms), cap: cap(), what }));
   /**
    * Run `fn` holding the wallet's ledger lock, with the ledger read afresh from disk: every check
    * and every count in `fn` then sees what all processes paying from this wallet have spent.
@@ -276,7 +295,8 @@ export async function createAgent({
   const saveLedger = () => {
     if (!ledgerFile) return;
     try {
-      spentLastMinute(); // drop rate entries older than a minute before writing
+      const keep = Date.now() - 30 * DAY; // the longest window
+      ledger.recent = ledger.recent.filter((x) => x.at >= keep);
       const tmp = `${ledgerFile}.${process.pid}.tmp`;
       writeFileSync(tmp, JSON.stringify(ledger, null, 2), { mode: 0o600 });
       renameSync(tmp, ledgerFile);
@@ -568,8 +588,10 @@ export async function createAgent({
     if (b?.until > Date.now()) {
       return `merchant ${o.r.payTo} is paused until ${new Date(b.until).toISOString()}: it was paid for calls in a row it did not serve`;
     }
-    if (limits.maxPerMinute != null && spentLastMinute() + o.usd > limits.maxPerMinute) {
-      return `spend rate limit: $${formatUnits(spentLastMinute(), 6)} spent in the last minute, at most $${formatUnits(limits.maxPerMinute, 6)}`;
+    for (const w of windows()) {
+      if (w.spent + o.usd > w.cap) {
+        return `${w.name === 'minute' ? 'spend rate limit' : `${w.name} cap`}: $${formatUnits(w.spent, 6)} spent ${w.what}, at most $${formatUnits(w.cap, 6)}`;
+      }
     }
     return null;
   }
@@ -1067,6 +1089,7 @@ export async function createAgent({
       saveLedger();
     },
     spentLastMinute,
+    windows,
     limits: { ...limits },
     path: pathId,
     get spent() { return spent; }, ledger: () => ledger,

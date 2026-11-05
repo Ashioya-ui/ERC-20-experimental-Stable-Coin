@@ -52,6 +52,11 @@ any other. The budget can no longer be exceeded through failures.
 
 ## Theorem 2. Spending speed
 
+For each capped window W (60 s with `maxPerMinute`; 24 h, 7 days and 30 days with `maxPerDay`,
+`maxPerWeek` and `maxPerMonth`), the instruments signed in any interval of length W have total value at
+most its cap. The proof below is written for the minute and holds word for word for every W: the
+window's entries are kept in the ledger for 30 days, the longest W.
+
 In any 60-second window, the instruments signed have total value at most `maxPerMinute`.
 
 *Proof.* Each signature records `(time, value)` in the rate window, which is kept in the ledger and
