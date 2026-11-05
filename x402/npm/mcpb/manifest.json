@@ -38,7 +38,8 @@
         "AGENT_PATH_MERCHANTS": "${user_config.path_merchants}",
         "AGENT_MAX_PER_DAY": "${user_config.max_per_day}",
         "AGENT_MAX_PER_WEEK": "${user_config.max_per_week}",
-        "AGENT_MAX_PER_MONTH": "${user_config.max_per_month}"
+        "AGENT_MAX_PER_MONTH": "${user_config.max_per_month}",
+        "AGENT_APPROVAL_MAX": "${user_config.approval_max}"
       }
     }
   },
@@ -91,6 +92,14 @@
       "type": "number",
       "title": "Most per month (USD, optional)",
       "description": "The most in any 30 days. Leave empty for no monthly cap.",
+      "min": 0,
+      "required": false
+    },
+    "approval_max": {
+      "type": "number",
+      "title": "Most you can approve past a limit (USD)",
+      "description": "When the agent hits a limit, Claude asks you to approve that one payment. This is the most such a payment may be.",
+      "default": 5,
       "min": 0,
       "required": false
     },

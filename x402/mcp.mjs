@@ -19,6 +19,7 @@
 //   AGENT_MAX_UNDELIVERED  paid calls in a row a merchant may leave unserved before it is paused (2)
 //   AGENT_MAX_PER_DAY, AGENT_MAX_PER_WEEK, AGENT_MAX_PER_MONTH  the most signed in any 24 hours, 7 days
 //                          or 30 days, in dollars (no cap unless set)
+//   AGENT_APPROVAL_MAX     the most one payment past a limit may be when the owner approves it (default 5)
 //   X402_DISCOVERY_URL     the x402 Bazaar search x402_discover uses (default: Coinbase's public one)
 //   AGENT_PATH_MERCHANTS   the path's merchants, comma-separated, to show what each can still receive
 
@@ -145,6 +146,7 @@ const policy = {
   budget: dollars('AGENT_BUDGET', '1'),
   maxPerRequest: dollars('AGENT_MAX_PER_REQUEST', '0.10'),
   sessionDeposit: dollars('AGENT_SESSION_DEPOSIT', '0.20'),
+  approvalMax: dollars('AGENT_APPROVAL_MAX', '5'), // the most one owner-approved payment may be
 };
 const hardening = { ...env };
 for (const k of ['AGENT_TIMEOUT_S', 'AGENT_MAX_UNDELIVERED', 'AGENT_BREAKER_SECONDS']) {
@@ -155,8 +157,8 @@ for (const k of ['AGENT_TIMEOUT_S', 'AGENT_MAX_UNDELIVERED', 'AGENT_BREAKER_SECO
     delete hardening[k];
   }
 }
-for (const k of ['AGENT_MAX_PER_MINUTE', 'AGENT_MAX_PER_DAY', 'AGENT_MAX_PER_WEEK', 'AGENT_MAX_PER_MONTH']) delete hardening[k]; // dollar settings, read below
-Object.assign(policy, policyFromEnv(hardening));
+for (const k of ['AGENT_MAX_PER_MINUTE', 'AGENT_MAX_PER_DAY', 'AGENT_MAX_PER_WEEK', 'AGENT_MAX_PER_MONTH', 'AGENT_APPROVAL_MAX']) delete hardening[k]; // dollar settings, read below
+Object.assign(policy, { ...policyFromEnv(hardening), approvalMax: policy.approvalMax });
 if (env.AGENT_MAX_PER_MINUTE) policy.maxPerMinute = dollars('AGENT_MAX_PER_MINUTE', '0');
 if (env.AGENT_MAX_PER_DAY) policy.maxPerDay = dollars('AGENT_MAX_PER_DAY', '0');
 if (env.AGENT_MAX_PER_WEEK) policy.maxPerWeek = dollars('AGENT_MAX_PER_WEEK', '0');
@@ -196,9 +198,12 @@ function fundingLines(a, want) {
   const usdc = a.deployment?.addresses?.usdc;
   const chainId = Number(a.deployment?.chainId);
   if (usdc && chainId && want > 0n) {
+    const dollarsWanted = Math.max(1, Math.ceil(Number(want) / 1e6)); // the on-ramp takes whole dollars
     lines.push(
       `One tap with MetaMask (a filled-in send of ${usd(want)} USDC on Base, to confirm in the app): `
         + `https://link.metamask.io/send/${usdc}@${chainId}/transfer?address=${a.address}&uint256=${want}`,
+      `No USDC yet? Pay by card, or a local method where MetaMask offers one, in MetaMask's Buy (USDC on Base, $${dollarsWanted} filled in): `
+        + `https://link.metamask.io/buy?chainId=${chainId}&address=${usdc}&amount=${dollarsWanted} then use the one-tap link above.`,
       `Any other wallet can scan this payment request: ethereum:${usdc}@${chainId}/transfer?address=${a.address}&uint256=${want}`,
     );
   }
@@ -245,6 +250,11 @@ async function walletText() {
     `USDC: ${formatUnits(b.usdc, 6)}`,
     `Spent: ${usd(a.spent)} of a ${usd(policy.budget)} budget; at most ${usd(policy.maxPerRequest)} a call.`,
     ...a.windows().filter((w) => w.name !== 'minute').map((w) => `Signed ${w.what}: ${usd(w.spent)} of a ${usd(w.cap)} ${w.name} cap.`),
+    // The proved ceiling (docs/design/agent-limits.md): the most this agent can still move on its own.
+    `Most it can move from here without you: ${usd(room > 0n ? (room < b.usdc ? room : b.usdc) : 0n)} (the smaller of the balance and the budget left). `
+      + (clientCaps?.elicitation
+        ? `Past a limit, it asks you to approve each payment (at most ${usd(policy.approvalMax)}); the agent cannot approve itself.`
+        : 'This client cannot ask you to approve a payment past a limit, so none is made.'),
     ...(heldUsd > 0n
       ? [`Of that, ${usd(heldUsd)} is signed but not collected by the server (the balance above still holds it); it is released by ${hhmm(releases)} if never used.`]
       : []),
@@ -272,11 +282,15 @@ async function fetchText({ url, method = 'GET', headers = {}, body, prefer = 'se
   const r = await a.pay(String(url), {
     prefer, method: String(method).toUpperCase(), headers: Object.fromEntries(Object.entries(headers ?? {}).map(([k, v]) => [k, String(v)])),
     body: body === undefined ? undefined : String(body),
+    // Owner approval past a limit, where the client can ask its user (MCP elicitation).
+    approve: clientCaps?.elicitation ? (q) => approve({ ...q, url }) : undefined,
   });
   const cost = r.charged ?? a.spent - before;
   const head = [r.status === 0 ? 'no answer' : `HTTP ${r.status}`];
+  if (r.approved) head.push(`approved by the owner past this limit: ${r.approved}`);
   if (r.paid) {
     head.push(`paid ${usd(cost)} by ${r.mode === 'USDC' ? 'a USDC transfer' : r.mode}${r.mode !== 'session' && !r.settlement ? ' (the server sent no settlement receipt)' : ''}`);
+    if (r.simulated) head.push('simulated against the USDC contract before it was sent');
     if (r.settlement?.transaction) head.push(`transaction ${r.settlement.transaction}`);
   }
   const undelivered = !r.delivered && r.charged > 0n;
@@ -362,13 +376,61 @@ async function callTool(name, args) {
 
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 
+// Requests this server sends the client (elicitation), by id, until the client answers.
+let clientCaps = {};
+const asked = new Map();
+let askId = 0;
+function ask(method, params, timeoutMs) {
+  const id = `x402-${++askId}`;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      asked.delete(id);
+      resolve({ timedOut: true });
+    }, timeoutMs);
+    asked.set(id, (m) => {
+      clearTimeout(timer);
+      asked.delete(id);
+      resolve(m);
+    });
+    send({ jsonrpc: '2.0', id, method, params });
+  });
+}
+
+/**
+ * One-tap owner approval of a payment past a limit the owner set, through the MCP client's own
+ * prompt (elicitation). The client shows it to the person, not to the model, so the agent cannot
+ * approve itself. No answer within APPROVAL_SECONDS is a refusal.
+ */
+const APPROVAL_SECONDS = 110; // under the wallet lock's 120 s wait, so other windows are not starved
+async function approve({ usd: amount, payTo, reason: why, url }) {
+  const host = (() => {
+    try {
+      return new URL(url).host;
+    } catch {
+      return String(url ?? '');
+    }
+  })();
+  const answer = await ask('elicitation/create', {
+    message: `x402: approve one payment past your limit?\n\n${usd(amount)} USDC on Base to ${host} (pays ${payTo}).\nLimit reached: ${why}.\n\n`
+      + `Only you can approve this; the agent cannot. It is declined after ${APPROVAL_SECONDS} seconds without an answer.`,
+    requestedSchema: {
+      type: 'object',
+      properties: { approve: { type: 'boolean', title: `Pay ${usd(amount)} this once`, description: 'Approve this one payment.' } },
+      required: ['approve'],
+    },
+  }, APPROVAL_SECONDS * 1000);
+  return answer?.result?.action === 'accept' && answer.result.content?.approve === true;
+}
+
 async function handle(m) {
+  if (m && typeof m === 'object' && typeof m.method !== 'string' && asked.has(m.id)) return asked.get(m.id)(m); // an answer to our request
   if (!m || typeof m !== 'object' || typeof m.method !== 'string') return; // responses and junk
   const { id, method, params } = m;
   const isRequest = id !== undefined && id !== null;
   const reply = (result) => isRequest && send({ jsonrpc: '2.0', id, result });
   switch (method) {
     case 'initialize':
+      clientCaps = params?.capabilities ?? {};
       return reply({
         // The client's version when this server speaks it, otherwise the latest this server speaks (MCP lifecycle rule).
         protocolVersion: PROTOCOLS.includes(params?.protocolVersion) ? params.protocolVersion : PROTOCOLS[0],

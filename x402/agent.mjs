@@ -52,6 +52,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { abiEncode, first, keccak, makeChain, signTypedData, signerAddress } from './lib/cast.mjs';
 import { isMain } from './lib/cli.mjs';
+import { calldata } from './lib/evm.mjs';
 import { loadDeployment } from './lib/config.mjs';
 import {
   X402_VERSION, HEADER, HEADER_V1, V1_NETWORKS, encode, decode, lc, isAddress, isUint, authorizationTypedData,
@@ -146,6 +147,7 @@ export function policyFromEnv(env = process.env) {
     maxPerDay: env.AGENT_MAX_PER_DAY ? parseUsd(env.AGENT_MAX_PER_DAY) : null,
     maxPerWeek: env.AGENT_MAX_PER_WEEK ? parseUsd(env.AGENT_MAX_PER_WEEK) : null,
     maxPerMonth: env.AGENT_MAX_PER_MONTH ? parseUsd(env.AGENT_MAX_PER_MONTH) : null,
+    approvalMax: env.AGENT_APPROVAL_MAX ? parseUsd(env.AGENT_APPROVAL_MAX) : null,
     maxUndelivered: num('AGENT_MAX_UNDELIVERED', 2),
     breakerSeconds: num('AGENT_BREAKER_SECONDS', 600),
     pathMerchants: env.AGENT_PATH_MERCHANTS ? env.AGENT_PATH_MERCHANTS.split(',').map((x) => x.trim()).filter(Boolean) : null,
@@ -181,6 +183,7 @@ export async function createAgent({
     maxPerDay: policy.maxPerDay ?? null, // bigint: signed in any 24 hours
     maxPerWeek: policy.maxPerWeek ?? null, // bigint: signed in any 7 days
     maxPerMonth: policy.maxPerMonth ?? null, // bigint: signed in any 30 days
+    approvalMax: policy.approvalMax ?? null, // bigint: the most the owner may approve past a limit, per payment
     maxUndelivered: policy.maxUndelivered ?? 2, // paid calls in a row a merchant may leave unserved
     breakerSeconds: policy.breakerSeconds ?? 600, // how long such a merchant is paused
     pathMerchants: policy.pathMerchants ?? null, // payees to show in pathState(), besides those paid
@@ -576,31 +579,41 @@ export async function createAgent({
     return out.map((o) => ({ ...o, usd: usdOf(o.mode, o.cost) }));
   }
 
-  function refusal(o) {
-    if (limits.allowedPayTo && !limits.allowedPayTo.has(lc(o.r.payTo))) return `payTo ${o.r.payTo} is not on the allow list`;
+  /**
+   * Why option `o` may not be paid, or null. `kind` says whether the owner may approve it past the
+   * check (a number the owner set: per call, budget, the windows) or not (allow list, paused merchant).
+   */
+  function refusalOf(o) {
+    if (limits.allowedPayTo && !limits.allowedPayTo.has(lc(o.r.payTo))) {
+      return { kind: 'allow', text: `payTo ${o.r.payTo} is not on the allow list` };
+    }
     if (limits.maxPerRequest != null && o.usd > limits.maxPerRequest) {
-      return `price $${formatUnits(o.usd, 6)} is above the per-request limit of $${formatUnits(limits.maxPerRequest, 6)}`;
+      return { kind: 'limit', text: `price $${formatUnits(o.usd, 6)} is above the per-request limit of $${formatUnits(limits.maxPerRequest, 6)}` };
     }
     if (limits.budget != null && spent + o.usd > limits.budget) {
-      return `budget exhausted: $${formatUnits(spent, 6)} of $${formatUnits(limits.budget, 6)} spent`;
+      return { kind: 'limit', text: `budget exhausted: $${formatUnits(spent, 6)} of $${formatUnits(limits.budget, 6)} spent` };
     }
     const b = ledger.breakers[lc(o.r.payTo)];
     if (b?.until > Date.now()) {
-      return `merchant ${o.r.payTo} is paused until ${new Date(b.until).toISOString()}: it was paid for calls in a row it did not serve`;
+      return { kind: 'paused', text: `merchant ${o.r.payTo} is paused until ${new Date(b.until).toISOString()}: it was paid for calls in a row it did not serve` };
     }
     for (const w of windows()) {
       if (w.spent + o.usd > w.cap) {
-        return `${w.name === 'minute' ? 'spend rate limit' : `${w.name} cap`}: $${formatUnits(w.spent, 6)} spent ${w.what}, at most $${formatUnits(w.cap, 6)}`;
+        return {
+          kind: 'limit',
+          text: `${w.name === 'minute' ? 'spend rate limit' : `${w.name} cap`}: $${formatUnits(w.spent, 6)} spent ${w.what}, at most $${formatUnits(w.cap, 6)}`,
+        };
       }
     }
     return null;
   }
+  const refusal = (o) => refusalOf(o)?.text ?? null;
 
   /**
    * Pick how to pay: the first mode in preference order that is funded and allowed. `only`, if
    * given, is the set of modes the offer's protocol can carry (version 1: a plain token transfer).
    */
-  async function choose(accepts, prefer, only = null) {
+  async function choose(accepts, prefer, only = null, approve = null) {
     // A session already open with this merchant pays first, and without reading any balance.
     if ((!prefer || prefer === 'session') && (!only || only.has('session'))) {
       for (const r of Array.isArray(accepts) ? accepts : []) {
@@ -623,7 +636,23 @@ export async function createAgent({
         else if (o.have) return o;
       }
     }
-    if (reasons.length && all.every((o) => refusal(o))) throw new PolicyError(reasons[0]);
+    if (reasons.length && all.every((o) => refusal(o))) {
+      // The owner may let one payment past a limit they set: asked through `approve` (the MCP
+      // client's own prompt, which the model cannot answer), never above approvalMax, never past
+      // an allow list or a paused merchant, and only for an option the wallet can fund.
+      if (approve) {
+        for (const mode of order) {
+          for (const o of all.filter((x) => x.mode === mode && x.have)) {
+            const why = refusalOf(o);
+            if (why?.kind !== 'limit') continue;
+            if (limits.approvalMax != null && o.usd > limits.approvalMax) continue;
+            if (await approve({ usd: o.usd, payTo: o.r.payTo, reason: why.text, mode: o.mode })) return { ...o, approved: why.text };
+            throw new PolicyError(`${why.text}; the owner did not approve going past it`);
+          }
+        }
+      }
+      throw new PolicyError(reasons[0]);
+    }
     throw new Error('insufficient funds for every payment option');
   }
 
@@ -936,7 +965,28 @@ export async function createAgent({
     return withLock('pay', () => withLedger(() => payNow(url, options)));
   }
 
-  async function payNow(url, { prefer, method = 'GET', headers: given = {}, body } = {}) {
+  /**
+   * Run a signed USDC authorization against the token itself (eth_call of transferWithAuthorization
+   * at the latest block) before it leaves: a payment the chain would reject (balance, signature,
+   * domain, expiry, a blacklisted address, a paused token) is never sent. Returns the revert reason,
+   * or null when the transfer would succeed or the chain cannot be asked this way.
+   */
+  async function wouldFail(payload) {
+    const a = payload?.authorization;
+    if (!a || typeof chain.rpc !== 'function') return null;
+    const { v, r, s } = splitSignature(payload.signature);
+    const data = calldata('transferWithAuthorization(address,address,uint256,uint256,uint256,bytes32,uint8,bytes32,bytes32)',
+      [a.from, a.to, a.value, a.validAfter, a.validBefore, a.nonce, String(v), r, s]);
+    try {
+      await chain.rpc('eth_call', [{ to: A.usdc, data }, 'latest']);
+      return null;
+    } catch (e) {
+      if (e?.code === 'RPC_UNREACHABLE') throw e; // not knowing is not a verdict: nothing is sent
+      return String(e?.message ?? e).replace(/^eth_call:\s*/, '');
+    }
+  }
+
+  async function payNow(url, { prefer, method = 'GET', headers: given = {}, body, approve } = {}) {
     const headers = { ...(userAgent && !Object.keys(given).some((k) => lc(k) === 'user-agent') ? { 'user-agent': userAgent } : {}), ...given };
     // Nothing is signed yet, so a timeout here throws and the call can safely be tried again.
     const initial = await fetch(url, { method, headers, body, signal: AbortSignal.timeout(limits.timeoutMs) });
@@ -963,7 +1013,7 @@ export async function createAgent({
     const problem = version === X402_VERSION ? inputProblem(required, url, body) : null;
     if (problem) throw new Error(problem);
 
-    const chosen = await choose(accepts, version === 1 ? 'USDC' : prefer, version === 1 ? V1_MODES : null);
+    const chosen = await choose(accepts, version === 1 ? 'USDC' : prefer, version === 1 ? V1_MODES : null, approve);
     if (chosen.mode === 'session') {
       return withLock(sessionKey(chosen.r), () => paySession(url, payUrl, required, chosen, method, headers, body));
     }
@@ -985,6 +1035,11 @@ export async function createAgent({
       ? { x402Version: 1, scheme: 'exact', network: o.r.v1.network, payload }
       : { x402Version: X402_VERSION, resource: required.resource, accepted: o.r, payload };
     const signatureHeader = version === 1 ? HEADER_V1.signature : HEADER.signature;
+    // Simulated before it leaves: nothing has been sent or counted yet, so a failure throws.
+    if (o.mode === 'USDC' && payload !== prior) {
+      const failure = await wouldFail(payload);
+      if (failure) throw new Error(`the payment would fail on-chain, so it was not sent: ${failure}`);
+    }
     // Signed is spent: every instrument counts against the budget before it leaves, whatever the
     // merchant answers. An EIP-3009 authorization can be settled until validBefore (for the router:
     // the authorized sUSD, of which the change comes back); reconcile() releases it if it expires
@@ -1049,7 +1104,7 @@ export async function createAgent({
     noteOutcome(o.r.payTo, outcomeOf(res.status));
     return {
       status: res.status, paid, delivered, charged, mode: chosen.mode, requirement: o.r, settlement, conversion, body: text, error, paymentPayload,
-      x402Version: version,
+      x402Version: version, approved: chosen.approved, simulated: o.mode === 'USDC' && typeof chain.rpc === 'function',
     };
   }
 

@@ -105,6 +105,34 @@ path returns:
 The CLI retries only calls that threw; the MCP server retries nothing; and the model is told "do
 not retry this URL now" after a charged failure. ∎
 
+## Owner approval past a limit
+
+When a payment would break a number the owner set (the per-call limit, the budget, or a minute, day,
+week or month cap), the MCP server can ask the owner to approve that one payment through the MCP
+client's own prompt (elicitation). Theorems 1 and 2 then hold for every instrument except those the
+owner approved one by one; each approved one is still counted, so every later check sees it.
+
+*Why the agent cannot approve itself.* The prompt is a request from the server to the client, which
+shows it to the person; the model sees neither the prompt nor its answer, and no tool result or
+model output can produce one. A refusal, a cancel, or no answer within 110 seconds is a refusal.
+An approval never passes an allow list or a paused merchant, never exceeds `approvalMax`
+(`AGENT_APPROVAL_MAX`, $5 by default), and is asked only for an option the wallet can fund.
+
+## Theorem 6. No payment the chain would reject is sent
+
+Before a USDC authorization leaves, the agent runs it against the token itself: an `eth_call` of
+`transferWithAuthorization` with the signed values at the latest block. If the call reverts
+(balance, signature, domain, expiry, a blacklisted address, a paused token), `pay()` throws before
+the request carrying it is made, so by Theorem 5 nothing has left and nothing is counted. If the
+chain cannot be read, `pay()` also throws: not knowing is not a verdict.
+
+## The most the agent can lose
+
+Without the owner, the agent can move at most the smaller of its USDC balance and the budget left
+(Theorem 1), at most each window's cap per window (Theorem 2), and at most `maxUndelivered` calls to
+a merchant that does not serve (Theorem 3). `x402_wallet` shows that ceiling. It is a bound that
+holds by construction, for every merchant and every model, not an insurance promise with terms.
+
 ## The path: proved on-chain
 
 For an agent with `AGENT_PATH`, its key holds nothing. Every session it opens is a step in

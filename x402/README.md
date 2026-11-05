@@ -28,7 +28,9 @@ nothing else.
    the USDC send on Base already filled in (address, amount, network), so funding is one Confirm;
    any other wallet can scan the `ethereum:` payment request next to it. From M-Pesa or a bank:
    buy USDC on Base in your wallet app (MetaMask: Buy) or on an exchange, then use the link. A few
-   dollars covers thousands of small calls. It needs no ETH.
+   dollars covers thousands of small calls. It needs no ETH. No crypto yet? The same answer has a
+   MetaMask Buy link with USDC on Base filled in: pay by card, or a local method where MetaMask
+   offers one, then use the one-tap send.
 4. **Find and use paid APIs.** Ask your agent to find one ("find a paid API for flight prices"):
    `x402_discover` searches the x402 Bazaar, the public directory of pay-per-call APIs, and lists
    those your wallet can pay with their price, usage and the inputs they need. Then ask it to fetch any x402 URL, for example
@@ -60,6 +62,13 @@ proves the ceiling on-chain, and `x402_wallet` reads it:
   pass the same check, and that holds across processes: Claude Desktop and every Claude Code or
   Cursor session paying from the same wallet share one ledger, read afresh under a lock for each
   call, so the budget and the minute limit are the wallet's, not each window's.
+- **You approve what goes past a limit.** When a payment would break a limit, Claude asks you to
+  approve that one payment (in clients with MCP elicitation, up to `AGENT_APPROVAL_MAX`, $5); the
+  agent cannot approve itself, and no answer in 110 seconds is a no.
+- **Simulated before it leaves.** Every USDC payment is run against the USDC contract first; one the
+  chain would reject is never sent.
+- **The most it can lose, shown.** The wallet shows the most the agent can still move without you:
+  the smaller of its balance and the budget left, proved, not insured.
 - **The ceiling, live.** For a path agent, `x402_wallet` shows what the path can still pay out and
   what each merchant can still receive on-chain (set `AGENT_PATH_MERCHANTS` to list the path's
   merchants; otherwise it shows those already paid).
