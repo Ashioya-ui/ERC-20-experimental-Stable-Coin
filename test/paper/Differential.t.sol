@@ -6,7 +6,7 @@ pragma solidity ^0.8.26;
 //
 //  fixtures/differential_1000.json holds 1,000 integer polygons and, for each, what the
 //  paper's Python (sa_fix/code/sapoly.py: pair_index, sa_residuals, length) computes: the
-//  Lemma 7.1 verdict, the largest squared distance from the start (Lemma 2.1) and the rounded
+//  Lemma 8.1 verdict, the largest squared distance from the start (Lemma 2.1) and the rounded
 //  length. Coordinates are below 2^20, so the paper's float64 arithmetic is exact and the
 //  verdicts must agree on every polygon, borderline ones included (the generator re-checks
 //  this in Python integers). Regenerate with fixtures/gen_differential.py.
@@ -61,7 +61,7 @@ contract DifferentialTest is Test {
             (int256[] memory xs, int256[] memory ys) = _polygon(p);
             uint256 segments = xs.length - 1;
 
-            // Lemma 7.1: identical verdicts, exact in both implementations.
+            // Lemma 8.1: identical verdicts, exact in both implementations.
             assertEq(SelfApproaching.isSelfApproaching(xs, ys), accepted[p], string.concat("verdict #", vm.toString(p)));
 
             // Lemma 2.1's quantity, exact in both.
@@ -72,9 +72,9 @@ contract DifferentialTest is Test {
             assertGe(lengthUp + 1, lengthRounded[p], string.concat("length low #", vm.toString(p)));
             assertLe(lengthUp, lengthRounded[p] + segments + 1, string.concat("length high #", vm.toString(p)));
 
-            // Theorem 4.3 holds for every accepted polygon, after sound rounding.
+            // Theorem 4.2 holds for every accepted polygon, after sound rounding.
             if (accepted[p] && diameterDown > 0) {
-                assertTrue(ok, string.concat("Theorem 4.3 #", vm.toString(p)));
+                assertTrue(ok, string.concat("Theorem 4.2 #", vm.toString(p)));
             }
         }
     }

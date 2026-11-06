@@ -5,11 +5,11 @@ pragma solidity ^0.8.26;
 //  The paper's proven results as test oracles (Phase 4, Track C).
 //
 //  Source: E. Langetepe and W. A. Ashioya, "The length-over-diameter ratio of
-//  self-approaching curves", revised version 21 (October 2026).
+//  self-approaching curves", November 2026 version.
 //
 //  Generators build polygons of several shapes. For every polygon the library accepts, the
 //  theorems must hold; for every polygon it rejects, there must be a witness triple that
-//  violates eq. (1.1). The Section 7.5 fixture (SampledConditions.t.sol) pins the one thing a
+//  violates eq. (1.1). The Section 8.4 fixture (SampledConditions.t.sol) pins the one thing a
 //  check made only at sampled points gets wrong.
 // =====================================================================================
 
@@ -45,12 +45,12 @@ contract SelfApproachingTest is Test {
     int256 internal constant SPIRAL_SLACK = 1e14;
 
     /// @dev An inward spiral about a later point: the polygonal form of an arc, and the shape
-    ///      the paper's own numerics converge to (Section 7.6). A polygon *inscribed* in a
+    ///      the paper's own numerics converge to (Section 8.4). A polygon *inscribed* in a
     ///      circle is not self-approaching: mid-chord it passes closer to the centre than it
     ///      ends up, so it moves away from a later point. Here each segment ends just inside
     ///      the foot of the perpendicular from the centre: the radius shrinks by
     ///      cos(step) * (1 - SPIRAL_SLACK). Exactly at the foot point, the final chord into the
-    ///      centre would sit on the boundary of Lemma 7.1's half-plane at every vertex, and the
+    ///      centre would sit on the boundary of Lemma 8.1's half-plane at every vertex, and the
     ///      rounding of the Taylor-series inputs would tip about half of those conditions the
     ///      wrong way. With the slack, every condition holds with a margin of about
     ///      cos(step) * 1e-4 * r^2, far above the rounding. The curve ends at the centre, the
@@ -225,8 +225,8 @@ contract SelfApproachingTest is Test {
         //     of rounding per segment.
         (uint256 lengthUp, uint256 diameterDown, bool ok) = SelfApproaching.lengthBound(xs, ys);
         require(lengthUp <= _hullPerimeterUp(xs, ys) + xs.length, "Corollary 3.2: length <= hull perimeter");
-        // (4) Theorem 4.3: length <= 3.1356... x diameter.
-        require(ok, "Theorem 4.3: length <= C_SA_UPPER x diameter");
+        // (4) Theorem 4.2: length <= 3.1297... x diameter.
+        require(ok, "Theorem 4.2: length <= C_SA_UPPER x diameter");
         require(diameterDown > 0, "positive diameter");
     }
 
@@ -264,9 +264,9 @@ contract SelfApproachingTest is Test {
         _checkAccepted(xs, ys);
     }
 
-    /// Theorem 5.4's family in polygonal form: a spiral of pi/3 about the end point, then the
+    /// Section 5's family in polygonal form: a spiral of pi/3 about the end point, then the
     /// chord into it. The paper doubles that last segment with a cycloidal cascade (Lemma 5.1),
-    /// which a polygon reproduces only with many vertices per cycloid (Section 7.5); sampling
+    /// which a polygon reproduces only with many vertices per cycloid (Section 8.4); sampling
     /// the cascade does not give a self-approaching polygon (see the cascade test below). So
     /// this is the construction without the cascade, whose limit is 1 + pi/3.
     function test_theorem54FamilyIsAcceptedAndBounded() public {
@@ -280,9 +280,9 @@ contract SelfApproachingTest is Test {
         assertLt(ratio, SelfApproaching.C_SA_UPPER_WAD, "inside the proven bound");
     }
 
-    /// The limit curve of Theorem 5.4 without the cascade, a unit arc of pi/3 about its end
+    /// The limit curve of Section 5 without the cascade, a unit arc of pi/3 about its end
     /// point followed by the chord into it, has L/D = 1 + pi/3. Its spiral polygons converge to
-    /// that value from below; the inward spiral costs about 0.84/N (Section 7.6).
+    /// that value from below; the inward spiral costs about 0.84/N (Section 8.4).
     function test_theorem54LimitCurveConvergesFromBelow() public {
         uint256 onePlusPiOver3 = 2_047_197_551_196_597_746;
         uint256 piOver3 = 1_047_197_551_196_597_746;
@@ -294,7 +294,7 @@ contract SelfApproachingTest is Test {
             (int256[] memory xs, int256[] memory ys) = _spiralWad(n, int256(piOver3 / (n - 1)), 1e9);
             require(SelfApproaching.isSelfApproaching(xs, ys), "spiral polygon accepted");
             (uint256 len, uint256 diam, bool ok) = SelfApproaching.lengthBound(xs, ys);
-            require(ok, "Theorem 4.3");
+            require(ok, "Theorem 4.2");
             uint256 ratio = (len * 1e18) / diam;
             emit log_named_uint(string.concat("N = ", vm.toString(n), ": L/D (WAD)"), ratio);
             emit log_named_uint(string.concat("N = ", vm.toString(n), ": N x gap (WAD)"), n * (onePlusPiOver3 - ratio));
@@ -309,7 +309,7 @@ contract SelfApproachingTest is Test {
     /// stays within pi w / (2n) of the segment. The fixture samples the paper's own cascade
     /// (sa_fix/code/cascade.py) with m points per piece. Two lessons for on-chain checks:
     /// a band (shape) condition admits doubled length, and sampling a self-approaching curve
-    /// does not give a self-approaching polygon. Lemma 7.1 rejects every sample, with a witness.
+    /// does not give a self-approaching polygon. Lemma 8.1 rejects every sample, with a witness.
     function test_lemma51CascadeSamplesStayInTheBandAndAreRejected() public {
         string memory j = vm.readFile("test/paper/fixtures/cascade_lemma51.json");
         uint256 count = vm.parseJsonUint(j, ".count");

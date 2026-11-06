@@ -10,7 +10,7 @@ pragma solidity ^0.8.26;
 //  4. AutonomousTreasuryTest    adapter accounting around an ERC-4626 vault
 //  5. WrappedSUSDTest           non-rebasing wrapper used by AMM pools
 //  6. SpectralStabilizerTest    fees, caps, rebases, buffer, loss absorption, pause, MEV
-//  7. ChurnBudgetTest           exact churn-budget arithmetic (CHURN_BUDGET = Theorem 4.3)
+//  7. ChurnBudgetTest           exact churn-budget arithmetic (CHURN_BUDGET = Theorem 4.2)
 //  8. SpectralHookTest          Uniswap v4 integration: now test/SpectralHook.t.sol
 //  9. SpectrumInvariantTest     100% reserve floor and accounting invariants
 // =====================================================================================
@@ -1434,14 +1434,14 @@ contract SpectralStabilizerTest is SpectrumFixture {
         assertTrue(_rebaseAfter(1 hours), "up 1");
         _whipsawLoss(); // down 1
         vault.simulateYield(vault.totalAssets() / 25); // > 2.75% buffer after the whipsaw loss
-        assertTrue(_rebaseAfter(1 hours), "up 2: L = 3D <= 3.1356 D");
+        assertTrue(_rebaseAfter(1 hours), "up 2: L = 3D <= 3.1297 D");
         _whipsawLoss(); // down 2
         vault.simulateYield(vault.totalAssets() / 25); // > 2.75% buffer after the whipsaw loss
 
         uint256 idx = token.index();
         vm.expectEmit(false, false, false, false, address(stabilizer));
         emit SpectralStabilizer.RebaseDeferred(0, 0, 0, 0);
-        assertFalse(_rebaseAfter(1 hours), "up 3: L = 5D > 3.1356 D");
+        assertFalse(_rebaseAfter(1 hours), "up 3: L = 5D > 3.1297 D");
         assertEq(token.index(), idx, "deferred, not applied");
 
         assertTrue(_rebaseAfter(7 days), "a fresh window resumes distribution");
@@ -1503,9 +1503,9 @@ contract ChurnBudgetTest is SpectrumFixture {
         h.exposedCommitChurn(i0, i0 + a); // up    L = 3a, D = a
         uint256 d = 1e15;
         h.exposedCommitChurn(i0 + a, i0 + a - d); // small down
-        // L <= CHURN_BUDGET * D  <=>  3a + d + u <= floor(3.135631968196535891 * 1e16), and
+        // L <= CHURN_BUDGET * D  <=>  3a + d + u <= floor(3.129671282803278542 * 1e16), and
         // u < d keeps the new index below the maximum, so D stays a.
-        uint256 u = 356_319_681_965_358;
+        uint256 u = 296_712_828_032_785;
         (bool ok, uint256 len, uint256 range) = h.exposedChurnAfter(i0 + a - d, i0 + a - d + u);
         assertTrue(ok, "at the boundary");
         assertEq(len, 3 * a + d + u);

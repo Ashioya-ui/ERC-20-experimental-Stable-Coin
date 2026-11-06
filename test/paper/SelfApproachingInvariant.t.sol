@@ -2,13 +2,13 @@
 pragma solidity ^0.8.26;
 
 // =====================================================================================
-//  Phase 4, C3 (6): grow polygons one accepted vertex at a time and check Theorem 4.3.
+//  Phase 4, C3 (6): grow polygons one accepted vertex at a time and check Theorem 4.2.
 //
 //  The handler proposes a vertex by turning the current heading through a random angle and
 //  stepping a random distance. It keeps the vertex only if SelfApproaching.canAppend accepts it
-//  (Lemma 7.1, the N new constraints), and restarts now and then. After every call:
+//  (Lemma 8.1, the N new constraints), and restarts now and then. After every call:
 //    - the polygon kept so far passes the full O(N^2) check (canAppend is consistent);
-//    - L <= C_SA_UPPER x D after sound rounding (Theorem 4.3, proven).
+//    - L <= C_SA_UPPER x D after sound rounding (Theorem 4.2, proven).
 //  The best L/D found is logged at the end of each run (each run starts afresh).
 // =====================================================================================
 
@@ -118,7 +118,7 @@ contract SelfApproachingInvariantTest is Test {
         (int256[] memory xs, int256[] memory ys) = handler.polygon();
         assertTrue(SelfApproaching.isSelfApproaching(xs, ys), "canAppend kept a polygon the full check rejects");
         (uint256 lengthUp, uint256 diameterDown, bool ok) = SelfApproaching.lengthBound(xs, ys);
-        if (diameterDown > 0) assertTrue(ok, "Theorem 4.3: L <= C_SA_UPPER x D");
+        if (diameterDown > 0) assertTrue(ok, "Theorem 4.2: L <= C_SA_UPPER x D");
         assertLt(handler.bestRatioWad(), SelfApproaching.C_SA_UPPER_WAD, "best L/D stays below C_SA_UPPER");
         lengthUp;
     }
