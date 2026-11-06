@@ -1,5 +1,6 @@
 // secp256k1, keccak, ABI, EIP-712 and a JSON-RPC client, in plain Node.
 import { createHmac, randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 const hex = (buf) => `0x${Buffer.from(buf).toString('hex')}`;
 const isHexString = (s) => typeof s === 'string' && /^0x([0-9a-fA-F]{2})*$/.test(s);
@@ -196,6 +197,36 @@ export function signDigest(digest, key) {
     return hex(Buffer.concat([be32(r), be32(s), Buffer.from([27 + recovery])]));
   }
   throw new Error('unreachable');
+}
+
+const rlpInt = (n) => {
+  const v = BigInt(n);
+  if (v === 0n) return Buffer.alloc(0);
+  const h = v.toString(16);
+  return Buffer.from(h.length % 2 ? `0${h}` : h, 'hex');
+};
+const rlpHead = (len, offset) => {
+  if (len < 56) return Buffer.from([offset + len]);
+  const l = rlpInt(len);
+  return Buffer.concat([Buffer.from([offset + 55 + l.length]), l]);
+};
+function rlp(x) {
+  if (Array.isArray(x)) {
+    const body = Buffer.concat(x.map(rlp));
+    return Buffer.concat([rlpHead(body.length, 0xc0), body]);
+  }
+  return x.length === 1 && x[0] < 0x80 ? x : Buffer.concat([rlpHead(x.length, 0x80), x]);
+}
+
+export function signTransaction1559(tx, key) {
+  const fields = [
+    rlpInt(tx.chainId), rlpInt(tx.nonce), rlpInt(tx.maxPriorityFeePerGas), rlpInt(tx.maxFeePerGas), rlpInt(tx.gas),
+    toBytes(tx.to), rlpInt(tx.value ?? 0n), toBytes(tx.data ?? '0x'), [],
+  ];
+  const digest = keccak256(Buffer.concat([Buffer.from([2]), rlp(fields)]));
+  const sig = toBytes(signDigest(digest, key));
+  const signed = [...fields, rlpInt(sig[64] - 27), rlpInt(BigInt(hex(sig.subarray(0, 32)))), rlpInt(BigInt(hex(sig.subarray(32, 64))))];
+  return { raw: hex(Buffer.concat([Buffer.from([2]), rlp(signed)])), hash: hex(keccak256(Buffer.concat([Buffer.from([2]), rlp(signed)]))) };
 }
 
 const isDynamic = (t) => t === 'string' || t === 'bytes' || t.endsWith('[]');
@@ -414,8 +445,28 @@ export function makeJsChain(rpcUrl) {
     async bool(to, sig, args = []) {
       return first(await this.call(to, sig, args)) === 'true';
     },
-    async send() {
-      throw new Error('this client only reads and signs; sending a transaction needs Foundry (cast)');
+    async send(to, sig, args, signer) {
+      if (signer?.kind !== 'key') throw new Error('this client sends only from a key file');
+      const key = signer.key ?? readFileSync(signer.path, 'utf8').trim();
+      const from = addressOfKey(key);
+      const data = calldata(sig, args);
+      const [chainId, nonce, block, tip] = await Promise.all([
+        rpc('eth_chainId', []), rpc('eth_getTransactionCount', [from, 'pending']), rpc('eth_getBlockByNumber', ['latest', false]),
+        rpc('eth_maxPriorityFeePerGas', []).catch(() => '0x0'),
+      ]);
+      const gas = (BigInt(await rpc('eth_estimateGas', [{ from, to, data }])) * 12n) / 10n;
+      const priority = BigInt(tip) > 0n ? BigInt(tip) : 1_000_000n;
+      const tx = signTransaction1559({
+        chainId: BigInt(chainId), nonce: BigInt(nonce), maxPriorityFeePerGas: priority,
+        maxFeePerGas: BigInt(block?.baseFeePerGas ?? '0x0') * 2n + priority, gas, to, data,
+      }, key);
+      const hash = await rpc('eth_sendRawTransaction', [tx.raw]);
+      for (let i = 0; i < 90; i++) {
+        const r = await rpc('eth_getTransactionReceipt', [hash]).catch(() => null);
+        if (r) return { ok: r.status === '0x1', hash, gasUsed: BigInt(r.gasUsed ?? 0), gasPrice: BigInt(r.effectiveGasPrice ?? 0) };
+        await sleep(1000);
+      }
+      throw Object.assign(new Error(`no receipt for ${hash} after 90 s`), { hash });
     },
     async receipt() {
       throw new Error('this client only reads and signs; receipts need Foundry (cast)');

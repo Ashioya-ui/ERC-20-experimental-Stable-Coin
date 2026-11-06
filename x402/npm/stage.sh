@@ -9,7 +9,7 @@ REF=${GITHUB_SHA:-$(git rev-parse HEAD)}
 rm -rf "$OUT"
 mkdir -p "$OUT/x402/lib" "$OUT/deployments" "$OUT/config"
 cp x402/npm/package.json "$OUT/"
-cp x402/agent.mjs x402/facilitator.mjs x402/merchant.mjs x402/mcp.mjs x402/funding.mjs "$OUT/x402/"
+cp x402/agent.mjs x402/facilitator.mjs x402/merchant.mjs x402/mcp.mjs "$OUT/x402/"
 cp x402/lib/*.mjs "$OUT/x402/lib/"
 cp deployments/8453-session-escrow.json deployments/8453-session-paths.json "$OUT/deployments/"
 cp config/8453.json "$OUT/config/"

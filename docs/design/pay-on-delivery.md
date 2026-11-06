@@ -65,6 +65,6 @@ Every row is a bound the code or the contract enforces, and none depends on a cl
 
 ## Status
 
-- Built and proved: the bounds in the table above, except the first cell.
-- Next: `payOnDelivery` in the agent, `merchant.mjs` and `facilitator.mjs`, behind the offer
-  flag, so existing sessions behave as before.
+- Built: `payOnDelivery` in the agent, `merchant.mjs` (`MERCHANT_PAY_ON_DELIVERY=1`) and
+  `facilitator.mjs`, behind the offer flag, so existing sessions behave as before.
+- Checked on the escrow: `test/session.e2e.mjs`, on a local chain and on a Base mainnet fork.

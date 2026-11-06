@@ -56,7 +56,7 @@ describe('MCP server', () => {
     assert.ok(init.result.capabilities.tools);
     c.notify('notifications/initialized');
     const { result } = await c.request('tools/list');
-    assert.deepEqual(result.tools.map((t) => t.name).sort(), ['x402_discover', 'x402_fetch', 'x402_fund', 'x402_wallet']);
+    assert.deepEqual(result.tools.map((t) => t.name).sort(), ['x402_discover', 'x402_fetch', 'x402_wallet']);
     for (const t of result.tools) assert.equal(t.inputSchema.type, 'object');
   });
 
@@ -87,6 +87,36 @@ describe('MCP server on the rail', { skip: ready === true ? false : `no rail at 
   after(async () => {
     c?.close();
     await w?.close();
+  });
+
+  test('with an owner allowance, the agent pulls just enough, and a revoked allowance stops it', async () => {
+    const owner = w.funder.address;
+    const c2 = start({
+      X402_HOME: mkdtempSync(join(tmpdir(), 'x402-mcp-')), RPC_URL: RPC, AGENT_MAX_PER_REQUEST: '0.03', AGENT_BUDGET: '0.5',
+      AGENT_OWNER: owner, AGENT_FLOAT: '0.05',
+    });
+    try {
+      await c2.request('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0' } });
+      const address = (await c2.call('x402_wallet')).content[0].text.match(/Address: (0x[0-9a-f]{40})/)[1];
+      await w.rpc('anvil_setBalance', address, '0x2386f26fc10000');
+      await w.fundUSDC(owner, 1_000_000n);
+      await w.send(w.A.usdc, 'approve(address,uint256)', [address, 100_000]);
+      const m0 = await w.bal.usdc(w.merchantAddress);
+      const r = await c2.call('x402_fetch', { url: `${w.merchantUrl}/api/v1/usdc-only`, prefer: 'USDC' });
+      assert.equal(r.isError, false, r.content[0].text);
+      assert.match(r.content[0].text, /pulled \$0\.05 from the owner's allowance first \(transaction 0x[0-9a-f]{64}\)/);
+      assert.equal((await w.bal.usdc(w.merchantAddress)) - m0, 20_000n);
+      assert.equal(await w.bal.usdc(address), 30_000n, 'it keeps the float, minus the call');
+      assert.equal(await w.chain.uint(w.A.usdc, 'allowance(address,address)(uint256)', [owner, address]), 50_000n);
+      assert.match((await c2.call('x402_wallet')).content[0].text, /A stolen agent key can take at most \$0\.08/);
+      await w.send(w.A.usdc, 'approve(address,uint256)', [address, 0]);
+      assert.equal((await c2.call('x402_fetch', { url: `${w.merchantUrl}/api/v1/usdc-only`, prefer: 'USDC' })).isError, false, 'the float still pays');
+      const stopped = await c2.call('x402_fetch', { url: `${w.merchantUrl}/api/v1/usdc-only`, prefer: 'USDC' });
+      assert.equal(stopped.isError, true, stopped.content[0].text);
+      assert.equal(await w.bal.usdc(address), 10_000n, 'nothing more left the owner');
+    } finally {
+      c2.close();
+    }
   });
 
   test('a wallet the server made, once funded, pays a merchant through x402_fetch', async () => {

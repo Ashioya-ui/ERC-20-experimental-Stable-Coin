@@ -22,8 +22,7 @@ Node.js 18 or later.
 ## Use
 
 1. "Show my x402 wallet." The first call creates a wallet on Base.
-2. "Add $5 to my x402 wallet." MetaMask works as is; M-Pesa, card and Yellow Card need the
-   [funding settings](#funding-service). USDC only, no ETH.
+2. "Add $5 to my x402 wallet." It gives one-tap MetaMask links: send USDC, or buy it with a card. No ETH needed.
 3. "Find a paid API for flight prices." Searches the x402 Bazaar for APIs this wallet can pay.
 4. "Fetch https://2s.io/api/crypto/gas-oracle?chain=base with x402_fetch."
 
@@ -32,7 +31,6 @@ The key is in `~/.x402-sessions/agent.key`. Hold only what the agent may spend.
 | Tool | Does |
 |---|---|
 | `x402_wallet` | Address, balance, spend against each cap, the most it can move without you, funding links |
-| `x402_fund` | M-Pesa or card (Kotani Pay), Yellow Card, MetaMask |
 | `x402_discover` | Paid APIs on the x402 Bazaar, with price and required inputs |
 | `x402_fetch` | Fetches a URL and pays x402 v1 or v2 within the limits |
 
@@ -48,6 +46,8 @@ The key is in `~/.x402-sessions/agent.key`. Hold only what the agent may spend.
 | `AGENT_TIMEOUT_S` | 30 | One request |
 | `AGENT_MAX_UNDELIVERED` | 2 | Paid calls in a row a merchant may leave unserved |
 | `AGENT_BREAKER_SECONDS` | 600 | How long that merchant is paused |
+| `AGENT_OWNER` | none | Your wallet: the agent pulls from your USDC allowance |
+| `AGENT_FLOAT` | $1 | With `AGENT_OWNER`: the most the agent holds at a time |
 
 1. Signed is spent. An authorization that expires unused is released.
 2. One paid call at a time per wallet, across every process that uses it.
@@ -55,20 +55,12 @@ The key is in `~/.x402-sessions/agent.key`. Hold only what the agent may spend.
 4. Every USDC payment is simulated against the USDC contract first. One that would fail is not sent.
 5. A request missing an input the server requires is refused before paying.
 6. A timeout after payment is reported as charged, not delivered.
+7. On a pay-on-delivery session, each voucher covers only the calls already received.
 
-## Funding service
-
-M-Pesa and card go through Kotani Pay, whose key cannot ship in a public package. `x402-funding`
-holds it and nothing else: it creates the order, USDC on Base to the agent's address. One order per
-phone every 2 minutes, 10 per caller an hour, KES 100 to 20,000.
-
-```sh
-KOTANI_API_KEY=... KOTANI_API_URL=https://<api>/api/v3 PUBLIC_URL=https://<this service> \
-  npx -y -p @pyzratio/x402-sessions x402-funding
-```
-
-Agents: `X402_FUNDING_URL` (Claude Desktop: "Funding service"). Yellow Card: `X402_YELLOWCARD_KEY`,
-its public widget key.
+**Owner allowance.** Set `AGENT_OWNER` to your wallet and approve the agent for a USDC allowance on Base. The money stays
+with you; the agent pulls just enough when it pays, up to `AGENT_FLOAT`. A stolen agent key can take at most what the
+agent holds plus the allowance left, and approving the agent for 0 stops it. The pulls are transactions from the
+agent, so it needs a little ETH on Base (0.0001 ETH covers many).
 
 ## Sessions
 
@@ -138,6 +130,8 @@ same programs. Library: `import { createAgent } from '@pyzratio/x402-sessions'`,
    FACILITATOR_URL=http://127.0.0.1:4020 MERCHANT_PAYTO=0xYourAddress MERCHANT_TICK_PRICE=100 \
    x402-session-merchant                                # :4021; 100 = $0.0001 a call
    ```
+   `MERCHANT_PAY_ON_DELIVERY=1` serves each call before it is paid: the voucher with a call pays for the calls
+   before it, so a buyer never pays for a call it did not get, and the merchant's credit is one call.
 
 ### Agents
 

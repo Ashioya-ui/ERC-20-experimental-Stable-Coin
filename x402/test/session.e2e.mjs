@@ -315,3 +315,38 @@ test("a path: the agent holds nothing, and its key can only walk the owner's pat
   assert.ok((await readPath(chain, A.sessionPaths, pathId)).ended);
   assert.equal(await bal(agentKey.address), 0n);
 });
+
+test('pay on delivery: each voucher covers only calls already received, and a call that fails is never paid', async (t) => {
+  if (skip) return t.skip(skip);
+  const { dir, facilitator, facilitatorUrl, merchantKey } = world;
+  const pod = await createMerchant({
+    rpcUrl: RPC, facilitatorUrl, payTo: merchantKey.address, tickPrice: String(PRICE), sessionDeposit: String(DEPOSIT),
+    payOnDelivery: true, testRoutes: true,
+  });
+  const podUrl = await listen(pod.server);
+  const key = await newKeystore(dir, 'pod-agent', join(dir, 'password'));
+  await dealUSDC(key.address, 1_000_000n);
+  const agent = await createAgent({
+    rpcUrl: RPC, signer: key, facilitatorUrl, tmpDir: dir, ledgerFile: join(dir, 'pod-ledger.json'), policy: { maxSessionDeposit: DEPOSIT },
+  });
+  try {
+    for (let i = 1; i <= 3; i++) {
+      const r = await agent.pay(`${podUrl}/api/v1/tick`);
+      assert.equal(r.status, 200, r.error);
+      assert.equal(BigInt(r.paymentPayload.payload.session.cumulative), BigInt(i - 1) * PRICE, `call ${i} pays only for the calls before it`);
+    }
+    const spent = agent.spent;
+    const broken = await agent.pay(`${podUrl}/api/v1/broken`);
+    assert.equal(broken.delivered, false);
+    assert.equal(broken.charged, 0n);
+    assert.equal(agent.spent, spent, 'a call not received is not counted');
+    const r = await agent.pay(`${podUrl}/api/v1/tick`);
+    assert.equal(r.status, 200, r.error);
+    assert.equal(BigInt(r.paymentPayload.payload.session.cumulative), 3n * PRICE, 'the call that failed is not paid');
+    await facilitator.redeemDue({ force: true });
+    const s = await readSession(chain, A.sessionEscrow, r.paymentPayload.payload.session.sessionId);
+    assert.equal(s.claimed, 3n * PRICE, 'the merchant redeemed the calls received, never the failed one');
+  } finally {
+    await new Promise((r) => pod.server.close(r));
+  }
+});
