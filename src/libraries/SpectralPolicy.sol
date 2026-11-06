@@ -39,8 +39,8 @@ library SpectralPolicy {
     /// @dev Surplus kept before distributing: 2.75% up to h = 0.5, rising to 5% at h = 1.
     uint256 internal constant BUFFER_LOW_H = 0.0275e18;
     uint256 internal constant BUFFER_HIGH_H = 0.05e18;
-    /// @dev The churn budget's ratio: 5*pi/6 + 2 sin(pi/12) = 3.1356..., in WAD, rounded up.
-    ///      Theorem 4.3 of the paper (proven). See SpectralStabilizer.CHURN_BUDGET_WAD.
+    /// @dev The churn budget's ratio: 2*pi/3 + 4 sin(pi/12) = 3.1297..., in WAD, rounded up.
+    ///      Theorem 4.2 of the paper (proven). See SpectralStabilizer.CHURN_BUDGET_WAD.
     uint256 internal constant CHURN_BUDGET_WAD = SelfApproaching.C_SA_UPPER_WAD;
 
     function clamp(uint256 h) internal pure returns (uint256) {

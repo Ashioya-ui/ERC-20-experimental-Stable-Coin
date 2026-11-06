@@ -87,7 +87,7 @@ cap and the surplus buffer within fixed ranges. H never touches backing.
 | Oracle gas griefing | the worst-case `record()` cost is measured and bounded (A8, B4: 37,261 gas for a cold window close since the state packing); a deliberate gas starvation reverts the swap |
 | Batched deposits leave funds idle | mints deposit only once idle funds exceed the target by 1% of the reserve; idle USDC still counts in the reserve, so nothing is mis-valued; the cost is at most 1% of the reserve earning nothing for a while; rebalance and migration still deposit everything above the target |
 | Dust shares in an old vault block later migrations | shares worth at most `LEGACY_DUST_ASSETS` (0.001 USDC) are not quarantined and do not keep `legacyVault` set (A12) |
-| The churn budget relying on an unproven constant | since Phase 4 it uses Theorem 4.3's proven bound; it is a design rule in any case, and no safety property depends on it. The step itself is proven never to revert, so it cannot block loss absorption (Halmos, `audit/formal.md`) |
+| The churn budget relying on an unproven constant | since Phase 4 it uses the paper's proven bound (Theorem 4.2 of the November 2026 version, 3.1297); it is a design rule in any case, and no safety property depends on it. The step itself is proven never to revert, so it cannot block loss absorption (Halmos, `audit/formal.md`) |
 | Protocol capital drained or distributed | it only grows (`contributeCapital`), has no withdrawal path, and rebases stop at reserve − capital (B8) |
 | USDC blacklisting or pause | out of the protocol's control; documented in the runbook |
 | Base sequencer downtime | no transactions while it is down; the oracle reads neutral after `staleAfter` |

@@ -3,7 +3,7 @@
 Generates 1,000 integer polygons and records, for each, what the paper's code
 (sa_fix/code/sapoly.py: pair_index, sa_residuals, length) says about it:
 
-  accepted       min over 1 <= i < j <= N of (v_j - v_i).(v_i - v_{i-1}) >= 0  (Lemma 7.1)
+  accepted       min over 1 <= i < j <= N of (v_j - v_i).(v_i - v_{i-1}) >= 0  (Lemma 8.1)
   d2             max_j |v_j - v_0|^2                                         (Lemma 2.1)
   lengthRounded  round(sum of segment lengths)
 
@@ -58,7 +58,7 @@ def cloud(n):
 
 
 def with_repeats(V):
-    # repeat one vertex: a zero-length segment, which Lemma 7.1 treats as a no-op
+    # repeat one vertex: a zero-length segment, which Lemma 8.1 treats as a no-op
     k = int(rng.integers(0, len(V)))
     return np.insert(V, k, V[k], axis=0)
 

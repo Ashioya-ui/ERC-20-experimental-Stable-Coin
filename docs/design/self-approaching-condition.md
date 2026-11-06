@@ -75,3 +75,18 @@ Chord applies the same condition to its own approvals:
 - **USDC's own controls.** Blacklisting or pausing still apply to payouts (see
   `audit/x402-session-escrow-review.md`, I-2).
 - **A dishonest named merchant.** It can take up to its cap. The bound is the owner's own number.
+
+## sUSD on a path
+
+sUSD rebases, so a session cannot hold it: the escrow's books would drift from its balance with
+every rebase. A path holds wrapped sUSD (`WrappedSUSD`) instead: shares that never rebase, worth
+more or less sUSD as the index moves. Every account the path and the escrow keep stays exact in
+shares through any rebase, up or down; value is read only when home unwraps.
+
+This is the structure of Witten's lattice construction (arXiv:2611.05051): exact discrete data
+where the books are kept, the continuous quantity (the index) carried only where it is needed,
+and an outcome that does not depend on the path the index takes.
+
+`test/SUSDOnPaths.t.sol` walks it: wrap 1,000 sUSD, declare a path, open a 200 session, redeem 50,
+a positive rebase, redeem to 120, a loss, close, collect 80, go home with 880, unwrap. The escrow
+holds exactly what it owes after every step, and 120 + 880 = 1,000 shares.

@@ -167,7 +167,7 @@ stack-too-deep in `PoolManager` under via-IR.
 
 7. **Churn budget (`CHURN_BUDGET_WAD`).** Within a 7-day window, let L be the index's total
    variation (sum of all moves) and D its range (max minus min). A positive rebase is deferred if
-   afterwards L > 3.1356 × D. Monotone yield distribution always has L = D, so it is never
+   afterwards L > 3.1297 × D. Monotone yield distribution always has L = D, so it is never
    blocked. With equal-sized gains and losses alternating, the third upward step in a window is
    deferred. Loss absorption is never deferred, and the step can never revert (proven with
    Halmos).
@@ -235,18 +235,18 @@ Design and threat model: `docs/design/x402-rail.md`. Cross-request state audit:
 ## The paper
 
 The geometry comes from E. Langetepe and W. A. Ashioya, *The length-over-diameter ratio of
-self-approaching curves*, revised version 21 (October 2026). [`docs/paper-map.md`](docs/paper-map.md)
+self-approaching curves* (November 2026). [`docs/paper-map.md`](docs/paper-map.md)
 lists every result, its status (proven, numerical, or open) and where the code uses it.
 
 - `src/libraries/SelfApproaching.sol` implements the proven results exactly, in integers:
-  Lemma 7.1 (a polygon is self-approaching iff `(v_j − v_i)·(v_i − v_{i−1}) ≥ 0`), Lemma 2.1
-  (the diameter is the largest distance from the start) and Theorem 4.3
-  (`L ≤ (5π/6 + 2 sin(π/12))·D = 3.1356…·D`).
+  Lemma 8.1 (a polygon is self-approaching iff `(v_j − v_i)·(v_i − v_{i−1}) ≥ 0`), Lemma 2.1
+  (the diameter is the largest distance from the start) and Theorem 4.2
+  (`L ≤ (2π/3 + 4 sin(π/12))·D = 3.1297…·D`).
 - `test/paper/` uses the proven results as test oracles, keeps the paper's Section 7.5
   counterexample (sampled checks are not enough) as a regression test, and checks the library
   against the paper's own Python on 1,000 polygons: every verdict, diameter and length agrees.
-- The churn budget's constant is Theorem 4.3's **proven** bound, 3.1356… Until Phase 4 it was
-  2 + π/3, whose sharpness is Conjecture 1.2 (open). No code depends on an open result now. It
+- The churn budget's constant is Theorem 4.2's **proven** bound, 3.1297… (3.1356 under version 21;
+  until Phase 4, 2 + π/3, then a conjecture). No code depends on an open result now. It
   is a design constant in a one-dimensional rule: no safety property depends on it.
 - Nothing on-chain calls `SelfApproaching` yet. [`docs/design/reserve-allocation.md`](docs/design/reserve-allocation.md)
   describes where the proven bound would become load-bearing (a reserve split across two vaults)

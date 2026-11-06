@@ -48,8 +48,8 @@ import {SpectralPolicy} from "./libraries/SpectralPolicy.sol";
 ///         distribution) always satisfy L = D. The budget binds only when gains and losses
 ///         alternate: with equal swings, the third upward leg in a window is deferred. Loss
 ///         absorption is never deferred.
-///         CHURN_BUDGET = 5*pi/6 + 2 sin(pi/12) = 3.1356... is the proven upper bound on the
-///         length-over-diameter ratio of self-approaching plane curves (Theorem 4.3). Here it
+///         CHURN_BUDGET = 2*pi/3 + 4 sin(pi/12) = 3.1297... is the proven upper bound on the
+///         length-over-diameter ratio of self-approaching plane curves (Theorem 4.2). Here it
 ///         is a design constant in a one-dimensional rule, and no stability property follows
 ///         from the geometry; see CHURN_BUDGET_WAD and docs/paper-map.md.
 ///
@@ -85,14 +85,13 @@ contract SpectralStabilizer is AccessControlDefaultAdminRules, Pausable, Reentra
 
     uint256 internal constant WAD = 1e18;
 
-    /// @notice The churn budget's ratio, 5*pi/6 + 2 sin(pi/12) = 3.135631968196535891 in WAD
+    /// @notice The churn budget's ratio, 2*pi/3 + 4 sin(pi/12) = 3.129671282803278542 in WAD
     ///         (rounded up).
     /// @dev    From E. Langetepe and W. A. Ashioya, "The length-over-diameter ratio of
-    ///         self-approaching curves", revised version 21 (October 2026), Theorem 4.3
-    ///         (proven): a self-approaching plane curve is at most this many times as long as
-    ///         its diameter. Until Phase 4 the budget used 2 + pi/3 = 3.0472, which curves
-    ///         approach (Theorem 5.4) but which is only conjectured to be sharp (Conjecture
-    ///         1.2, open). Since then no code depends on an open result.
+    ///         self-approaching curves" (November 2026), Theorem 4.2 (proven): a self-approaching
+    ///         plane curve is at most this many times as long as its diameter. Version 21 (October
+    ///         2026) proved 5*pi/6 + 2 sin(pi/12) = 3.1356; until Phase 4 the budget used 2 + pi/3 =
+    ///         3.0472, then only conjectured. No code depends on an open result.
     ///
     ///         Here it is a design constant in a one-dimensional rule. On a line a
     ///         self-approaching path is simply monotone, so none of the planar theorems applies
