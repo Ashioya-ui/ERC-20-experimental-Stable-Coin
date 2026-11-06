@@ -60,3 +60,22 @@ them: length before the last step plus twice that step is at most `(2 + π/3) ·
 3.1297. `windingBound` decides membership in O(N) with exact cross products (each step turns the
 same way; no vertex passes `π` from the first) and checks the bound with the length rounded up and
 the diameter down.
+
+## 4. The margin sets the cap
+
+**Lemma C.** A polygon that passes the leash's test with margin `η` (condition (5.2) at every
+vertex, the end `E` included) is φ-self-approaching in the sense of Aichholzer, Aurenhammer,
+Icking, Klein, Langetepe and Rote (*Generalized self-approaching curves*, Discrete Applied
+Mathematics 109 (2001)), with `φ = min(π/2, 2 arccos η)`.
+
+*Proof.* Let `α = arccos η` and let `p` lie on segment `i`, direction `b`. Every later vertex `v_j`
+satisfies `∠(v_j − v_i, b) ≤ α` (the test), and `v_j − p = (v_j − v_i) + λb` with `λ ≥ 0`, so
+`∠(v_j − p, b) ≤ α`. Later points on segments are convex combinations of later vertices, and a
+cone of half-angle `α ≤ π/2` is convex, so the rest of the polygon lies in the cone of half-angle
+`α` around `b`. It also lies in a right-angle wedge at `p` (Lemma 2.2), so it lies in their
+intersection, whose angle is at most `min(2α, π/2)`. ∎
+
+Their Theorem 7 bounds the length by `c(φ)` times the start-to-end distance, tightly, with `c`
+strictly increasing, `c(0) = 1` and `c(π/2) ≈ 5.3331`. So for `η > 1/√2` the leash's cap is
+`c(2 arccos η) < 5.3331`, and it tends to 1 as `η → 1`: the owner's margin sets the cap. The same
+question for the diameter, a cap below 3.1297 for each `η > 0`, is open.
