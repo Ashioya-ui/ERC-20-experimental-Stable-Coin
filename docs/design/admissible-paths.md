@@ -38,6 +38,19 @@ the segment, and the diameter because `|w − v_0| ≤ max(|v_{i−1} − v_0|, 
 An executor may split any accepted move into equal sub-moves (a TWAP) without leaving the class or
 changing its bound. Moving a sub-step off the segment, the barycentric analogue, can break (8.1).
 
+**Lemma B′.** Lemma B also keeps condition (5.2), with the same η.
+
+*Proof.* For `[v_{i−1}, w]` and a later vertex `u`: `(u − w)·b = (u − v_i)·b + (1 − t)|b|² ≥
+η|u − v_i||b| + (1 − t)|b|² ≥ η(|u − v_i| + (1 − t)|b|)|b| ≥ η|u − w||b|`, using `η ≤ 1` and
+`|u − w| ≤ |u − v_i| + |v_i − w|`; multiply by `t`. For `[w, v_i]`: the inequality at `i`, times
+`1 − t`. For `w` as a later point of an earlier segment with direction `c`:
+`(w − v_k)·c = (1 − t)(v_{i−1} − v_k)·c + t(v_i − v_k)·c ≥ η|c|((1 − t)|v_{i−1} − v_k| + t|v_i − v_k|)
+≥ η|c||w − v_k|`, by convexity of the norm. ∎
+
+So a leash agent may split any accepted move into collinear pieces. Each piece passes both
+on-chain checks, because the end `E` is a later vertex of the closed polygon. The 32-point cap
+still applies.
+
 ## 3. Sectors: a class with a tighter bound
 
 On an admissible path to a declared end `f` (no vertex at `f`), the argument about `f` is defined.

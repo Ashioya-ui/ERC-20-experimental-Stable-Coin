@@ -49,8 +49,10 @@ Each move must pass, on-chain:
 3. at most 32 points per plan.
 
 The polygon of a plan is therefore self-approaching. Its length is at most 3.1297 times its
-largest distance from the start (Theorem 4.2, Lemma 2.1), and that distance is at most twice the
-start-to-end distance. `bound()` returns both numbers from the stored path. The agent cannot
+largest distance from the start (Theorem 4.2, Lemma 2.1). Closed with `E`, it still satisfies
+(8.1), so its length is also at most 5.3332 times the start-to-end distance (Icking, Klein and
+Langetepe, *Self-approaching curves*, Math. Proc. Cambridge Philos. Soc. 125 (1999)). By Lemma
+B′ (`admissible-paths.md`), the agent may split a move into collinear pieces. `bound()` returns both numbers from the stored path. The agent cannot
 withdraw. The owner's deposits and withdrawals go pro rata, so they leave the allocation where it
 is. `stop()` (planner) redeems both vaults and removes the agent.
 

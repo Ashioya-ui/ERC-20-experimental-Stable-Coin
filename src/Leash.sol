@@ -21,9 +21,9 @@ import {SelfApproaching} from "./libraries/SelfApproaching.sol";
 ///            in one move and never takes the allocation further from the end;
 ///         3. a plan has at most 32 points.
 ///         Under one plan the path's length is at most 3.1297 times its largest distance from the
-///         start (Theorem 4.2 with Lemma 2.1), and that distance is at most twice the distance
-///         from the start to the end. The agent cannot withdraw: money moves only between the
-///         owner's two vaults and idle.
+///         start (Theorem 4.2 with Lemma 2.1) and, closed with the end, at most 5.3332 times the
+///         distance from the start to the end (Icking, Klein, Langetepe 1999). The agent cannot
+///         withdraw: money moves only between the owner's two vaults and idle.
 ///
 ///         The leash is itself an ERC-4626 vault with one shareholder, `owner`, so anything that
 ///         holds an ERC-4626 vault (sUSD's AutonomousTreasury included) holds a leashed
