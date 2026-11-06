@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// x402-sessions MCP server (stdio): x402_wallet, x402_fetch, x402_discover, x402_fund.
+// x402-sessions MCP server (stdio): x402_wallet, x402_fetch, x402_discover.
 
 console.log = console.info = console.debug = (...a) => console.error(...a);
 
@@ -72,27 +72,6 @@ const TOOLS = [
         },
       },
       required: ['url'],
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-  },
-  {
-    name: 'x402_fund',
-    title: 'Add money to the wallet',
-    description:
-      'Add money to this agent\'s wallet, straight to its address on Base, the way the owner picks: "mpesa" (an M-Pesa prompt ' +
-      'on their phone; needs their Kenyan number, the name on the account and an amount in KES), "card" (a card checkout ' +
-      'link; same details), "yellowcard" (Yellow Card\'s checkout) or "metamask" (one-tap links from a MetaMask wallet). ' +
-      'Ask the owner which before calling it; never call it without them asking to add money.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        method: { type: 'string', enum: ['mpesa', 'card', 'yellowcard', 'metamask'], description: 'How the owner pays.' },
-        amount_kes: { type: 'number', description: 'For mpesa and card: the amount in Kenyan shillings.' },
-        amount_usd: { type: 'number', description: 'For metamask: the amount in US dollars (default: what the budget still allows).' },
-        phone: { type: 'string', description: 'For mpesa and card: the owner\'s Kenyan mobile number.' },
-        name: { type: 'string', description: 'For mpesa and card: the name on the M-Pesa or card account.' },
-      },
-      required: ['method'],
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
@@ -182,7 +161,6 @@ const reason = (e) => (e?.code === 'RPC_UNREACHABLE' ? `could not reach Base rig
 function fundingLines(a, want) {
   if (a.path) return [`Payments come from path ${a.path}, which its owner funds and can recall at any time.`];
   const lines = [`To fund it, send USDC on Base to ${a.address}. It needs no ETH: a payment is a signature, and the seller pays the gas.`];
-  if (FUNDING_URL || YELLOWCARD_KEY) lines.push(`Or pay with ${[FUNDING_URL && 'M-Pesa or a card', YELLOWCARD_KEY && 'Yellow Card'].filter(Boolean).join(' or ')}: ask to add money (x402_fund), and it lands here directly.`);
   const usdc = a.deployment?.addresses?.usdc;
   const chainId = Number(a.deployment?.chainId);
   if (usdc && chainId && want > 0n) {
@@ -307,37 +285,7 @@ async function fetchText({ url, method = 'GET', headers = {}, body, prefer = 'se
 }
 
 const DISCOVERY = env.X402_DISCOVERY_URL || 'https://api.cdp.coinbase.com/platform/v2/x402/discovery/search';
-const FUNDING_URL = (env.X402_FUNDING_URL || '').replace(/\/$/, '');
-const YELLOWCARD_KEY = env.X402_YELLOWCARD_KEY || '';
 const BASE_USDC = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
-const fundingMethods = () => ['metamask', ...(FUNDING_URL ? ['mpesa', 'card'] : []), ...(YELLOWCARD_KEY ? ['yellowcard'] : [])];
-
-async function fundText({ method, amount_kes: kes, amount_usd: usdAmount, phone, name }) {
-  const w = wallet();
-  if (pathId) return `Payments come from path ${pathId}: its owner funds the path, not this wallet.`;
-  const offered = fundingMethods();
-  if (!offered.includes(method)) {
-    return `"${method}" is not set up in this installation. Ways to add money here: ${offered.join(', ')}.`;
-  }
-  if (method === 'metamask') {
-    const want = usdAmount !== undefined && Number(usdAmount) > 0 ? parseUsd(Number(usdAmount).toFixed(6)) : policy.budget;
-    const a = { address: w.address, deployment: { chainId: 8453, addresses: { usdc: BASE_USDC } } };
-    return fundingLines(a, want).join('\n');
-  }
-  if (method === 'yellowcard') {
-    return [
-      `Yellow Card checkout: https://widget.yellowcard.io/landing/${encodeURIComponent(YELLOWCARD_KEY)}`,
-      `Choose USDC on the Base network, pay with M-Pesa, bank or card, and send it to this wallet: ${w.address}`,
-    ].join('\n');
-  }
-  const res = await fetch(`${FUNDING_URL}/fund`, {
-    method: 'POST', headers: { 'content-type': 'application/json', 'user-agent': `x402-sessions/${VERSION}` },
-    body: JSON.stringify({ method, phone, name, amount: kes, address: w.address }), signal: AbortSignal.timeout(40_000),
-  });
-  const out = await res.json().catch(() => ({}));
-  if (!out?.ok) throw new Error(out?.message || `the funding service answered HTTP ${res.status}`);
-  return `${out.message}\nAsk "Show my x402 wallet" in a minute or two to see it arrive.`;
-}
 
 async function discoverText({ query, max_price_usd: maxPrice, limit = 8 }) {
   const q = String(query ?? '').trim().slice(0, 400);
@@ -375,7 +323,6 @@ async function discoverText({ query, max_price_usd: maxPrice, limit = 8 }) {
 async function callTool(name, args) {
   try {
     if (name === 'x402_discover') return { content: [{ type: 'text', text: await discoverText(args ?? {}) }] };
-    if (name === 'x402_fund') return { content: [{ type: 'text', text: await fundText(args ?? {}) }] };
     if (name === 'x402_wallet') return { content: [{ type: 'text', text: await walletText() }] };
     if (name === 'x402_fetch') {
       const { text, isError } = await fetchText(args ?? {});
