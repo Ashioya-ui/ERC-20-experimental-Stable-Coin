@@ -25,6 +25,8 @@ open (Section 9, problem 1).
 | **Theorem 4.2**, searched | proven | `test/paper/SelfApproachingInvariant.t.sol` grows polygons one accepted vertex at a time; after every call `L ≤ C_SA_UPPER · D`. |
 | **Section 8.4**: a sampled check is not enough | numerical | `test/paper/SampledConditions.t.sol` plus the 31-point fixture: it passes a vertex-only triple check, fails Lemma 8.1, and is longer than `per(K)`. |
 | **The paper's code** | reference implementation | `test/paper/Differential.t.sol`: on 1,000 integer polygons the library and the paper's code agree on every verdict, every diameter and every length to within rounding. |
+| **Proposition 7.14**: monotone winding about the end, through at most `π`, then a last step into it: `L + 2|y − f| ≤ (2 + π/3) · D` | proven | `SelfApproaching.windingBound`, `C_SA_WINDING_WAD`: the sector bound, 3.0472 against 3.1297. |
+| **Condition (5.2)**, the half-plane criterion with margin `η` | definition | `SelfApproaching.canAppendWithMargin`; Lemma A in `docs/design/admissible-paths.md` proves such polygons survive moves of `ηm/8`. |
 | **Open problem 1**: is `C_diam = 1 + 2π/3`? | **open** | **Not used by any code.** |
 
 ## Results with no engineering use
@@ -33,7 +35,7 @@ open (Section 9, problem 1).
 |---|---|
 | **Theorem 6.3** (cut cascades, multiplicity `1 + cos Θ`) | Structure of extremal curves; nothing to compute on-chain. |
 | **Section 7** (curves on the circle about their last diametral partner; Theorem 7.11, `κ = 1 + π/3`) | Gives the lower bound; no rule needs it. |
-| **Proposition 7.14, Corollary 7.15** (monotone winding stays below `2 + π/3`) | Limits of a proof method. |
+| **Corollary 7.15** (early exit, `2 + π/3 − α`) | A further sector; not implemented. |
 | **Theorem 8.2** (a 362-segment polygon certified in exact rational arithmetic) | A finite check run by the paper's own program. |
 
 ## Where the proven bound becomes load-bearing
