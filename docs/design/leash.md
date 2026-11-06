@@ -30,9 +30,34 @@ The software never holds or moves money on its own, never picks the end, and iss
 | 7. Stock baskets for DAO treasuries | A treasury module: the DAO declares the basket, any keeper rebalances on the leash |
 | 8. Weekend price feed | An update is accepted only within a margin of the interpolation of the trades before it |
 
-## Build order
+## Built: `src/Leash.sol`
 
-1. `SelfApproaching`: margin and sector (done).
-2. A two-vault leash for sUSD's reserve (`reserve-allocation.md`): the first two-dimensional
-   state, where Theorem 4.2 becomes load-bearing.
-3. The same contract with any two ERC-4626 vaults, for any owner.
+One contract serves both builds.
+
+1. **sUSD's reserve.** The leash is itself an ERC-4626 vault with one shareholder, so
+   `AutonomousTreasury` holds it as its vault unchanged. The stabilizer's vault allowlist is fixed
+   at deployment, so a running sUSD system adopts a leash only through a deployment that lists it.
+2. **Any two ERC-4626 vaults, any owner.** The owner deposits and withdraws; the planner (usually
+   the owner) declares the end `(a, b)` in basis points of value and names the agent; the agent
+   calls `move(a, b)`.
+
+Each move must pass, on-chain:
+
+1. Lemma 8.1 with margin η against every earlier segment (`canAppendWithMargin`);
+2. the same test for the declared end after the move, so the agent can always finish in one move
+   and every move brings the allocation closer to the end;
+3. at most 32 points per plan.
+
+The polygon of a plan is therefore self-approaching. Its length is at most 3.1297 times its
+largest distance from the start (Theorem 4.2, Lemma 2.1), and that distance is at most twice the
+start-to-end distance. `bound()` returns both numbers from the stored path. The agent cannot
+withdraw. The owner's deposits and withdrawals go pro rata, so they leave the allocation where it
+is. `stop()` (planner) redeems both vaults and removes the agent.
+
+## Checks
+
+| What | How |
+|---|---|
+| Compiles, 18,431 bytes runtime | `python3 script/leash/build.py`: solc 0.8.26+commit.8a97fa7a, the repo's settings; the binary's sha256 matches `ethereum/solc-bin` |
+| The move rule | `python3 script/leash/rule.py`: every decision of the live run, in exact integers |
+| Real transactions | `node script/leash/live.mjs`: deploys both leashes on Base Sepolia against the two live ERC-4626 vaults over Circle's test USDC, and checks every step against the chain |

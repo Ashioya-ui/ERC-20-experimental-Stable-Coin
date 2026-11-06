@@ -72,18 +72,16 @@ research report; the runbook lists the sources.
 ## Quick start
 
 ```bash
-git submodule update --init --recursive   # forge-std v1.17.0, OpenZeppelin v5.4.0, v4-periphery (+ v4-core);
-                                          # re-run it if a nested fetch times out
-forge build                               # first build takes about 2 min (via-IR, v4-core PoolManager)
-forge test                                # 257 tests (the Base fork suite skips without BASE_RPC_URL)
-FOUNDRY_PROFILE=ci forge test             # 10k fuzz runs; invariants 1,024 runs x 256 calls
-script/rehearsal/run.sh                   # mainnet rehearsal on anvil -> rehearsal/latest.log
-
-# quick local playground: mocks, PoolManager, mined hook, wsUSD/USDC pool, 9 demo swaps
-anvil &
-forge script script/DeployLocal.s.sol --rpc-url http://127.0.0.1:8545 --broadcast --slow \
-  --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80   # anvil key #0
+git submodule update --init --recursive   # forge-std v1.17.0, OpenZeppelin v5.4.0, v4-periphery (+ v4-core)
+forge build                               # via-IR, about 2 min the first time
+forge test --match-path 'test/paper/*'    # the paper's results in exact integers; no mocks
+python3 script/leash/build.py             # Leash + AutonomousTreasury with solc 0.8.26 -> script/leash/artifacts.json
+python3 script/leash/rule.py              # the leash's move rule in exact integers
+node script/leash/live.mjs                # deploy both leashes on Base Sepolia and drive them with real transactions
 ```
+
+Mocks, stubs, local-chain and fork suites were removed on 6 November 2026. What is claimed
+from here on is checked on a live chain (`script/leash/live.mjs`) or in exact integers.
 
 Toolchain used to produce the results below: Foundry 1.5.1, solc 0.8.26, EVM `cancun`, via-IR,
 optimizer runs 44,444,444. v4-core needs these optimizer settings: lower values hit
@@ -95,7 +93,8 @@ stack-too-deep in `PoolManager` under via-IR.
 |---|---|
 | `src/libraries/SpectralMath.sol` | FWHT-8 (Yul butterflies), `lnWad`, `spectralEntropy8` |
 | `src/libraries/SpectralPolicy.sol` | The policy curves and the churn-budget step as pure functions, formally checked (`audit/formal.md`) |
-| `src/libraries/SelfApproaching.sol` | The paper's proven results in exact integer arithmetic (a library; nothing on-chain calls it yet) |
+| `src/libraries/SelfApproaching.sol` | The paper's proven results in exact integer arithmetic |
+| `src/Leash.sol` | An owner's money across two ERC-4626 vaults, moved by an agent only along a self-approaching path to a declared end; itself an ERC-4626, so sUSD's treasury can hold it as its vault |
 | `src/SpectralEntropyOracle.sol` | 8-block ring buffer, dust filter, EMA, warm-up and staleness fallbacks |
 | `src/SpectralToken.sol` | sUSD: share-based rebasing ERC-20, EIP-2612, EIP-3009, ERC-1271 |
 | `src/AutonomousTreasury.sol` | Reserve adapter: idle USDC buffer in front of one ERC-4626 vault, emergency exit, migration with legacy-share quarantine |
@@ -103,15 +102,7 @@ stack-too-deep in `PoolManager` under via-IR.
 | `src/WrappedSUSD.sol` | wsUSD: non-rebasing ERC-4626 wrapper. Pools must use it, never raw sUSD |
 | `src/SpectralHook.sol` | Uniswap v4 hook (`beforeInitialize` + `afterSwap`) that feeds the oracle |
 | `src/SpectrumLens.sol` | Read-only views: quotes, surplus, distributable, remaining caps, liquid assets |
-| `test/SpectrumProtocol.t.sol` | The main suite, including the invariants and the attacker actor |
-| `test/SpectralHook.t.sol`, `test/OracleManipulation.t.sol` | The hook on a real v4 PoolManager; measured cost of steering H |
-| `test/LossFrontRunning.t.sol`, `test/ProtocolCapital.t.sol`, `test/Benchmarks.t.sol` | Loss front-running (A9), protocol capital (B8), gas benchmarks |
-| `test/paper/`, `test/halmos/` | The paper's theorems as test oracles; symbolic properties for Halmos |
-| `test/realvault/` | The same flows against real MetaMorpho v1.1 bytecode |
-| `test/mainnet/MainnetScenarios.t.sol` | Day-one scenarios run through the real deploy procedure: locally on a Base-shaped chain, and on a Base fork |
-| `test/handlers/`, `test/mocks/`, `test/utils/` | Invariant handler, mocks, shared fixture |
-| `test/reference/` | 80-digit Python reference values for `lnWad` and the entropy, plus their generator |
-| `test/artifacts/` | Circle FiatToken v2.2 bytecode (real USDC code for local rehearsals), with provenance |
+| `test/paper/` | The paper's theorems as test oracles, in exact integers |
 | `config/8453.json`, `config/84532.json` | Base mainnet and Base Sepolia addresses and launch parameters |
 | `script/lib/SpectrumDeploy.sol` | The single deploy, check and record procedure used by every script and test |
 | `script/DeployBaseMainnet.s.sol`, `script/PostDeployCheck.s.sol` | Mainnet deployment and read-only verification |
@@ -252,7 +243,7 @@ lists every result, its status (proven, numerical, or open) and where the code u
   describes where the proven bound would become load-bearing (a reserve split across two vaults)
   and why a plain turnover cap should come first.
 
-## Verified properties (test suite)
+## Properties (checked by the suites removed on 6 November 2026; to be re-proven on live deployments)
 
 1. FWHT matches the naive Hadamard product (fuzz), is an involution up to 8x, and satisfies Parseval.
 2. `lnWad` is within 1 wei of the correctly rounded value for x < 2^60, which covers every

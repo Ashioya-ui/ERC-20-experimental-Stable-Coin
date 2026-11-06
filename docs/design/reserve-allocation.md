@@ -1,8 +1,8 @@
 # Using the paper's bound on a two-dimensional reserve
 
-Status: **design note, not implemented.** Phase 4 ships `SelfApproaching` as a library with
-tests and nothing calls it on-chain. This is where it would be used, and why it is not used
-yet.
+Status: **built as `src/Leash.sol`** ([`leash.md`](leash.md)): the reserve's two vaults sit
+behind one ERC-4626 that `AutonomousTreasury` holds as its vault. The leash replaces the epoch
+below with a declared end, and checks every move with a margin.
 
 ## Why not today
 
