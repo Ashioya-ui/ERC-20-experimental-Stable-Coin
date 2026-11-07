@@ -2,11 +2,11 @@
 pragma solidity ^0.8.26;
 
 // =====================================================================================
-//  Section 7.5 of the paper, as a regression test: checks made only at sampled points are not
+//  Section 8.4 of the paper, as a regression test: checks made only at sampled points are not
 //  enough.
 //
 //  The fixture is the 31-point sequence the paper's own search found in the cap K. It passes
-//  the self-approaching triple condition at its own points, but its polygon violates Lemma 7.1
+//  the self-approaching triple condition at its own points, but its polygon violates Lemma 8.1
 //  in 68 places and is longer than per(K) = 1 + pi/3, which no self-approaching curve in K can
 //  be (Corollary 3.2). Any on-chain check that samples instead of testing the polygon would
 //  accept it.
@@ -50,7 +50,7 @@ contract SampledConditionsTest is Test {
         }
     }
 
-    /// Lemma 7.1 rejects it, in many places.
+    /// Lemma 8.1 rejects it, in many places.
     function test_isRejectedByLemma71() public view {
         assertFalse(SelfApproaching.isSelfApproaching(xs, ys), "the polygon is not self-approaching");
         uint256 violations;

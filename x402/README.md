@@ -183,15 +183,6 @@ Stop the agent and take everything back:
 cast send $PATHS 'goHome(bytes32)' <path id> --account owner --rpc-url $RPC_URL
 ```
 
-## Tests
-
-```sh
-cd x402 && node --test --test-concurrency=1 "test/*.test.mjs"
-forge test --match-path 'test/vault/*Session*'                    # FOUNDRY_PROFILE=vault
-```
-
-CI also runs fork tests against live Base state and the 1,000-call rail on a Base mainnet fork.
-
 ## License
 
 MIT. See [`LICENSE`](../LICENSE).
